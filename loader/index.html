@@ -33,8 +33,18 @@
   <div id="hdr"></div>
   <div class="wrap">
 
+    <div class="card" id="editFind">
+      <h3 class="cardh"><span>Correct an entry · एंट्री सुधारें</span><button class="mini" id="editToggle" type="button">✏️ Edit by LR</button></h3>
+      <div id="editBox" class="hidden">
+        <div class="btnrow"><input id="editLr" class="input upper" placeholder="LR number e.g. A21306" style="font-weight:800"><button class="btn" id="editGo" type="button" style="width:auto;padding:0 18px">Open</button></div>
+        <div id="editErr" class="err hidden" style="margin-top:8px"></div>
+        <div class="hint" style="margin-top:6px">You can also tap an entry in “Recent entries” below.</div>
+      </div>
+    </div>
+
     <form id="f" class="card" autocomplete="off" novalidate>
-      <h3 class="cardh">Loader Dispatch · लोडर डिस्पैच</h3>
+      <h3 class="cardh"><span>Loader Dispatch · लोडर डिस्पैच</span></h3>
+      <div id="editBanner" class="hidden" style="margin-bottom:12px"><span class="warnline" style="display:block">✏️ Editing <b id="editLrTxt"></b> — change what is wrong and tap Save correction. <a href="#" id="editCancel">Cancel</a></span></div>
 
       <div class="field">
         <label class="req" for="lr">LR Number · एलआर नंबर</label>
@@ -103,6 +113,7 @@
       </div>
       <button class="btn green" id="msg1" type="button">📲 1. Share Msg 1 (Pump Format)</button>
       <button class="btn green hidden" id="msg2" type="button">📲 2. Share Msg 2 (LR / Rate Format)</button>
+      <button class="btn orange hidden" id="corrBtn" type="button">📲 Send correction message</button>
       <button class="btn light" id="nextBtn" type="button">➕ Next Entry · अगली एंट्री</button>
     </div>
 
@@ -196,7 +207,7 @@
 
   // ---------- draft (form survives a dropped network or closed tab)
   const fields = ['truck', 'driver', 'dest', 'km', 'diesel', 'rate', 'adv', 'remark'];
-  function saveDraft() { const d = {}; fields.forEach(f => d[f] = $(f).value); JNP.store.set(DRAFT, d); }
+  function saveDraft() { if (window.__isEditing && window.__isEditing()) return; const d = {}; fields.forEach(f => d[f] = $(f).value); JNP.store.set(DRAFT, d); }
   (function restoreDraft() {
     const d = JNP.store.get(DRAFT); if (!d) return;
     fields.forEach(f => { if (d[f]) $(f).value = d[f]; });
@@ -220,6 +231,12 @@
     if (v('rate') !== '' && isNaN(Number(v('rate')))) return bad('Rate must be a valid number.');
     if (v('adv') !== '' && isNaN(Number(v('adv')))) return bad('Trip Advance must be a valid number.');
 
+    if (window.__isEditing && window.__isEditing()) {
+      const btnE = $('saveBtn'); btnE.disabled = true; btnE.textContent = 'Saving correction…';
+      try { await window.__loaderEdit({ Truck_No: truck, Driver_Name: JNP.titleCase(v('driver')), Destination: v('dest').replace(/\s+/g, ' ').toUpperCase(), Start_KM: v('km'), Diesel_Ltr: v('diesel'), Rate: v('rate'), Trip_Advance: v('adv'), Remark: v('remark') }); }
+      catch (ex) { bad(ex.message); } finally { btnE.disabled = false; if (window.__isEditing()) btnE.textContent = 'Save correction · सुधार सेव करें'; }
+      return;
+    }
     const edited = lr !== suggestedLR;
     const data = {
       LR_No: lr, _lrEdited: edited, Truck_No: truck,
@@ -267,10 +284,11 @@
     JNP.whatsapp((last.Truck_No + ' ' + last.LR_No + ' ' + last.Destination + ' ' + (last.Rate || '')).trim());
     $('msg2').classList.add('done'); $('msg2').innerHTML = '✓ Msg 2 Sent (Tap to re-send)';
   };
+  $('corrBtn').onclick = () => { if (window.__corr) JNP.whatsapp(window.__corr); };
   $('nextBtn').onclick = () => {
     $('f').reset(); ['truckInfo', 'driverInfo', 'destInfo', 'kmInfo', 'formErr'].forEach(i => $(i).innerHTML = '');
     $('lr').value = suggestedLR; lrTag(); fetchLR();
-    clientReqId = JNP.uid(); last = null;
+    clientReqId = JNP.uid(); last = null; $('corrBtn').classList.add('hidden');
     $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden');
     window.scrollTo(0, 0);
   };
@@ -281,12 +299,58 @@
       const out = await JNP.api('list', { module: 'OPS-01', days: 3, limit: 15 });
       if (!out.ok) throw new Error(out.error);
       $('recent').innerHTML = out.rows.length ? out.rows.map(r =>
-        '<div class="item"><b>' + JNP.esc(r.LR_No) + ' · ' + JNP.esc(r.Truck_No) + ' · ' + JNP.esc(r.Destination) + '</b><small>' +
+        '<div class="item tap" data-lr="' + JNP.esc(r.LR_No) + '"><b>' + JNP.esc(r.LR_No) + ' · ' + JNP.esc(r.Truck_No) + ' · ' + JNP.esc(r.Destination) + '</b><small>' +
         JNP.esc(r.Driver_Name) + ' · KM ' + JNP.esc(r.Start_KM) + ' · Diesel ' + JNP.esc(r.Diesel_Ltr) + ' L · ' + JNP.esc(String(r.Created_At).slice(5)) +
         (r.Created_By ? ' · ' + JNP.esc(r.Created_By) : '') + '</small></div>').join('') : '<span class="muted">No entries in the last 3 days.</span>';
     } catch (e) { $('recent').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
   }
   $('reloadRecent').onclick = loadRecent;
+  $('recent').onclick = e => { const it = e.target.closest('.item[data-lr]'); if (it && ctx.can('E')) openEdit(it.dataset.lr); };
+
+  // ---------- EDIT AN ENTRY BY LR NUMBER
+  let editing = null;
+  $('editToggle').onclick = () => { $('editBox').classList.toggle('hidden'); $('editLr').focus(); };
+  $('editGo').onclick = () => openEdit($('editLr').value);
+  $('editLr').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); openEdit($('editLr').value); } });
+  async function openEdit(lr) {
+    lr = String(lr || '').replace(/\s+/g, '').toUpperCase(); if (!lr) return;
+    $('editErr').classList.add('hidden'); JNP.busy(true);
+    try {
+      const out = await JNP.call('loaderGet', { lr: lr });
+      if (!out.canEdit) throw new Error(out.reason);
+      editing = out.record;
+      $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden');
+      $('lr').value = editing.LR_No; $('lr').readOnly = true; $('lrTag').textContent = 'Editing'; $('lrTag').className = 'lrtag pill warn';
+      $('truck').value = editing.Truck_No || ''; $('driver').value = editing.Driver_Name || ''; $('dest').value = editing.Destination || '';
+      $('km').value = editing.Start_KM; $('diesel').value = editing.Diesel_Ltr; $('rate').value = editing.Rate; $('adv').value = editing.Trip_Advance; $('remark').value = editing.Remark || '';
+      ['truckInfo', 'driverInfo', 'destInfo', 'kmInfo', 'formErr'].forEach(i => $(i).innerHTML = '');
+      $('editLrTxt').textContent = editing.LR_No + ' (' + JNP.dmy(editing.Created_At) + ', by ' + editing.Created_By + ')' + (out.hasBuilty ? ' · builty will also update' : '');
+      $('editBanner').classList.remove('hidden'); $('editBox').classList.add('hidden');
+      $('saveBtn').textContent = 'Save correction · सुधार सेव करें';
+      window.scrollTo(0, 0);
+    } catch (e) { $('editBox').classList.remove('hidden'); $('editErr').textContent = e.message; $('editErr').classList.remove('hidden'); }
+    finally { JNP.busy(false); }
+  }
+  function endEdit() {
+    editing = null; $('lr').readOnly = false; $('editBanner').classList.add('hidden'); $('saveBtn').textContent = 'Save Entry · सेव करें';
+    $('f').reset(); $('lr').value = suggestedLR; lrTag(); restoreDraftAfterEdit();
+  }
+  $('editCancel').onclick = e => { e.preventDefault(); endEdit(); };
+  function restoreDraftAfterEdit() { const d = JNP.store.get(DRAFT); if (d) fields.forEach(f => { if (d[f]) $(f).value = d[f]; }); }
+  window.__loaderEdit = async (data) => {
+    const out = await JNP.call('loaderEdit', { lr: editing.LR_No, data: data });
+    last = out.record; const changes = out.changes || [];
+    $('f').classList.add('hidden'); $('doneCard').classList.remove('hidden');
+    $('lrNo').textContent = last.LR_No;
+    $('lrSub').innerHTML = changes.length ? '<b>Corrected:</b><br>' + changes.map(JNP.esc).join('<br>') + (out.synced && out.synced.length ? '<br><small>Also updated: ' + out.synced.join(', ') + '</small>' : '') : 'Nothing was changed.';
+    $('msg1').classList.remove('done'); $('msg1').innerHTML = '📲 1. Re-send Msg 1 (Pump Format)'; $('msg2').classList.remove('hidden'); $('msg2').classList.remove('done'); $('msg2').innerHTML = '📲 2. Re-send Msg 2 (LR / Rate Format)';
+    window.__corr = changes.length ? '*CORRECTION · LR ' + last.LR_No + '*\n' + changes.join('\n') + '\n— ' + JNP.session().user.name : '';
+    $('corrBtn').classList.toggle('hidden', !changes.length);
+    editing = null; $('lr').readOnly = false; $('editBanner').classList.add('hidden'); $('saveBtn').textContent = 'Save Entry · सेव करें';
+    window.scrollTo(0, 0); JNP.toast(changes.length ? 'Correction saved' : 'Nothing changed', changes.length ? 'ok' : 'warn');
+    loadRecent();
+  };
+  window.__isEditing = () => !!editing;
   loadRecent();
 })();
 </script>

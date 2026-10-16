@@ -55,8 +55,8 @@
     doc.setFontSize(6.8);
     doc.text(String(st.Company_Address || ''), W / 2 + 10, y + 12.5, { align: 'center', maxWidth: IW - 36 });
     y += 17;
-    doc.text('GSTIN: ' + (st.Company_GSTIN || '') + '    PAN: ' + (st.Company_PAN || ''), M, y);
-    doc.text('Plant Loading: ' + (st.Plant_Loading_Mobile || '') + '    Vehicle Maintenance: ' + (st.Vehicle_Maintenance_Mobile || ''), W - M, y, { align: 'right' });
+    doc.text([st.Company_GSTIN ? 'GSTIN: ' + st.Company_GSTIN : '', st.Company_PAN ? 'PAN: ' + st.Company_PAN : ''].filter(Boolean).join('    '), M, y);
+    doc.text([st.Plant_Loading_Mobile ? 'Plant Loading: ' + st.Plant_Loading_Mobile : '', st.Vehicle_Maintenance_Mobile ? 'Vehicle Maintenance: ' + st.Vehicle_Maintenance_Mobile : ''].filter(Boolean).join('    '), W - M, y, { align: 'right' });
     y += 2;
     doc.setDrawColor.apply(doc, NAVY); doc.setLineWidth(0.6); doc.line(M, y, W - M, y);
     doc.setLineWidth(0.25); doc.setDrawColor.apply(doc, LINE);
@@ -74,7 +74,8 @@
       o = o || {};
       doc.rect(x, yy, wd, ht);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor.apply(doc, GREY);
-      doc.text(String(label).toUpperCase(), x + 1.6, yy + 3);
+      const lab = doc.splitTextToSize(String(label).toUpperCase(), wd - 3.2);
+      doc.text(lab.slice(0, 2), x + 1.6, yy + 3);
       doc.setTextColor(15); doc.setFont('helvetica', o.bold === false ? 'normal' : 'bold'); doc.setFontSize(o.size || 9.5);
       const lines = doc.splitTextToSize(String(value === undefined || value === null ? '' : value), wd - 3.2);
       doc.text(lines.slice(0, o.maxLines || 3), x + 1.6, yy + 3 + (o.size || 9.5) * 0.42 + 0.6);
@@ -90,7 +91,7 @@
 
     // consignor | invoice + DI + consignee
     const half = IW / 2;
-    box(M, y, half, 27, 'Consignor', [st.Consignor_Name, st.Consignor_Address, 'GSTIN: ' + (st.Consignor_GSTIN || '') + '  PAN: ' + (st.Consignor_PAN || '')].filter(Boolean).join('\n'), { size: 7.4, bold: false, maxLines: 7 });
+    box(M, y, half, 27, 'Consignor', [st.Consignor_Name ? String(st.Consignor_Name).toUpperCase() : '', st.Consignor_Address, [st.Consignor_GSTIN ? 'GSTIN: ' + st.Consignor_GSTIN : '', st.Consignor_PAN ? 'PAN: ' + st.Consignor_PAN : ''].filter(Boolean).join('  ')].filter(Boolean).join('\n'), { size: 7.6, bold: false, maxLines: 7 });
     box(M + half, y, half, 9, 'Invoice No.', r.Invoice_No || '');
     box(M + half, y + 9, half, 9, 'DI No.', r.DI_No || '');
     box(M + half, y + 18, half, 9, 'Consignee', r.Consignee || '', { size: 8.5, maxLines: 2 });
@@ -133,8 +134,8 @@
     // footer
     doc.setFontSize(6.2); doc.setTextColor.apply(doc, GREY);
     const by = r.Created_By ? 'Entered by ' + r.Created_By + (r.Created_At ? ' at ' + r.Created_At : '') + ' · ' : '';
-    doc.text('System-generated LR · ' + by + 'Ref ' + (r.Record_ID || ''), M, y + 4);
-    if (r.Start_KM) doc.text('Start KM ' + r.Start_KM + (r.Diesel_Ltr !== '' && r.Diesel_Ltr !== undefined ? ' · Diesel ' + r.Diesel_Ltr + ' L' : ''), W - M, y + 4, { align: 'right' });
+    doc.text('System-generated LR · ' + by + 'Ref ' + (r.Record_ID || ''), M, y + 4, { maxWidth: IW });
+    if (r.Start_KM) doc.text('Start KM ' + r.Start_KM + (r.Diesel_Ltr !== '' && r.Diesel_Ltr !== undefined ? ' · Diesel ' + r.Diesel_Ltr + ' L' : ''), M, y + 7.5);
 
     return doc.output('blob');
   }
