@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Tyres · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+    <div id="evView">
+      <form id="f" class="card" autocomplete="off" novalidate>
+        <h3 class="cardh"><span>Tyre event · टायर</span></h3>
+        <div id="fields"></div>
+        <div id="err" class="err hidden"></div>
+        <button id="saveBtn" class="btn orange" type="submit">Save · सेव करें</button>
+      </form>
+      <div id="doneCard" class="card hidden"></div>
+    </div>
+    <div id="truckView" class="hidden">
+      <div class="card"><div class="field"><label>Truck</label><input id="tq" class="input upper" placeholder="Truck number"></div></div>
+      <div class="card list"><div id="truckRows" class="muted">Pick a truck.</div></div>
+    </div>
+    <div id="storeView" class="card list hidden"><div class="seg small" id="stSeg" style="margin-bottom:10px"></div><div id="storeRows" class="muted">Loading…</div></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const CODE = 'RM-06';
+  JNP.header($('hdr'), 'Tyre Management', 'टायर मैनेजमेंट');
+  const ctx = await JNP.requireModule(CODE);
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  let tyres = [], clientReqId = JNP.uid();
+  async function loadTyres() { try { tyres = (await JNP.call('tyres', {})).rows; } catch (e) { tyres = []; } }
+  await loadTyres();
+  const EV = JNP.list('Tyre_Event').length ? JNP.list('Tyre_Event') : ['Purchase', 'Fit', 'Remove', 'Rotate', 'Puncture Repair', 'Retread Sent', 'Retread Received', 'Inspection', 'Scrap'];
+  const is = (v, ...e) => e.indexOf(v.Event_Type) >= 0;
+  const F = JNP.form($('fields'), [
+    { k: 'Event_Type', label: 'What happened?', type: 'select', options: EV, req: true },
+    // purchase
+    { k: 't_Serial', label: 'Serial number', hi: 'सीरियल नंबर', upper: true, req: v => is(v, 'Purchase'), show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Brand', label: 'Brand', half: true, req: v => is(v, 'Purchase'), show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Size', label: 'Size', ph: '295/80 R22.5', half: true, req: v => is(v, 'Purchase'), show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Model', label: 'Model', half: true, show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Type', label: 'Type', type: 'seg', options: ['New', 'Retread'], value: 'New', half: true, show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Price', label: 'Price ₹', type: 'num', show: v => is(v, 'Purchase'), noSend: true },
+    { k: 't_Invoice', label: 'Invoice photo', type: 'photo', show: v => is(v, 'Purchase'), noSend: true },
+    // existing tyre
+    { k: 'Serial_No', label: 'Tyre (serial / ID)', upper: true, req: v => v.Event_Type && !is(v, 'Purchase'), show: v => v.Event_Type && !is(v, 'Purchase') },
+    { k: 'Truck_No', label: 'Truck', type: 'truck', allowNew: false, req: v => is(v, 'Fit'), show: v => is(v, 'Fit') },
+    { k: 'Position', label: 'Position', type: 'select', list: 'Tyre_Position', req: v => is(v, 'Fit', 'Rotate'), show: v => is(v, 'Fit', 'Rotate') },
+    { k: 'Odometer_KM', label: 'Odometer KM', type: 'num', req: v => is(v, 'Fit', 'Remove'), show: v => is(v, 'Fit', 'Remove', 'Inspection', 'Puncture Repair') },
+    { k: 'Tread_Depth_mm', label: 'Tread depth (mm)', type: 'dec', req: v => is(v, 'Inspection'), show: v => is(v, 'Remove', 'Inspection') },
+    { k: 'Pressure_PSI', label: 'Pressure PSI', type: 'num', show: v => is(v, 'Inspection') },
+    { k: 'newStatus', label: 'Removed tyre goes to', type: 'seg', options: ['In Store', 'Under Repair', 'Sent for Retread', 'Scrapped'], value: 'In Store', show: v => is(v, 'Remove'), noSend: true },
+    { k: 'Reason', label: 'Reason', show: v => is(v, 'Remove', 'Scrap', 'Puncture Repair', 'Rotate') },
+    { k: 'Cost', label: 'Cost ₹', type: 'num', show: v => is(v, 'Puncture Repair', 'Retread Received') },
+    { k: 'Vendor', label: 'Vendor', type: 'vendor', show: v => is(v, 'Purchase', 'Puncture Repair', 'Retread Sent', 'Retread Received') },
+    { k: 'Photo_URL', label: 'Photo', type: 'photo', show: v => !!v.Event_Type },
+    { k: 'Remark', label: 'Remark', show: v => !!v.Event_Type },
+  ], { module: CODE });
+  JNP.picker(F.input('Serial_No'), () => tyres.filter(t => {
+    const e = F.val('Event_Type');
+    return e === 'Fit' ? t.Status === 'In Store' : /Remove|Rotate|Inspection/.test(e) ? t.Status === 'Fitted' : e === 'Retread Received' ? t.Status === 'Sent for Retread' : e === 'Scrap' || e === 'Retread Sent' ? t.Status !== 'Fitted' && t.Status !== 'Scrapped' : true;
+  }).map(t => ({ label: t.Serial_No, value: t.Serial_No, alt: t.Tyre_ID, sub: t.Tyre_ID + ' · ' + t.Brand + ' · ' + (t.Status === 'Fitted' ? t.Current_Truck + ' ' + t.Current_Position : t.Status) })), {});
+  F.on(k => {
+    if (k === 'Serial_No') {
+      const t = tyres.find(x => x.Serial_No === F.val('Serial_No').toUpperCase() || x.Tyre_ID === F.val('Serial_No').toUpperCase());
+      F.info('Serial_No', t ? JNP.esc(t.Tyre_ID + ' · ' + t.Brand + ' ' + t.Size + ' · ' + t.Status + (t.Current_Truck ? ' on ' + t.Current_Truck + ' ' + t.Current_Position : '') + ' · run ' + (t.Total_KM_Run || 0) + ' km' + (t.Life_Used_Pct ? ' · life used ' + t.Life_Used_Pct + '%' : '')) : F.val('Serial_No') ? '<span class="warnline">Not registered — use Purchase first</span>' : '');
+      if (t && t.Current_Truck && !F.val('Truck_No')) F.set('Truck_No', t.Current_Truck);
+    }
+  });
+
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = F.check(); if (bad) throw new Error(bad);
+      const v = F.values(), a = F.all(), data = Object.assign({}, v);
+      if (v.Event_Type === 'Purchase') data.tyre = { Serial_No: a.t_Serial, Brand: a.t_Brand, Size: a.t_Size, Model: a.t_Model, Tyre_Type: a.t_Type, Price: a.t_Price, Vendor: v.Vendor, Invoice_Photo_URL: a.t_Invoice };
+      else { const t = tyres.find(x => x.Tyre_ID === v.Serial_No.toUpperCase()); if (t) { data.Tyre_ID = t.Tyre_ID; delete data.Serial_No; } }
+      if (v.Event_Type === 'Remove') data.newStatus = a.newStatus;
+      const out = await JNP.call('save', { module: CODE, clientReqId: clientReqId, data: data });
+      const r = out.record;
+      const msg = JNP.waText('🛞 TYRE ' + r.Event_Type.toUpperCase() + ' · ' + r.Serial_No, [['Tyre', r.Tyre_ID], ['Truck', r.Truck_No], ['Position', (r.From_Position ? r.From_Position + ' → ' : '') + (r.Position || '')],
+        ['KM', r.Odometer_KM], ['Ran this fitment', r.KM_This_Fitment ? r.KM_This_Fitment + ' km' : ''], ['Tread', r.Tread_Depth_mm ? r.Tread_Depth_mm + ' mm' : ''], ['Cost', JNP.inr(r.Cost)], ['Vendor', r.Vendor], ['Reason', r.Reason]]);
+      $('f').classList.add('hidden');
+      JNP.done($('doneCard'), { title: r.Event_Type.toUpperCase() + ' SAVED', big: r.Serial_No, sub: [r.Tyre_ID, r.Truck_No, r.Position].filter(Boolean).join(' · '),
+        buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }],
+        onNew: () => { F.reset(); clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
+      loadTyres();
+    });
+  });
+
+  const tyreRow = t => ({ t: JNP.esc(t.Serial_No + ' · ' + t.Brand + ' ' + (t.Size || '')), s: JNP.esc([t.Tyre_ID, t.Tyre_Type + (t.Retread_Count ? ' ×' + t.Retread_Count : ''), t.Current_Position, 'run ' + ((Number(t.Total_KM_Run) || 0) + (t.KM_On_Current || 0)).toLocaleString('en-IN') + ' km', t.Cost_Per_KM ? '₹' + t.Cost_Per_KM + '/km' : '', t.Last_Tread_mm ? t.Last_Tread_mm + ' mm' : ''].filter(Boolean).join(' · ')),
+    tag: t.Life_Used_Pct ? t.Life_Used_Pct + '% life' : t.Status, cls: t.Life_Used_Pct >= 90 ? 'bad' : t.Life_Used_Pct >= 70 ? 'warn' : 'ok' });
+  JNP.picker($('tq'), () => JNP.M().trucks.map(t => ({ label: t.no, value: t.no })), { upper: true, onPick: () => loadTruck() });
+  $('tq').addEventListener('change', loadTruck);
+  async function loadTruck() {
+    const t = JNP.normTruck($('tq').value); if (!t) return; $('truckRows').innerHTML = 'Loading…';
+    try { const rows = (await JNP.call('tyres', { truck: t })).rows; $('truckRows').innerHTML = JNP.rowsHtml(rows.sort((a, b) => String(a.Current_Position).localeCompare(b.Current_Position)), tyreRow, 'No tyres recorded on ' + t + '.'); }
+    catch (e) { $('truckRows').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  const ST = ['In Store', 'Fitted', 'Under Repair', 'Sent for Retread', 'Scrapped'];
+  $('stSeg').innerHTML = ST.map(s => '<button type="button" data-v="' + s + '">' + s + '</button>').join('');
+  $('stSeg').onclick = e => { const b = e.target.closest('button'); if (b) loadStore(b.dataset.v); };
+  async function loadStore(s) {
+    $('stSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === s));
+    await loadTyres(); const rows = tyres.filter(t => t.Status === s);
+    $('storeRows').innerHTML = '<div class="hint" style="margin-bottom:6px">' + rows.length + ' tyres</div>' + JNP.rowsHtml(rows, t => Object.assign(tyreRow(t), s === 'Fitted' ? { s: JNP.esc(t.Current_Truck + ' · ' + t.Current_Position) + ' · ' + tyreRow(t).s } : {}), 'None.');
+  }
+  JNP.tabs($('tabs'), (ctx.can('E') ? [{ id: 'ev', label: '➕ Event' }] : []).concat([{ id: 'truck', label: '🚚 By truck' }, { id: 'store', label: '📦 All tyres' }]), t => {
+    $('evView').classList.toggle('hidden', t !== 'ev'); $('truckView').classList.toggle('hidden', t !== 'truck'); $('storeView').classList.toggle('hidden', t !== 'store'); if (t === 'store') loadStore('In Store');
+  });
+})();
+</script>
+</body>
+</html>

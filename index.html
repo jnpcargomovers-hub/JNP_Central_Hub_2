@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0B2A5B">
+  <meta name="theme-color" content="#022A5B">
   <title>JNP Central Hub</title>
-  <link rel="icon" href="logo.png">
+  <link rel="icon" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
   <link rel="stylesheet" href="jnp.css">
   <script src="jnp.js"></script>
 </head>
@@ -14,6 +15,7 @@
   <!-- LOGIN -->
   <div id="loginView" class="wrap login hidden">
     <div class="brand"><img id="loginLogo" alt="JNP Cargo Movers"></div>
+    <div class="stripe"></div>
     <h1>Central Hub</h1>
     <p class="sub">JNP Cargo Movers · सेंट्रल हब</p>
     <form id="loginForm" class="card" autocomplete="on">
@@ -26,7 +28,7 @@
         <input id="code" class="input" type="password" inputmode="numeric" maxlength="12" placeholder="Code given by HO" required autocomplete="current-password">
       </div>
       <div id="loginErr" class="err hidden"></div>
-      <button id="loginBtn" class="btn" type="submit">Login · लॉगिन</button>
+      <button id="loginBtn" class="btn orange" type="submit">Login · लॉगिन</button>
       <p class="hint center" style="margin-top:12px">You stay logged in on this phone for 30 days.</p>
     </form>
     <p class="footnote">Forgot your code? Ask HO.</p>
@@ -36,12 +38,16 @@
   <div id="homeView" class="hidden">
     <div id="hdr"></div>
     <div class="wrap">
-      <div class="userstrip">
-        <div class="who"><b id="uName"></b><span id="uRole"></span></div>
-        <button class="icon-btn" id="logoutBtn" type="button">Logout</button>
+      <div class="hero">
+        <button class="logout" id="logoutBtn" type="button">Logout</button>
+        <div class="hi1" id="greet">Namaste</div>
+        <div class="nm" id="uName"></div>
+        <div class="rl" id="uRole"></div>
+        <div class="stats" id="stats"></div>
       </div>
+      <a class="punch hidden" id="punch" href="attendance/"><span class="dot"></span><span><b id="pT">Attendance</b><small id="pS"></small></span><span class="go" id="pGo">Punch IN</span></a>
       <div id="sections"></div>
-      <p class="footnote" id="foot"></p>
+      <p class="footnote">J N P Cargo Movers Pvt Ltd · Built on Trust, Driven with Purpose</p>
     </div>
   </div>
 
@@ -51,79 +57,84 @@
   const roleNames = { Loader: 'Loader', Ops_Head: 'Operations Head', 'R&M_Head': 'R&M Head', Fin_Head: 'Finance Head', CEO: 'CEO', Dir_1: 'Director', Dir_2: 'Director', Office: 'Head Office' };
 
   function showLogin() {
-    $('homeView').classList.add('hidden');
-    $('loginView').classList.remove('hidden');
-    $('loginLogo').src = JNP.CONFIG.LOGO;
-    setTimeout(() => $('mobile').focus(), 50);
+    $('homeView').classList.add('hidden'); $('loginView').classList.remove('hidden');
+    $('loginLogo').src = JNP.CONFIG.LOGO; setTimeout(() => $('mobile').focus(), 50);
   }
-
   $('loginForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    $('loginErr').classList.add('hidden');
+    e.preventDefault(); $('loginErr').classList.add('hidden');
     const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Checking…';
     try {
       const out = await JNP.login($('mobile').value, $('code').value);
       if (!out.ok) throw new Error(out.error);
-      const next = new URLSearchParams(location.search).get('next');
-      if (next && next.indexOf('https://jnpcargomovers-hub.github.io/') === 0) { location.href = next; return; }
-      showHome();
-    } catch (err) {
-      $('loginErr').textContent = err.message; $('loginErr').classList.remove('hidden');
-    } finally { btn.disabled = false; btn.textContent = 'Login · लॉगिन'; }
+      const next = JNP.param('next');
+      if (next && next.indexOf(JNP.CONFIG.HUB) === 0) { location.href = next; return; }
+      history.replaceState(null, '', JNP.CONFIG.HUB); showHome();
+    } catch (err) { $('loginErr').textContent = err.message; $('loginErr').classList.remove('hidden'); }
+    finally { btn.disabled = false; btn.textContent = 'Login · लॉगिन'; }
   });
 
-  function rightsTag(r) {
-    if (r.indexOf('E') >= 0 && r.indexOf('A') >= 0) return '<span class="pill ok">Entry + Approve</span>';
-    if (r.indexOf('A') >= 0) return '<span class="pill ok">Approve</span>';
-    if (r.indexOf('P') >= 0 && r.indexOf('E') < 0) return '<span class="pill warn">View + Pay</span>';
+  const APPROVAL = ['OPS-04', 'OPS-05', 'RM-03', 'RM-04', 'FIN-01', 'FIN-03', 'APR-01'];
+  function tag(r, code) {
+    if (r.indexOf('P') >= 0) return '<span class="pill warn">Pay</span>';
+    if (r.indexOf('A') >= 0 && APPROVAL.indexOf(code) >= 0) return '<span class="pill ok">Approve</span>';
     if (r.indexOf('E') >= 0) return '';
     return '<span class="pill">View only</span>';
   }
+  function tileHtml(code, color, badge) {
+    const s = JNP.session(), a = s.access[code], m = JNP.MODULES[code] || { icon: '▪️', path: '' };
+    return '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + m.path + '">' + (badge ? '<span class="badge">' + badge + '</span>' : '') +
+      '<span class="ic">' + m.icon + '</span><span class="en">' + JNP.esc(a.name) + '</span><span class="hi">' + JNP.esc(a.hindi) + '</span><span class="tag">' + tag(JNP.rights(code), code) + '</span></a>';
+  }
 
   function render() {
-    const s = JNP.session();
-    $('uName').textContent = s.user.name;
-    $('uRole').textContent = (roleNames[s.user.role] || s.user.role) + ' · ' + s.user.level;
+    const s = JNP.session(), c = s.counts || {}, u = s.user;
+    const h = new Date().getHours();
+    $('greet').textContent = h < 12 ? 'Good morning · सुप्रभात' : h < 17 ? 'Good afternoon · नमस्ते' : 'Good evening · शुभ संध्या';
+    $('uName').textContent = u.name;
+    $('uRole').textContent = (roleNames[u.role] || u.role) + ' · ' + u.level;
+    const st = [];
+    if (JNP.rights('APR-01').length) {
+      st.push(['approvals/?view=toMe', c.toApprove || 0, 'To approve', c.toApprove > 0]);
+      if (JNP.can('FIN-01', 'P') || JNP.can('OPS-05', 'P') || JNP.can('RM-03', 'P')) st.push(['approvals/?view=toPay', c.toPay || 0, 'To pay', c.toPay > 0]);
+      st.push(['approvals/?view=mine', c.myPending || 0, 'My requests', false]);
+      if (u.level === 'Level 1') st.push(['approvals/?view=all', c.allPending || 0, 'All pending', false]);
+    }
+    $('stats').innerHTML = st.slice(0, 3).map(x => '<a class="stat' + (x[3] ? ' hot' : '') + '" href="' + x[0] + '"><b>' + x[1] + '</b><span>' + x[2] + '</span></a>').join('');
+    $('stats').classList.toggle('hidden', !st.length);
+
+    if (JNP.rights('ATT-01').length) {
+      $('punch').classList.remove('hidden'); $('punch').classList.toggle('in', !!c.punchedIn);
+      $('pT').textContent = c.punchedIn ? 'On duty · ड्यूटी पर' : 'Not punched in · हाज़िरी लगाएँ';
+      $('pS').textContent = c.lastPunch ? 'Last punch ' + JNP.dmy(c.lastPunch) : 'Selfie + location';
+      $('pGo').textContent = c.punchedIn ? 'Punch OUT' : 'Punch IN';
+    }
+
     let html = '';
+    const order = Object.keys(JNP.MODULES);
     JNP.TILES.forEach(dept => {
-      const codes = Object.keys(s.access).filter(c => c.indexOf(dept.prefix) === 0);
-      const visible = codes.filter(c => JNP.rights(c).length);
-      if (!visible.length) return;
-      html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' +
-        JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">';
-      visible.forEach(code => {
-        const a = s.access[code], m = JNP.MODULES[code] || { icon: '▪️' }, r = JNP.rights(code);
-        const href = m.ready ? JNP.CONFIG.HUB + m.path : (m.legacy || '');
-        const tag = m.ready ? rightsTag(r) : (m.legacy ? '<span class="pill warn">Old app</span>' : '<span class="pill">Coming soon</span>');
-        html += '<a class="tile' + (href ? '' : ' off') + '" style="--accent:' + dept.color + '" href="' + (href || '#') + '">' +
-          '<span class="ic">' + m.icon + '</span><span class="en">' + JNP.esc(a.name) + '</span>' +
-          '<span class="hi">' + JNP.esc(a.hindi) + '</span><span class="tag">' + tag + '</span></a>';
-      });
-      html += '</div></div>';
+      const codes = order.filter(cd => cd.indexOf(dept.prefix) === 0 && s.access[cd] && JNP.rights(cd).length);
+      if (!codes.length) return;
+      html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' + JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">' +
+        codes.map(cd => tileHtml(cd, dept.color)).join('') + '</div></div>';
     });
-    if (s.user.level === 'Level 1' || s.user.level === 'Level 2') {
-      html += '<div class="section"><h2 style="color:var(--navy)"><span class="dot" style="background:var(--navy)"></span>Reports <small>रिपोर्ट</small></h2>' +
-        '<div class="tiles"><a class="tile wide" style="--accent:var(--navy)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span>' +
-        '<span><span class="en" style="display:block">Operations Dashboard</span><span class="hi">डैशबोर्ड</span></span></a></div></div>';
+    const gen = ['APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
+    if (gen.length || u.level !== 'Level 3') {
+      html += '<div class="section"><h2 style="color:var(--navy)"><span class="dot" style="background:var(--navy)"></span>General <small>सामान्य</small></h2><div class="tiles">' +
+        gen.map(cd => tileHtml(cd, 'var(--gen)', cd === 'APR-01' ? (c.toApprove || 0) + (c.toPay || 0) : 0)).join('') +
+        (u.level !== 'Level 3' ? '<a class="tile" style="--accent:var(--orange)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span><span class="en">Dashboard</span><span class="hi">डैशबोर्ड</span></a>' : '') +
+        '</div></div>';
     }
     $('sections').innerHTML = html || '<div class="card center muted">No modules assigned to you yet. Ask HO.</div>';
-    $('foot').textContent = 'JNP Cargo Movers Pvt Ltd · Central Hub';
   }
 
   async function showHome() {
-    $('loginView').classList.add('hidden');
-    $('homeView').classList.remove('hidden');
-    JNP.header($('hdr'), 'JNP CARGO MOVERS', 'Central Hub · सेंट्रल हब', { home: false, who: false });
+    $('loginView').classList.add('hidden'); $('homeView').classList.remove('hidden');
+    JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
     render();
-    try {                                                 // refresh rights quietly
-      const me = await JNP.api('me');
-      if (me.ok) { const s = JNP.session(); s.user = me.user; s.access = me.access; JNP.store.set('jnp_session', s); render(); }
-    } catch (e) { JNP.toast(e.message, 'warn'); }
-    JNP.masters().catch(() => { });                       // warm the dropdown cache for module screens
+    try { await JNP.refreshMe(); render(); } catch (e) { JNP.toast(e.message, 'warn'); }
+    JNP.masters().catch(() => { });
   }
-
   $('logoutBtn').onclick = () => { if (confirm('Logout from this phone?')) JNP.logout(); };
-
   const s = JNP.session();
   if (s && s.token) showHome(); else showLogin();
 })();

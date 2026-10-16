@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Breakdown · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+    <div id="repView">
+      <form id="f" class="card" autocomplete="off" novalidate>
+        <h3 class="cardh"><span>Report breakdown · ब्रेकडाउन रिपोर्ट</span></h3>
+        <div id="fields"></div>
+        <div id="err" class="err hidden"></div>
+        <button id="saveBtn" class="btn red" type="submit">🚨 Report breakdown</button>
+      </form>
+      <div id="doneCard" class="card hidden"></div>
+    </div>
+    <div id="openView" class="hidden">
+      <div class="card list"><h3 class="cardh"><span>Open breakdowns</span><button class="mini" id="reload" type="button">↻</button></h3><div id="open" class="muted">Loading…</div></div>
+      <div id="detail" class="card hidden"></div>
+      <form id="uf" class="card hidden" autocomplete="off" novalidate>
+        <h3 class="cardh"><span>Update status · स्थिति बदलें</span></h3>
+        <div id="ufields"></div>
+        <div id="uerr" class="err hidden"></div>
+        <button id="ubtn" class="btn orange" type="submit">Update · अपडेट करें</button>
+      </form>
+      <div id="udone" class="card hidden"></div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  JNP.header($('hdr'), 'Breakdown', 'ब्रेकडाउन रिपोर्ट और समाधान');
+  const ctx = await JNP.requireModule(['OPS-06', 'RM-01']);
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  const canReport = JNP.can('OPS-06', 'E'), canFix = JNP.can('RM-01', 'E') || ctx.isL1;
+  const FLOW = ['Reported', 'Acknowledged by R&M', 'Mechanic / Towing Sent', 'Under Repair', 'Resolved - Back on Road', 'Closed (Verified)'];
+  const rmMobile = JNP.M().settings.Vehicle_Maintenance_Mobile || '';
+  let pos = null, clientReqId = JNP.uid(), rows = [], cur = null;
+
+  // ---------- REPORT
+  const F = JNP.form($('fields'), [
+    { k: 'Truck_No', label: 'Truck', hi: 'गाड़ी', type: 'truck', req: true, allowNew: false },
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver' },
+    { k: 'Driver_Mobile', label: 'Driver mobile', type: 'num', half: true },
+    { k: 'Loaded', label: 'Loaded?', type: 'seg', options: ['Yes', 'No'], half: true },
+    { k: 'LR_No', label: 'LR (if loaded)', upper: true, show: v => v.Loaded === 'Yes' },
+    { k: 'Symptom', label: 'Problem', hi: 'समस्या', type: 'symptom', req: true },
+    { k: 'Location', label: 'Where is the truck?', hi: 'गाड़ी कहाँ है', req: true, ph: 'e.g. Dhule bypass, near Hotel XYZ' },
+    { k: 'gps', type: 'html', html: '<button class="mini orange" type="button" id="gpsBtn">📍 Add my GPS location</button> <span id="gpsInfo" class="hint"></span><div style="height:12px"></div>' },
+    { k: 'Report_Photo_URLs', label: 'Photos', type: 'photo', multiple: true },
+  ], { module: 'OPS-06' });
+  F.on(k => {
+    if (k !== 'Truck_No') return;
+    const t = JNP.findTruck(F.val('Truck_No'));
+    if (t && t.driver && !F.val('Driver_Name')) { F.set('Driver_Name', t.driver); const d = JNP.findDriver(t.driver); if (d && d.mobile) F.set('Driver_Mobile', d.mobile); }
+    F.info('Truck_No', t && t.opStatus && t.opStatus !== 'On Road' ? '<span class="warnline">Status: ' + JNP.esc(t.opStatus) + '</span>' : '');
+  });
+  $('gpsBtn').onclick = async () => {
+    $('gpsInfo').textContent = 'Getting location…';
+    try { pos = await JNP.geo(); $('gpsInfo').innerHTML = '<span class="okline">✓ ' + pos.lat.toFixed(5) + ', ' + pos.lng.toFixed(5) + '</span>'; }
+    catch (e) { $('gpsInfo').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  };
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = F.check(); if (bad) throw new Error(bad);
+      const data = Object.assign(F.values(), pos ? { Latitude: pos.lat, Longitude: pos.lng } : {});
+      const out = await JNP.call('save', { module: 'OPS-06', clientReqId: clientReqId, data: data });
+      const r = out.record;
+      const msg = JNP.waText('🚨 BREAKDOWN · ' + r.Truck_No, [['Problem', r.Symptom], ['Location', r.Location], ['Map', pos ? 'https://maps.google.com/?q=' + pos.lat + ',' + pos.lng : ''],
+        ['Driver', r.Driver_Name ? r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '') : ''], ['Loaded', r.Loaded === 'Yes' ? 'Yes' + (r.LR_No ? ' · LR ' + r.LR_No : '') : r.Loaded],
+        ['Photo', (r.Report_Photo_URLs || '').split(' ')[0]], ['Ref', r.Record_ID]], 'R&M please acknowledge: ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID);
+      $('f').classList.add('hidden');
+      JNP.done($('doneCard'), { title: 'BREAKDOWN REPORTED', big: r.Truck_No, sub: r.Symptom + ' · ' + r.Location,
+        buttons: [{ label: '📲 Send to R&M on WhatsApp', onClick: () => JNP.whatsapp(msg, rmMobile) }, { label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }],
+        onNew: () => { F.reset(); pos = null; $('gpsInfo').textContent = ''; clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
+    });
+  });
+
+  // ---------- OPEN LIST + RESOLUTION
+  async function loadOpen() {
+    $('open').innerHTML = 'Loading…';
+    try {
+      rows = (await JNP.call('openBreakdowns', { includeRecent: true })).rows;
+      $('open').innerHTML = JNP.rowsHtml(rows, r => ({ t: JNP.esc(r.Truck_No + ' · ' + r.Symptom), s: JNP.esc(r.Location + ' · ' + (r.Back_On_Road_At ? 'back ' + JNP.dmy(r.Back_On_Road_At) : 'open ' + r.Open_Hrs + ' h') + ' · by ' + r.Created_By), tag: r.Breakdown_Status, cls: JNP.statusCls(r.Breakdown_Status), click: 1 }), 'No open breakdowns 🎉');
+      const want = JNP.param('id'); if (want && !cur) { const r = rows.find(x => x.Record_ID === want); if (r) show(r); }
+    } catch (e) { $('open').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('open').onclick = e => { const it = e.target.closest('.item'); if (it) show(rows[Number(it.dataset.i)]); };
+  $('reload').onclick = loadOpen;
+
+  let U = null;
+  async function show(r) {
+    cur = r; $('udone').classList.add('hidden');
+    const photos = (r.Report_Photo_URLs || '').split(/\s+/).filter(Boolean);
+    $('detail').innerHTML = '<h3 class="cardh"><span>' + JNP.esc(r.Truck_No) + '</span><span class="pill ' + JNP.statusCls(r.Breakdown_Status) + '">' + JNP.esc(r.Breakdown_Status) + '</span></h3>' +
+      '<div class="kv">' + [['Problem', r.Symptom], ['Location', r.Location], ['Driver', r.Driver_Name + (r.Driver_Mobile ? ' · ' + r.Driver_Mobile : '')], ['Loaded', r.Loaded + (r.LR_No ? ' · ' + r.LR_No : '')],
+        ['Reported', JNP.dmy(r.Created_At) + ' by ' + r.Created_By], ['Open for', r.Open_Hrs + ' h'], ['Fault', r.Fault_Code], ['Repair at', r.Repair_Location], ['Mechanic', r.Assigned_To || r.Vendor], ['Repair cost', JNP.inr(r.Repair_Cost)]]
+        .filter(x => x[1]).map(x => '<span>' + x[0] + '</span><b>' + JNP.esc(x[1]) + '</b>').join('') + '</div>' +
+      (r.Latitude ? '<a class="mini" target="_blank" href="https://maps.google.com/?q=' + r.Latitude + ',' + r.Longitude + '">📍 Open map</a> ' : '') +
+      (r.Driver_Mobile ? '<a class="mini" href="tel:' + JNP.esc(r.Driver_Mobile) + '">📞 Call driver</a> ' : '') +
+      (JNP.can('RM-03', 'E') ? '<a class="mini orange" href="../truck-expense/?truck=' + encodeURIComponent(r.Truck_No) + '&bd=' + encodeURIComponent(r.Record_ID) + '">💸 Raise expense</a>' : '') +
+      (photos.length ? '<div class="thumbs">' + photos.map(u => '<a href="' + JNP.esc(u) + '" target="_blank"><img src="' + JNP.esc(JNP.driveThumb(u)) + '"></a>').join('') + '</div>' : '') +
+      '<div class="grouph">Timeline</div><div id="log" class="list muted">Loading…</div>';
+    $('detail').classList.remove('hidden');
+    $('detail').scrollIntoView({ behavior: 'smooth' });
+    JNP.call('breakdownLog', { id: r.Record_ID }).then(o => $('log').innerHTML = JNP.rowsHtml(o.rows, x => ({ t: JNP.esc(x.To_Status), s: JNP.esc(JNP.dmy(x.At) + ' · ' + x.By + (x.Note ? ' · ' + x.Note : '')) }), '—')).catch(() => { });
+    const next = FLOW.slice(FLOW.indexOf(r.Breakdown_Status) + 1);
+    if (!canFix || !next.length) { $('uf').classList.add('hidden'); return; }
+    U = JNP.form($('ufields'), [
+      { k: 'Breakdown_Status', label: 'New status', type: 'select', options: next, req: true, value: next[0] },
+      { k: 'Assigned_To', label: 'Mechanic / person sent', value: r.Assigned_To || '', show: v => /Mechanic|Under/.test(v.Breakdown_Status) },
+      { k: 'Repair_Location', label: 'Repair location', type: 'select', list: 'Repair_Location', value: r.Repair_Location || '', show: v => /Mechanic|Under|Resolved/.test(v.Breakdown_Status) },
+      { k: 'Vendor', label: 'Garage / vendor', type: 'vendor', value: r.Vendor || '', show: v => /Mechanic|Under|Resolved/.test(v.Breakdown_Status) },
+      { k: 'Fault_Code', label: 'Actual fault', hi: 'असली खराबी', type: 'fault', allowNew: false, value: r.Fault_Code || '', req: v => /Resolved/.test(v.Breakdown_Status), show: v => /Under|Resolved|Closed/.test(v.Breakdown_Status) },
+      { k: 'Resolution_Note', label: 'What was done', type: 'textarea', show: v => /Resolved|Closed/.test(v.Breakdown_Status) },
+      { k: 'Resolution_Photo_URLs', label: 'Photos after repair', type: 'photo', multiple: true, show: v => /Resolved/.test(v.Breakdown_Status) },
+      { k: 'note', label: 'Note for the timeline', ph: 'optional' },
+    ], { module: 'RM-01' });
+    $('uf').classList.remove('hidden');
+  }
+  $('uf').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('ubtn'), $('uerr'), async () => {
+      const bad = U.check(); if (bad) throw new Error(bad);
+      const out = await JNP.call('bdUpdate', { id: cur.Record_ID, data: U.values() });
+      const r = out.record;
+      const msg = out.backOnRoad
+        ? JNP.waText('✅ BACK ON ROAD · ' + r.Truck_No, [['Problem', r.Symptom], ['Fault', r.Fault_Code], ['Work done', r.Resolution_Note], ['Repaired at', r.Repair_Location], ['Garage', r.Vendor],
+            ['Downtime', r.Downtime_Hrs + ' h'], ['Repeat fault', r.Repeat_Flag === 'Yes' ? '⚠️ YES (within ' + (JNP.M().settings.Repeat_Fault_Window_Days || 15) + ' days)' : ''], ['Ref', r.Record_ID]])
+        : JNP.waText('BREAKDOWN UPDATE · ' + r.Truck_No, [['Status', r.Breakdown_Status], ['Problem', r.Symptom], ['Mechanic', r.Assigned_To], ['Repair at', r.Repair_Location], ['Note', U.val('note')], ['Ref', r.Record_ID]]);
+      $('uf').classList.add('hidden');
+      JNP.done($('udone'), { title: out.backOnRoad ? 'BACK ON ROAD' : 'STATUS UPDATED', big: r.Truck_No, sub: r.Breakdown_Status + (r.Downtime_Hrs ? ' · downtime ' + r.Downtime_Hrs + ' h' : ''),
+        buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }] });
+      cur = null; loadOpen();
+    });
+  });
+
+  const tabsList = (canReport ? [{ id: 'report', label: '🚨 Report' }] : []).concat([{ id: 'resolve', label: '🛠️ Open breakdowns' }]);
+  JNP.tabs($('tabs'), tabsList, t => {
+    $('repView').classList.toggle('hidden', t !== 'report'); $('openView').classList.toggle('hidden', t !== 'resolve'); if (t === 'resolve') loadOpen();
+  }, JNP.param('tab'));
+})();
+</script>
+</body>
+</html>

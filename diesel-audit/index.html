@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Diesel Audit · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <h3 class="cardh"><span>Diesel audit · डीजल ऑडिट</span></h3>
+      <div class="row2"><div class="field"><label>Month</label><input id="month" class="input" type="month"></div><div class="field"><label>&nbsp;</label><button class="btn" id="go" type="button">Load</button></div></div>
+      <div class="hint">Each truck is compared with its <b>own</b> average km/litre of the previous 3 months.</div>
+      <div class="nums" id="nums" style="margin-top:10px"></div>
+    </div>
+    <div class="card list"><div id="rows" class="muted">Loading…</div></div>
+    <form id="f" class="card hidden" autocomplete="off" novalidate>
+      <h3 class="cardh"><span id="fTitle"></span></h3>
+      <div class="kv" id="fKV"></div>
+      <div id="fields"></div>
+      <div id="err" class="err hidden"></div>
+      <button id="saveBtn" class="btn orange" type="submit">Save audit</button>
+    </form>
+    <div id="doneCard" class="card hidden"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const CODE = 'FIN-04';
+  JNP.header($('hdr'), 'Diesel Audit', 'डीजल ऑडिट');
+  const ctx = await JNP.requireModule(CODE);
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  let rows = [], cur = null;
+  $('month').value = JNP.monthISO();
+  async function load() {
+    $('rows').innerHTML = 'Loading…'; $('f').classList.add('hidden');
+    try {
+      const out = await JNP.call('dieselAuditPrepare', { month: $('month').value });
+      rows = out.rows.sort((a, b) => (b.Variance_Ltr || -1e9) - (a.Variance_Ltr || -1e9));
+      const chk = rows.filter(r => r.Flag === 'Check'), lost = chk.reduce((s, r) => s + (Number(r.Variance_Value) || 0), 0);
+      $('nums').innerHTML = '<div class="num"><b>' + rows.length + '</b><span>Trucks</span></div><div class="num bad"><b>' + chk.length + '</b><span>To check</span></div><div class="num warn"><b>' + JNP.inr(lost) + '</b><span>Excess diesel value</span></div>';
+      $('rows').innerHTML = JNP.rowsHtml(rows, r => ({ t: JNP.esc(r.Truck_No) + ' · ' + (r.Actual_KMPL !== '' ? r.Actual_KMPL + ' km/L' : '—') + (r.Standard_KMPL ? ' <small style="display:inline">(own avg ' + r.Standard_KMPL + ')</small>' : ''),
+        s: JNP.esc([r.Trips + ' trips', r.KM_Run + ' km', r.Diesel_Ltr + ' L', r.Variance_Ltr !== '' ? (r.Variance_Ltr > 0 ? '+' : '') + r.Variance_Ltr + ' L (' + JNP.inr(r.Variance_Value) + ')' : '', r.Main_Driver].filter(Boolean).join(' · ')),
+        tag: r.Audited ? 'Audited' : r.Flag, cls: r.Audited ? 'ok' : r.Flag === 'Check' ? 'bad' : r.Flag === 'OK' ? 'ok' : '', click: ctx.can('E') && !r.Audited }), 'No loader trips in this month.');
+    } catch (e) { $('rows').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('go').onclick = load; $('month').onchange = load;
+  let F = null;
+  $('rows').onclick = e => {
+    const it = e.target.closest('.item.tap'); if (!it) return; cur = rows[Number(it.dataset.i)];
+    $('fTitle').textContent = cur.Truck_No + ' · ' + cur.Month;
+    $('fKV').innerHTML = [['KM run', cur.KM_Run], ['Diesel', cur.Diesel_Ltr + ' L'], ['Actual', cur.Actual_KMPL + ' km/L'], ['Own average', cur.Standard_KMPL || 'no history'], ['Expected', cur.Expected_Ltr ? cur.Expected_Ltr + ' L' : '—'], ['Excess', cur.Variance_Ltr !== '' ? cur.Variance_Ltr + ' L · ' + JNP.inr(cur.Variance_Value) : '—'], ['Main driver', cur.Main_Driver]]
+      .map(x => '<span>' + x[0] + '</span><b>' + JNP.esc(x[1]) + '</b>').join('');
+    F = JNP.form($('fields'), [
+      { k: 'Finding', label: 'Finding', type: 'textarea', req: true, ph: 'e.g. KM entries missing, possible pilferage, engine issue' },
+      { k: 'Action', label: 'Action', type: 'select', options: ['No action', 'Warn driver', 'Debit driver', 'Send truck to R&M', 'Correct KM entries'], req: true },
+      { k: 'Debit_Driver', label: 'Debit driver?', type: 'seg', options: ['No', 'Yes'], value: 'No' },
+      { k: 'Debit_Amount', label: 'Debit amount ₹', type: 'num', value: cur.Variance_Value > 0 ? cur.Variance_Value : '', req: v => v.Debit_Driver === 'Yes', show: v => v.Debit_Driver === 'Yes', hint: 'Goes to ' + (cur.Main_Driver || 'driver') + "'s ledger" },
+    ], { module: CODE });
+    $('f').classList.remove('hidden'); $('f').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = F.check(); if (bad) throw new Error(bad);
+      const out = await JNP.call('save', { module: CODE, clientReqId: JNP.uid(), data: Object.assign({ Month: cur.Month, Truck_No: cur.Truck_No }, F.values()) });
+      const r = out.record;
+      const msg = JNP.waText('⛽ DIESEL AUDIT · ' + r.Truck_No + ' · ' + r.Month, [['KM run', r.KM_Run], ['Diesel', r.Diesel_Ltr + ' L'], ['Actual', r.Actual_KMPL + ' km/L'], ['Own average', r.Standard_KMPL],
+        ['Excess', r.Variance_Ltr !== '' ? r.Variance_Ltr + ' L (' + JNP.inr(r.Variance_Value) + ')' : ''], ['Finding', r.Finding], ['Action', r.Action], ['Driver debit', r.Debit_Driver === 'Yes' ? JNP.inr(r.Debit_Amount) + ' · ' + cur.Main_Driver : '']]);
+      $('f').classList.add('hidden');
+      JNP.done($('doneCard'), { title: 'AUDIT SAVED', big: r.Truck_No, sub: r.Action + (r.Debit_Driver === 'Yes' ? ' · debit ' + JNP.inr(r.Debit_Amount) : ''), buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }] });
+      load();
+    });
+  });
+  load();
+})();
+</script>
+</body>
+</html>

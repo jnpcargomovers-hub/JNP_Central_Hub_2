@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Approvals · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+    <div class="card list"><div id="rows" class="muted">Loading…</div></div>
+    <div id="act" class="card hidden"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  JNP.header($('hdr'), 'Approvals', 'अप्रूवल · भुगतान');
+  const ctx = await JNP.requireModule('APR-01');
+  await JNP.masters().catch(() => { });
+  const u = JNP.session().user, c = JNP.session().counts || {};
+  const canPay = ['FIN-01', 'FIN-03', 'OPS-05', 'RM-03', 'RM-04'].some(m => JNP.can(m, 'P'));
+  let view = 'toMe', rows = [], cur = null;
+  const T = [{ id: 'toMe', label: '⏳ To approve' + (c.toApprove ? ' (' + c.toApprove + ')' : '') }];
+  if (canPay) T.push({ id: 'toPay', label: '💳 To pay' + (c.toPay ? ' (' + c.toPay + ')' : '') });
+  T.push({ id: 'mine', label: '📤 My requests' });
+  if (ctx.isL1) T.push({ id: 'all', label: '🗂️ All' });
+  T.push({ id: 'done', label: '✔️ Decided by me' });
+
+  async function load() { $('act').classList.add('hidden'); return loadList(); }
+  async function loadList() {
+    $('rows').innerHTML = 'Loading…';
+    try {
+      rows = (await JNP.call('inbox', { view: view, days: 45 })).rows;
+      $('rows').innerHTML = JNP.rowsHtml(rows, r => ({ t: JNP.inr(r.Amount) + ' · ' + JNP.esc(r.Module_Name), s: JNP.esc(r.Summary) + '<br>' + JNP.esc('By ' + r.Requested_By + ' · ' + JNP.dmy(r.Created_At) + ' · to ' + r.Approver_Requested + (r.Decided_By ? ' · ' + r.Status + ' by ' + r.Decided_By + (r.Response_Hrs !== '' ? ' in ' + r.Response_Hrs + ' h' : '') : '')),
+        tag: r.Status, cls: JNP.statusCls(r.Status), click: 1 }), view === 'toMe' ? 'Nothing waiting for you 🎉' : 'Nothing here.');
+    } catch (e) { $('rows').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('rows').onclick = e => { const it = e.target.closest('.item'); if (it) open(rows[Number(it.dataset.i)]); };
+
+  function open(r) {
+    cur = r;
+    const photos = String(r.Photo_URLs || '').split(/\s+/).filter(x => /^https?:/.test(x));
+    const mayDecide = r.Status === 'Pending' || r.Status === 'On Hold';
+    const iAmApprover = r.Approver_Mobile === u.mobile || ctx.isL1;
+    const mayPay = r.Status === 'Approved' && canPay && view !== 'mine';
+    $('act').innerHTML = '<h3 class="cardh"><span>' + JNP.esc(r.Module_Name) + '</span><span class="pill ' + JNP.statusCls(r.Status) + '">' + JNP.esc(r.Status) + '</span></h3>' +
+      '<div class="donebox" style="padding:0 0 8px"><div class="v">' + JNP.inr(r.Amount) + '</div><div class="s">' + JNP.esc(r.Summary) + '</div></div>' +
+      '<div class="kv">' + [['Requested by', r.Requested_By + ' · ' + JNP.dmy(r.Created_At)], ['Approval by', r.Approver_Requested], ['Record', r.Record_ID], ['Decision', r.Decided_By ? r.Status + ' by ' + r.Decided_By + ' · ' + JNP.dmy(r.Decided_At) : ''], ['Remark', r.Decision_Remark], ['Paid', r.Paid_By ? r.Paid_By + ' · ' + JNP.dmy(r.Paid_At) + ' · ' + (r.Payment_Ref || '') : '']]
+        .filter(x => x[1]).map(x => '<span>' + x[0] + '</span><b>' + JNP.esc(x[1]) + '</b>').join('') + '</div>' +
+      (photos.length ? '<div class="thumbs" style="margin-bottom:12px">' + photos.map(p => '<a href="' + JNP.esc(p) + '" target="_blank"><img src="' + JNP.esc(JNP.driveThumb(p)) + '"></a>').join('') + '</div>' : '') +
+      (mayDecide && iAmApprover && r.Requested_Mobile !== u.mobile || (mayDecide && ctx.isL1) ? '<div class="field"><label>Remark (required to reject)</label><input id="rmk" class="input"></div><div class="btnrow"><button class="btn green" id="ap" type="button">✓ Approve</button><button class="btn red" id="rj" type="button">✕ Reject</button></div><button class="btn light" id="hd" type="button" style="margin-top:10px">⏸ Hold</button>' : '') +
+      (mayPay ? '<div class="grouph">Mark paid</div><div class="row2"><div class="field"><label>Mode</label><select id="pm" class="input">' + (JNP.list('Payment_Mode').length ? JNP.list('Payment_Mode') : ['Cash', 'UPI', 'Bank Transfer']).map(m => '<option>' + JNP.esc(m) + '</option>').join('') + '</select></div><div class="field"><label>UTR / ref</label><input id="pr" class="input"></div></div><button class="btn orange" id="pay" type="button">💳 Mark paid</button>' : '') +
+      '<div id="aerr" class="err hidden" style="margin-top:10px"></div><div id="abtns"></div>';
+    $('act').classList.remove('hidden'); $('act').scrollIntoView({ behavior: 'smooth' });
+    const dec = d => async () => {
+      const b = $({ approve: 'ap', reject: 'rj', hold: 'hd' }[d]);
+      await JNP.submit(b, $('aerr'), async () => {
+        const out = await JNP.call('decide', { requestId: r.Request_ID, decision: d, remark: $('rmk').value });
+        const msg = JNP.waText((out.status === 'Approved' ? '✅ APPROVED' : out.status === 'Rejected' ? '❌ REJECTED' : '⏸ ON HOLD') + ' · ' + r.Module_Name, [['Amount', JNP.inr(r.Amount)], ['Request', r.Summary], ['Remark', $('rmk').value], ['Ref', r.Record_ID]],
+          out.status === 'Approved' && ['FIN-01', 'FIN-03', 'OPS-05', 'RM-03', 'RM-04'].indexOf(r.Module_Code) >= 0 ? 'Finance: please pay — ' + JNP.CONFIG.HUB + 'approvals/?view=toPay' : '');
+        showAfter('Request ' + out.status.toLowerCase(), msg, out.requester);
+      });
+    };
+    if ($('ap')) { $('ap').onclick = dec('approve'); $('rj').onclick = dec('reject'); $('hd').onclick = dec('hold'); }
+    if ($('pay')) $('pay').onclick = () => JNP.submit($('pay'), $('aerr'), async () => {
+      const out = await JNP.call('pay', { requestId: r.Request_ID, mode: $('pm').value, ref: $('pr').value });
+      const msg = JNP.waText('💳 PAID · ' + r.Module_Name, [['Amount', JNP.inr(r.Amount)], ['Mode', $('pm').value + ' ' + $('pr').value], ['Request', r.Summary], ['Ref', r.Record_ID]]);
+      showAfter('Marked paid', msg, out.requester);
+    });
+  }
+  function showAfter(title, msg, req) {
+    JNP.toast(title, 'ok');
+    JNP.done($('act'), { title: title.toUpperCase(), big: JNP.inr(cur.Amount), sub: cur.Module_Name + ' · ' + cur.Requested_By,
+      buttons: [{ label: '📲 Tell ' + JNP.esc(req ? req.name : 'requester') + ' on WhatsApp', onClick: () => JNP.whatsapp(msg, req && req.mobile) }, { label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }] });
+    JNP.refreshMe().catch(() => { });
+    loadList();
+  }
+  JNP.tabs($('tabs'), T, t => { view = t; load(); }, JNP.param('view'));
+})();
+</script>
+</body>
+</html>

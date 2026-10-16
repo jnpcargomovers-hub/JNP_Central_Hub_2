@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Driver Ledger · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+    <div id="balView" class="card list hidden"><h3 class="cardh"><span>Driver balances</span><button class="mini" id="rb" type="button">↻</button></h3><div class="hint" style="margin-bottom:6px">+ JNP owes driver · − driver owes JNP</div><div id="bal" class="muted">Loading…</div></div>
+    <div id="ledView" class="hidden">
+      <div class="card"><div class="field"><label>Driver</label><input id="ld" class="input" placeholder="Type driver name"></div><div class="nums" id="ledNums"></div></div>
+      <div class="card list"><div id="led" class="muted">Pick a driver.</div></div>
+    </div>
+    <div id="stlView" class="hidden">
+      <form id="f" class="card" autocomplete="off" novalidate>
+        <h3 class="cardh"><span>Monthly settlement · मासिक हिसाब</span></h3>
+        <div id="fields"></div>
+        <div id="err" class="err hidden"></div>
+        <button id="saveBtn" class="btn orange" type="submit">Send for approval</button>
+      </form>
+      <div id="doneCard" class="card hidden"></div>
+      <div class="card list"><h3 class="cardh"><span>Settlements</span></h3><div id="stl" class="muted">Loading…</div></div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const CODE = 'FIN-03';
+  JNP.header($('hdr'), 'Driver Ledger & Settlement', 'ड्राइवर खाता');
+  const ctx = await JNP.requireModule(CODE);
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  const sign = n => (n > 0 ? '+' : n < 0 ? '−' : '') + JNP.inr(Math.abs(n));
+
+  // ---------- balances
+  async function loadBal() {
+    $('bal').innerHTML = 'Loading…';
+    try {
+      const rows = (await JNP.call('balances')).rows;
+      $('bal').innerHTML = JNP.rowsHtml(rows, r => ({ t: JNP.esc(r.driver), s: 'Last entry ' + JNP.dmy(r.last), tag: sign(r.balance), cls: r.balance < 0 ? 'bad' : r.balance > 0 ? 'ok' : '', click: 1 }), 'No ledger entries yet.');
+      $('bal').onclick = e => { const it = e.target.closest('.item'); if (!it) return; $('ld').value = rows[Number(it.dataset.i)].driver; sel('ledger'); loadLed(); };
+    } catch (e) { $('bal').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('rb').onclick = loadBal;
+
+  // ---------- ledger of one driver
+  JNP.picker($('ld'), () => JNP.M().drivers.map(d => ({ label: d.name, alt: d.alt, sub: d.truck })), { onPick: () => loadLed() });
+  $('ld').addEventListener('change', loadLed);
+  async function loadLed() {
+    const d = $('ld').value.trim(); if (!d) return; $('led').innerHTML = 'Loading…';
+    try {
+      const out = await JNP.call('ledger', { driver: d });
+      const sum = t => out.rows.filter(r => t.indexOf(r.Entry_Type) >= 0).reduce((s, r) => s + Math.abs(Number(r.Amount) || 0), 0);
+      $('ledNums').innerHTML = '<div class="num ' + (out.balance < 0 ? 'bad' : 'ok') + '"><b>' + sign(out.balance) + '</b><span>Balance</span></div><div class="num warn"><b>' + JNP.inr(sum(['Trip Advance', 'Advance Paid'])) + '</b><span>Advances</span></div><div class="num bad"><b>' + JNP.inr(sum(['Debit-Damage', 'Debit-Missing', 'Debit-Diesel', 'Debit-Shortage'])) + '</b><span>Debits</span></div>';
+      $('led').innerHTML = JNP.rowsHtml(out.rows, r => ({ t: JNP.esc(r.Entry_Type) + ' · ' + sign(Number(r.Amount)), s: JNP.esc([JNP.dmy(r.Date), r.Truck_No, r.Remark, r.Source_Record_ID].filter(Boolean).join(' · ')), tag: 'Bal ' + sign(r.Balance), cls: r.Balance < 0 ? 'bad' : '' }), 'No entries for ' + d + '.');
+    } catch (e) { $('led').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+
+  // ---------- settlement
+  let calc = null, clientReqId = JNP.uid();
+  const F = JNP.form($('fields'), [
+    { k: 'Driver_Name', label: 'Driver', type: 'driver', req: true, allowNew: false, half: true },
+    { k: 'Month', label: 'Month', type: 'month', req: true, value: () => JNP.monthISO(), half: true },
+    { k: 'Days_Override', label: 'Days on duty (blank = auto)', type: 'num', noSend: true, half: true },
+    { k: 'Bhatta', label: 'Bhatta ₹', type: 'num', half: true },
+    { k: 'Incentive', label: 'Incentive ₹', type: 'num' },
+    { k: 'calc', type: 'html' },
+    { k: '_net', type: 'num', label: 'Net', noSend: true, show: () => false },
+    { k: 'Approver_Requested', label: 'Whose approval?', type: 'approver', amountKey: '_net', req: true },
+    { k: 'Remark', label: 'Remark' },
+  ], { module: CODE });
+  let tmr;
+  F.on(k => { if (['Driver_Name', 'Month', 'Days_Override', 'Bhatta', 'Incentive'].indexOf(k) >= 0) { clearTimeout(tmr); tmr = setTimeout(preview, 500); } });
+  async function preview() {
+    const v = F.all(); if (!v.Driver_Name || !v.Month) return;
+    try {
+      calc = await JNP.call('settlementPreview', { driver: v.Driver_Name, month: v.Month, days: v.Days_Override });
+      const net = Math.round(calc.earned + (Number(v.Bhatta) || 0) + (Number(v.Incentive) || 0) - calc.advances - calc.tripAdvances - calc.debits);
+      F.F.calc.set(!calc.salary ? '<div class="err">Monthly_Salary not set for this driver in Driver_Master</div>' :
+        '<div class="kv">' + [['Days on duty', calc.days], ['Salary / month', JNP.inr(calc.salary)], ['Earned', JNP.inr(calc.earned)], ['+ Bhatta / incentive', JNP.inr((Number(v.Bhatta) || 0) + (Number(v.Incentive) || 0))],
+          ['− Advances', JNP.inr(calc.advances)], ['− Trip advances', JNP.inr(calc.tripAdvances)], ['− Debits', JNP.inr(calc.debits)]].map(x => '<span>' + x[0] + '</span><b>' + x[1] + '</b>').join('') + '</div>' +
+        '<div class="nums" style="grid-template-columns:1fr"><div class="num ' + (net < 0 ? 'bad' : 'ok') + '"><b>' + JNP.inr(net) + '</b><span>Net payable</span></div></div>');
+      F.setFire('_net', net);
+    } catch (e) { F.F.calc.set('<div class="err">' + JNP.esc(e.message) + '</div>'); }
+  }
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = F.check(); if (bad) throw new Error(bad);
+      const data = Object.assign(F.values(), { Days_Override: F.val('Days_Override') });
+      const out = await JNP.call('save', { module: CODE, clientReqId: clientReqId, data: data });
+      const r = out.record;
+      const msg = JNP.waText('📒 SALARY SETTLEMENT · ' + r.Driver_Name + ' · ' + r.Month, [['Days on duty', r.Days_On_Duty], ['Salary earned', JNP.inr(r.Salary_Earned)], ['Bhatta', JNP.inr(r.Bhatta)], ['Incentive', JNP.inr(r.Incentive)],
+        ['Advances', JNP.inr(r.Advances)], ['Trip advances', JNP.inr(r.Trip_Advances)], ['Debits', JNP.inr(r.Debits)], ['NET PAYABLE', JNP.inr(r.Net_Payable)], ['Approval by', r.Approver_Requested], ['Ref', r.Record_ID]]);
+      $('f').classList.add('hidden');
+      const d = JNP.findDriver(r.Driver_Name);
+      JNP.done($('doneCard'), { title: 'SENT FOR APPROVAL', big: JNP.inr(r.Net_Payable), sub: r.Driver_Name + ' · ' + r.Month,
+        buttons: JNP.approvalButtons(out, msg).concat([{ label: '📲 Send statement to driver', cls: 'light', onClick: () => JNP.whatsapp(msg, d && d.mobile) }]),
+        onNew: () => { F.reset(); F.F.calc.set(''); clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
+      loadStl();
+    });
+  });
+  async function loadStl() {
+    try {
+      const out = await JNP.call('list', { module: CODE, days: 120, limit: 100 });
+      $('stl').innerHTML = JNP.rowsHtml(out.rows, r => ({ t: JNP.esc(r.Driver_Name + ' · ' + r.Month), s: JNP.esc('Net ' + JNP.inr(r.Net_Payable) + ' · ' + r.Days_On_Duty + ' days' + (r.Paid_At ? ' · paid ' + JNP.dmy(r.Paid_At) : '')), tag: r.Status, cls: JNP.statusCls(r.Status) }), 'No settlements yet.');
+    } catch (e) { $('stl').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+
+  const sel = JNP.tabs($('tabs'), [{ id: 'bal', label: '⚖️ Balances' }, { id: 'ledger', label: '📒 Ledger' }].concat(ctx.can('E') ? [{ id: 'stl', label: '🧾 Settlement' }] : []), t => {
+    $('balView').classList.toggle('hidden', t !== 'bal'); $('ledView').classList.toggle('hidden', t !== 'ledger'); $('stlView').classList.toggle('hidden', t !== 'stl');
+    if (t === 'bal') loadBal(); if (t === 'stl') loadStl();
+  });
+})();
+</script>
+</body>
+</html>
