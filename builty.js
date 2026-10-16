@@ -35,9 +35,22 @@
     return g;
   }
 
+  // Used only when a value is missing in DB_Master › Settings (copied from the printed JNP builty)
+  const DEFAULTS = {
+    Company_Name: 'J N P Cargo Movers Pvt Ltd',
+    Company_Address: 'Flat No. 202, Satyam Apartment, Canal Road, Gokulpeth, Nagpur – 440010',
+    Company_GSTIN: '27AAECJ9546P1ZP', Company_PAN: 'AAECJ9546P', Transport_Code: '2309435',
+    Plant_Loading_Mobile: '8180086299', Vehicle_Maintenance_Mobile: '7385944891',
+    Consignor_Name: 'UltraTech Cement Limited',
+    Consignor_Address: 'Unit – Dhule Cement Works, PO: Dhule, Tehsil: Sindkhede, Dist: Dhule, State: Maharashtra, State Code: 27',
+    Consignor_GSTIN: '27AAACL6442L1ZA', Consignor_PAN: 'AAACL6442L',
+    Builty_Terms: '3 (three) point delivery within 15 kms radius allowed',
+  };
+
   /** r = Loader record (from save or lookupLR). st = masters.settings. Returns a PDF Blob. */
   async function make(r, st) {
-    st = st || {};
+    const s0 = st || {}; st = {};
+    Object.keys(DEFAULTS).concat(Object.keys(s0)).forEach(k => { const v = s0[k]; st[k] = v !== undefined && v !== null && String(v).trim() !== '' ? String(v).trim() : (DEFAULTS[k] || ''); });
     const { jsPDF } = w.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a5', orientation: 'portrait' });
     const W = 148, M = 7, IW = W - 2 * M;
