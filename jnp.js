@@ -9,7 +9,7 @@
 
   // ---- 1. CONFIG — paste your Apps Script Web App URL once, here only ------
   const CONFIG = {
-    API: 'https://script.google.com/macros/s/AKfycbx_C3-pacZYeA-Ki60UPxmEkh0VkJJ-e_oJzg8pkNQf5j0bd87obqqsMowq15LgYLw-Bg/exec',
+    API: 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE',
     HUB: 'https://jnpcargomovers-hub.github.io/Central_Hub/',
     LOGO: 'https://jnpcargomovers-hub.github.io/Central_Hub/logo.png',
     DASHBOARD: 'https://jnpcargomovers-hub.github.io/jnpcargomovers-hub/',
