@@ -153,6 +153,39 @@
     .fs { display: none; }
     @media (min-width: 821px) { .lanes { grid-template-columns: repeat(4, 1fr); } .kpis { grid-template-columns: repeat(4, 1fr); } }
     @media (max-width: 820px) { .kpis { grid-template-columns: 1fr 1fr; gap: 0; } .kpi .v { font-size: 26px; } .fleet-head .bigno { font-size: 38px; } }
+    .sizebox { position: relative; }
+    .sizebox button { border: 0; background: transparent; text-align: left; padding: 0; font: inherit; font-weight: 700; font-size: 15px; color: #022A5B; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sizepop { position: absolute; top: calc(100% + 6px); right: 0; left: 0; min-width: 190px; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 10px 30px rgba(2,42,91,.18); padding: 6px; z-index: 30; }
+    .sizepop label { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .sizepop label:hover { background: #F3F6FA; }
+    .sizepop input { width: 18px; height: 18px; accent-color: #022A5B; }
+    .sizepop .row { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--rule); margin-top: 4px; }
+    .sizepop .row button { flex: 1; border: 1px solid var(--rule); background: #fff; border-radius: 8px; padding: 7px; font-weight: 700; color: #022A5B; }
+    .bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: #fff; border-top: 1px solid var(--rule); display: flex; justify-content: center; padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+    .bnav button { flex: 1; max-width: 140px; border: 0; background: transparent; padding: 6px 2px 4px; display: flex; flex-direction: column; align-items: center; gap: 1px; color: #5D6877; font: 600 11.5px Barlow, sans-serif; cursor: pointer; border-radius: 10px; }
+    .bnav button i { font-style: normal; font-size: 20px; line-height: 1.1; }
+    .bnav button.on { color: #022A5B; background: #EEF3FA; font-weight: 800; }
+    body { padding-bottom: 86px; }
+    .sec h2 { display: flex; align-items: center; gap: 8px; }
+    .sec h2 .shr { margin-left: auto; border: 1px solid var(--rule); background: #fff; border-radius: 9px; padding: 5px 9px; font: 700 12.5px Barlow, sans-serif; color: #12804A; cursor: pointer; white-space: nowrap; }
+    .lane-h { user-select: none; } .lane-h .tog { font-size: 12px; color: #5D6877; margin-left: 6px; }
+    .lane.closed .chips2 { display: none; }
+    .lane .est { font-size: 11.5px; color: #5D6877; font-weight: 600; margin-left: 4px; }
+    .xbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    .xbar .sel { flex: 1 1 140px; }
+    .seg2 { display: inline-flex; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+    .seg2 button { border: 0; background: #fff; padding: 9px 12px; font: 700 13px Barlow, sans-serif; color: #4A5566; cursor: pointer; }
+    .seg2 button.on { background: #022A5B; color: #fff; }
+    .hb .lb.tap, .hb .tr.tap { cursor: pointer; } .hb .lb.tap:hover { color: #1565D8; text-decoration: underline; }
+    .prof-h { display: flex; align-items: center; gap: 10px; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; } .kv span { color: var(--muted); } .kv b { font-weight: 600; }
+    .kwrap .khead { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 8px; } .kwrap .khead b { font: 700 15px 'Barlow Condensed', sans-serif; letter-spacing: .3px; color: var(--navy); text-transform: uppercase; }
+    .kwrap .shr { border: 1px solid var(--rule); background: #fff; border-radius: 9px; padding: 5px 9px; font: 700 12.5px Barlow, sans-serif; color: #12804A; cursor: pointer; }
+    .cgrid3 { display: grid; gap: 16px; grid-template-columns: 1fr; } @media (min-width: 820px) { .cgrid3 { grid-template-columns: 1fr 1fr 1fr; } }
+    .btn2 { margin-top: 14px; width: 100%; border: 0; border-radius: 11px; padding: 12px; background: #EEF4FD; color: var(--blue); font: 700 14px Barlow, sans-serif; cursor: pointer; }
+    .prof-h .back { border: 1px solid var(--rule); background: #fff; border-radius: 9px; padding: 6px 10px; font-weight: 700; cursor: pointer; }
+    .prof-h b { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; color: #022A5B; }
+    .empty2 { padding: 22px 10px; text-align: center; color: #5D6877; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -165,15 +198,13 @@
       </div>
       <div class="fbar" style="margin-top:8px">
         <label class="sel"><span>Load</span><select id="fLoadSel"><option value="All">All</option><option value="BULK">Bulk</option><option value="BAG">Bag</option></select></label>
-        <label class="sel"><span>Size</span><select id="fSizeSel"><option value="All">All</option></select></label>
-      </div>
-      <div class="fbar" style="margin-top:8px">
-        <label class="sel view"><span>View</span><select id="viewSel"></select></label>
-        <button class="sharebtn" id="shareRep" type="button" title="Share report on WhatsApp">📲 Report</button>
+        <div class="sel sizebox" id="sizeBox"><span>Size</span><button type="button" id="sizeBtn">All sizes</button>
+          <div class="sizepop hidden" id="sizePop"></div></div>
       </div>
       <div class="muted2" id="rangeTxt" style="margin-top:6px"></div>
     </div>
     <div id="status" class="empty">Loading…</div>
+    <nav class="bnav" id="bnav"></nav>
     <div id="view"></div>
   </div>
 <script>
@@ -205,22 +236,32 @@
   // ---------- filters
   const today = new Date();
   $('to').value = iso(today); $('from').value = iso(new Date(today.getTime() - 29 * 864e5));
-  $('fSizeSel').innerHTML = '<option value="All">All sizes</option>' + CLASSES.map(c => '<option value="' + c + 'T">' + c + ' T</option>').join('');
-  let fLoad = 'All', fSize = 'All';
+  let fLoad = 'All', fSize = new Set();   // empty = all sizes
+  function sizeLabel() { return !fSize.size ? 'All sizes' : CLASSES.map(c => c + 'T').filter(c => fSize.has(c)).join(' + '); }
+  function drawSizePop() {
+    $('sizePop').innerHTML = CLASSES.map(c => '<label><input type="checkbox" value="' + c + 'T"' + (fSize.has(c + 'T') ? ' checked' : '') + '> ' + c + ' ton</label>').join('') +
+      '<div class="row"><button type="button" data-a="all">All sizes</button><button type="button" data-a="ok">Done</button></div>';
+  }
+  $('sizeBtn').onclick = e => { e.stopPropagation(); drawSizePop(); $('sizePop').classList.toggle('hidden'); };
+  $('sizePop').onclick = e => e.stopPropagation();
+  $('sizePop').onchange = e => { const v = e.target.value; e.target.checked ? fSize.add(v) : fSize.delete(v); $('sizeBtn').textContent = sizeLabel(); render(); };
+  $('sizePop').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.a === 'all') { fSize.clear(); drawSizePop(); $('sizeBtn').textContent = sizeLabel(); render(); } else $('sizePop').classList.add('hidden'); });
+  document.addEventListener('click', () => $('sizePop').classList.add('hidden'));
   let tmrLoad;
   const onDate = () => { clearTimeout(tmrLoad); tmrLoad = setTimeout(() => { if ($('from').value && $('to').value && !(RAW && RAW.from === $('from').value && RAW.to === $('to').value)) { if ($('from').value > $('to').value) { const x = $('from').value; $('from').value = $('to').value; $('to').value = x; } load(); } }, 400); };
   ['change', 'input', 'blur'].forEach(ev => { $('from').addEventListener(ev, onDate); $('to').addEventListener(ev, onDate); });
   $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
-  $('fSizeSel').onchange = () => { fSize = $('fSizeSel').value; render(); };
 
-  const TABS = [{ id: 'overview', label: '📊 Overview' }, { id: 'trips', label: '🚚 Trips & destinations' }, { id: 'trucks', label: '🛻 Trucks' }, { id: 'drivers', label: '🧑‍✈️ Drivers' },
-    { id: 'dest', label: '📍 Destination performance' }, { id: 'fleet', label: '🔧 Fleet health & off-road' }, { id: 'diesel', label: '⛽ Diesel' }];
+  const TABS = [{ id: 'overview', i: '📊', label: 'Overview' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }, { id: 'diesel', i: '⛽', label: 'Diesel' }];
   let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
-  $('viewSel').innerHTML = TABS.map(t => '<option value="' + t.id + '"' + (t.id === tab ? ' selected' : '') + '>' + t.label + '</option>').join('');
-  $('viewSel').onchange = () => { tab = $('viewSel').value; render(); window.scrollTo(0, 0); };
-  $('shareRep').onclick = () => { if (M) JNP.whatsapp(report()); };
+  if (!TABS.some(t => t.id === tab)) tab = 'overview';
+  const drawNav = () => { $('bnav').innerHTML = TABS.map(t => '<button type="button" data-t="' + t.id + '" class="' + (t.id === tab ? 'on' : '') + '"><i>' + t.i + '</i>' + t.label + '</button>').join(''); };
+  drawNav();
+  $('bnav').onclick = e => { const b = e.target.closest('button'); if (!b) return; if (tab === 'explore' && b.dataset.t === 'explore') prof = null; tab = b.dataset.t; drawNav(); render(); window.scrollTo(0, 0); };
+  const goTab = t => { tab = t; drawNav(); render(); window.scrollTo(0, 0); };
   const MONEY = () => RAW && RAW.access === 'full';
 
+  $('view').addEventListener('click', e => { const b = e.target.closest('.shr'); if (b) shareSection(b.dataset.s); });
   // ---------- data
   async function load() {
     $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
@@ -310,8 +351,8 @@
   }
 
   // ---------- filtering (load type + class)
-  const keepT = x => (fLoad === 'All' || x.load === fLoad) && (fSize === 'All' || x.cls === fSize);
-  const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (fSize === 'All' || c === fSize) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
+  const keepT = x => (fLoad === 'All' || x.load === fLoad) && (!fSize.size || fSize.has(x.cls));
+  const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (!fSize.size || fSize.has(c)) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
 
   function agg(list) {
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
@@ -319,7 +360,7 @@
       cap: sum(list, x => x.cap), km: sum(km, x => x.km), kmDiesel: sum(km, x => x.diesel), rot: avg(list.map(x => x.rot).filter(v => !isNaN(v))),
       tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length,
       onTime: (() => { const z = list.filter(x => !isNaN(x.tat) && x.targetTat); return z.length ? z.filter(x => x.tat <= x.targetTat).length / z.length : NaN; })(),
-      busy: sum(list, x => x.busy) / 24 };
+      busy: sum(list, x => x.busy) / 24, idle: avg(list.map(x => x.truckIdle).filter(v => !isNaN(v) && v >= 0 && v < 15 * 24)) };
   }
   const revPerL = a => a.diesel ? a.rev / a.diesel : NaN;
 
@@ -389,8 +430,9 @@
     items = items.filter(x => !isNaN(x.value) && x.value !== null).sort((a, b) => opt.asc ? a.value - b.value : b.value - a.value);
     if (!items.length) return '<div class="empty">No data for these filters</div>';
     const mx = Math.max(...items.map(x => Math.abs(x.value)), opt.ref || 0) || 1;
-    const row = x => '<div class="lb" title="' + E(x.label) + '">' + E(x.label) + (x.sub ? '<small>' + E(x.sub) + '</small>' : '') + '</div>' +
-      '<div class="tr" title="' + E(x.tip || (x.label + ': ' + (x.text || fmt(x.value, 1)))) + '"><div class="fl" style="width:' + (100 * Math.abs(x.value) / mx).toFixed(1) + '%;background:' + (x.color || 'var(--s1)') + '"></div>' +
+    const ck = x => opt.click ? ' tap" data-k="' + E(x.key !== undefined ? x.key : x.label) : '';
+    const row = x => '<div class="lb' + ck(x) + '" title="' + E(x.label) + '">' + E(x.label) + (x.sub ? '<small>' + E(x.sub) + '</small>' : '') + '</div>' +
+      '<div class="tr' + ck(x) + '" title="' + E(x.tip || (x.label + ': ' + (x.text || fmt(x.value, 1)))) + '"><div class="fl" style="width:' + (100 * Math.abs(x.value) / mx).toFixed(1) + '%;background:' + (x.color || 'var(--s1)') + '"></div>' +
       (opt.ref ? '<div class="ref" style="left:' + (100 * opt.ref / mx).toFixed(1) + '%" title="' + E(opt.refLabel || '') + '"></div>' : '') + '</div><div class="vl">' + (x.text || fmt(x.value, 1)) + '</div>';
     const first = items.slice(0, top), rest = items.slice(top);
     return (opt.ref ? '<div class="muted2" style="margin-bottom:6px">▏ ' + E(opt.refLabel || '') + '</div>' : '') + '<div class="hb">' + first.map(row).join('') + '</div>' +
@@ -404,7 +446,28 @@
   }
   const tv = (label, html) => '<details class="tv"' + (innerWidth >= 820 ? ' open' : '') + '><summary>' + label + '</summary>' + html + '</details>';
   const kpi = (l, v, s, color) => '<div class="kpi" style="--k:' + (color || 'var(--blue)') + '"><div class="l">' + l + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>';
-  const sec = (title, sub, body) => '<div class="sec card"><h2>' + title + (sub ? ' <small>' + sub + '</small>' : '') + '</h2>' + body + '</div>';
+  // section card; pass share = function returning WhatsApp text to get a 📲 button for just this section
+  let SHARE = {}, SHN = 0;
+  const sec = (title, sub, body, share) => { let btn = ''; if (!share && /class="(hb|split)"/.test(body)) share = 'auto'; if (share) { const id = 'sh' + (++SHN); SHARE[id] = { title: title.replace(/<[^>]+>/g, ''), fn: share }; btn = '<button type="button" class="shr" data-s="' + id + '">📲 Share</button>'; }
+    return '<div class="sec card"><h2><span>' + title + (sub ? ' <small>' + sub + '</small>' : '') + '</span>' + btn + '</h2>' + body + '</div>'; };
+  const filtTxt = () => [fSize.size ? sizeLabel() : '', fLoad !== 'All' ? (fLoad === 'BULK' ? 'Bulk' : 'Bag') : ''].filter(Boolean).join(', ');
+  function shareSection(id) {
+    const x = SHARE[id]; if (!x) return; let body = typeof x.fn === 'function' ? x.fn() : x.fn;
+    if (x.fn === 'auto' || x.fn === 'kpis') body = domText(document.querySelector('.shr[data-s="' + id + '"]').closest(x.fn === 'kpis' ? '.kwrap' : '.sec'));
+    if (!body) { JNP.toast('Nothing to share yet', 'warn'); return; }
+    JNP.whatsapp('*JNP · ' + x.title + '*\n' + JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (filtTxt() ? ' · ' + filtTxt() : '') + '\n————————\n' + body + '\n— ' + JNP.session().user.name);
+  }
+  // read the numbers straight off a rendered section (ranked bars, split bars, KPI cards)
+  function domText(el) {
+    if (!el) return ''; const t = n => (n ? n.textContent : '').replace(/\s+/g, ' ').trim(), out = [];
+    el.querySelectorAll('.kpi').forEach(k => out.push('• ' + t(k.querySelector('.l')) + ': *' + t(k.querySelector('.v')) + '*' + (k.querySelector('.s') ? ' (' + t(k.querySelector('.s')) + ')' : '')));
+    el.querySelectorAll('.hb').forEach(hb => { const lb = hb.querySelectorAll('.lb'), vl = hb.querySelectorAll('.vl');
+      lb.forEach((l, i) => { const sm = l.querySelector('small'), name = t(l).replace(sm ? t(sm) : '', '').trim(); out.push((out.length + 1) + '. ' + name + (sm && t(sm) ? ' (' + t(sm) + ')' : '') + ' – ' + t(vl[i])); }); });
+    el.querySelectorAll('.splitlg span').forEach(x => out.push('• ' + t(x)));
+    return out.join('\n');
+  }
+  // items {label, sub, text} → WhatsApp lines
+  const lines = (items, n) => items.slice(0, n || 15).map((x, i) => (i + 1) + '. ' + x.label + (x.sub ? ' (' + x.sub + ')' : '') + ' – ' + x.text).join('\n');
   const clsTag = c => '<span class="flag" style="background:#EEF2F8;color:var(--navy)">' + c + '</span>';
   const h1 = v => isNaN(v) ? '—' : fmt(v, 1) + ' h';
   const dd = v => isNaN(v) ? '—' : fmt(v / 24, 1) + ' d';
@@ -414,7 +477,8 @@
     if (!M) return; $('status').classList.add('hidden');
     $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
     const T = M.trips.filter(keepT);
-    const fn = { overview, trips: tripsView, trucks, drivers, dest, fleet, diesel }[tab];
+    SHARE = {}; SHN = 0;
+    const fn = { overview, explore, trips: tripsView, fleet, diesel }[tab] || overview;
     $('view').innerHTML = fn(T);
   }
 
@@ -443,7 +507,7 @@
       '<b>' + r.c + '</b><div class="bars" style="width:' + (100 * (r.bulk + r.bag) / mx) + '%">' + (r.bulk ? '<div style="flex:' + r.bulk + ';background:var(--s1)" title="Bulk ' + E(txt(r.bulk)) + '"></div>' : '') + (r.bag ? '<div style="flex:' + r.bag + ';background:var(--s2)" title="Bag ' + E(txt(r.bag)) + '"></div>' : '') + '</div><span class="vl" style="font-weight:800;font-size:12.5px">' + txt(r.bulk + r.bag) + '</span>').join('') + '</div>';
   }
   const STATE = { off: { t: 'Off road', c: 'down' }, load: { t: 'Loaded · on the way', c: 'ld' }, ret: { t: 'Returning empty', c: 'rt' }, wait: { t: 'Waiting for load', c: 'wt' } };
-  let tkSel = '';
+  let tkSel = ''; const laneOpen = { off: true };
   function fleetStatus() {
     const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
     const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
@@ -452,7 +516,7 @@
     const lane = ([k, label, c]) => {
       const list = g(k).sort((p, q) => (q.cap || 0) - (p.cap || 0));
       const why = {}; if (k === 'off') list.forEach(t => { const w = shortWhy(M.status[t.no].why); why[w] = (why[w] || 0) + 1; });
-      return '<div class="lane" style="--c:' + c + '"><div class="lane-h"><b><i>' + list.length + '</i>' + label + '</b><span>' + fmt(tons(list)) + ' T</span></div>' +
+      return '<div class="lane' + (laneOpen[k] ? '' : ' closed') + '" style="--c:' + c + '"><div class="lane-h" data-l="' + k + '"><b><i>' + list.length + '</i>' + label + (k !== 'off' ? '<span class="est">estimate</span>' : '') + '</b><span>' + fmt(tons(list)) + ' T<span class="tog">' + (laneOpen[k] ? '▾' : '▸') + '</span></span></div>' +
         (k === 'off' && list.length ? '<div class="muted2" style="margin-top:2px">' + Object.keys(why).map(w => w + ' ' + why[w]).join(', ') + '</div>' : '') +
         '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + '</small></span>').join('') + '</div></div>';
     };
@@ -464,14 +528,113 @@
           : s0.last ? E('Loaded for ' + s0.last.dest + ' on ' + JNP.dmy(iso(s0.last.at)) + ', ' + fmt(s0.el, 0) + ' h ago (usual round trip ' + fmt(s0.R, 0) + ' h). Driver ' + s0.last.driver + (s0.del ? '. Unloaded.' : ''))
           : E(s0.note || 'No loading recorded recently')) + '</div>';
     }
-    setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); }; }, 0);
+    setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const h = e.target.closest('.lane-h'); if (h) { laneOpen[h.dataset.l] = !laneOpen[h.dataset.l]; render(); return; } const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); }; }, 0);
     const miss = fl.filter(t => !t.cap);
+    SHARE.fleetNow = { title: 'Fleet status', fn: fleetText }; 
     return '<div class="sec card"><div class="fleet-head"><div class="bigno">' + on.length + '<small>of ' + fl.length + ' trucks on road</small></div>' +
       '<div style="text-align:right"><div style="font-weight:700;color:#022A5B">' + fmt(tons(on)) + ' of ' + fmt(totT) + ' T on road (' + pct(totT ? tons(on) / totT : NaN) + ')</div><div class="muted2">' + (M.isNow ? 'Right now' : 'On ' + JNP.dmy(RAW.to)) + ' · tap a truck for details</div></div></div>' +
       '<div class="capbar" title="Capacity by state">' + LANES.map(([k, l, c]) => tons(g(k)) ? '<div style="flex:' + tons(g(k)) + ';background:' + c + '" title="' + l + ': ' + fmt(tons(g(k))) + ' T"></div>' : '').join('') + '</div>' +
       '<div class="lanes" id="lanes">' + LANES.map(lane).join('') + '</div>' + info +
       (miss.length ? '<div class="note">No capacity in Truck_Master for ' + miss.map(t => E(t.no)).join(', ') + ' — shown as “?” and counted as 0 T.</div>' : '') +
       '<div class="muted2" style="margin-top:10px">Loaded means loaded within half of that destination’s usual round trip (loading to next loading) and not yet unloaded.</div></div>';
+  }
+
+
+  // ================= EXPLORE: any measure × any split, tap a bar for a profile =================
+  const MET = {
+    trips: { l: 'Trips', f: g => g.trips, t: v => fmt(v), add: 1 },
+    mt: { l: 'MT carried', f: g => g.mt, t: v => fmt(v, 0) + ' MT', add: 1 },
+    rev: { l: 'Freight revenue', money: 1, f: g => g.rev, t: v => inr(v), add: 1 },
+    revTrip: { l: 'Revenue per trip', money: 1, f: g => g.trips ? g.rev / g.trips : NaN, t: v => inr(v) },
+    revMT: { l: 'Rate (₹ per MT)', money: 1, f: g => g.mt ? g.rev / g.mt : NaN, t: v => '₹' + fmt(v) },
+    rpl: { l: '₹ earned per litre diesel', money: 1, f: g => revPerL(g), t: v => '₹' + fmt(v, 1) },
+    diesel: { l: 'Diesel (litres)', f: g => g.diesel, t: v => fmt(v) + ' L', add: 1 },
+    km: { l: 'KM run', f: g => g.km, t: v => fmt(v) + ' km', add: 1 },
+    kmpl: { l: 'KM per litre', f: g => g.kmDiesel ? g.km / g.kmDiesel : NaN, t: v => fmt(v, 2) },
+    rot: { l: 'Rotation (loading to loading)', low: 1, f: g => g.rot / 24, t: v => fmt(v, 1) + ' d' },
+    tat: { l: 'Delivery time', low: 1, f: g => g.tat, t: v => fmt(v, 0) + ' h' },
+    idle: { l: 'Idle after unloading', low: 1, f: g => g.idle, t: v => fmt(v, 0) + ' h' },
+    onTime: { l: 'On-time delivery', f: g => g.onTime, t: pct },
+    fill: { l: 'Truck fill (MT ÷ capacity)', f: g => g.cap ? g.mt / g.cap : NaN, t: pct },
+    short: { l: 'Shortage', low: 1, f: g => g.short, t: v => fmt(v) + ' kg', add: 1 },
+  };
+  const wkOf = d => { const x = D(d); if (!x) return ''; const w = new Date(x.getTime() - ((x.getDay() + 6) % 7) * 864e5); return iso(w); };
+  const DIM = {
+    truck: { l: 'Truck', k: x => x.truck, sub: k => classOf((M.truckM[k] || {}).cap), prof: 1 },
+    driver: { l: 'Driver', k: x => x.driver, prof: 1 },
+    dest: { l: 'Destination', k: x => x.dest, prof: 1 },
+    party: { l: 'Party', k: x => x.consignee || '(no builty yet)', prof: 1 },
+    cls: { l: 'Truck size', k: x => x.cls, prof: 1 },
+    load: { l: 'Bulk / Bag', k: x => x.load === 'BULK' ? 'Bulk' : 'Bag', prof: 1 },
+    day: { l: 'Day', k: x => x.day, time: 1, lab: k => k.slice(8, 10) + '/' + k.slice(5, 7) },
+    week: { l: 'Week', k: x => wkOf(x.day), time: 1, lab: k => 'wk ' + k.slice(8, 10) + '/' + k.slice(5, 7) },
+    month: { l: 'Month', k: x => x.day.slice(0, 7), time: 1, lab: k => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(k.slice(5, 7)) - 1] + ' ' + k.slice(2, 4) },
+  };
+  let xMet = 'trips', xDim = 'truck', xLow = false, prof = null, profBack = null;
+  function groupBy(T, dim) { const m = {}; T.forEach(x => { const k = DIM[dim].k(x); (m[k] = m[k] || []).push(x); }); return m; }
+  function metItems(T, dim, met) {
+    const g = groupBy(T, dim), tot = MET[met].add ? MET[met].f(agg(T)) : NaN;
+    return Object.keys(g).map(k => { const a = agg(g[k]), v = MET[met].f(a);
+      return { key: k, label: DIM[dim].lab ? DIM[dim].lab(k) : k, value: v, text: isNaN(v) ? '—' : MET[met].t(v),
+        sub: [DIM[dim].sub ? DIM[dim].sub(k) : '', MET[met].add && tot ? pct(v / tot) : (met !== 'trips' ? a.trips + ' trips' : '')].filter(Boolean).join(' · ') }; }).filter(x => !isNaN(x.value));
+  }
+  function explore(T) {
+    if (prof) return profile(T, prof.dim, prof.key);
+    const mets = Object.keys(MET).filter(k => MONEY() || !MET[k].money), dims = Object.keys(DIM);
+    if (mets.indexOf(xMet) < 0) xMet = 'trips';
+    const items = metItems(T, xDim, xMet), d = DIM[xDim], m = MET[xMet];
+    const asc = m.low ? !xLow : xLow;   // "Best first" shows the good end of the scale
+    let chart;
+    if (!T.length) chart = '<div class="empty2">No trips in these dates and filters yet. As soon as loader entries come in, every split appears here.</div>';
+    else if (d.time) { const ks = items.map(x => x.key).sort(); chart = columns('cX', ks, [{ name: m.l, color: 'var(--s1)', values: ks.map(k => (items.find(x => x.key === k) || {}).value || 0) }], { label: d.lab, unit: '' }); }
+    else chart = hbar(items, { top: 15, asc: asc, click: d.prof, ref: m.add ? NaN : MET[xMet].f(agg(T)), refLabel: m.add ? '' : 'overall ' + (isNaN(MET[xMet].f(agg(T))) ? '—' : m.t(MET[xMet].f(agg(T)))) });
+    setTimeout(() => {
+      const ms = $('xMet'), ds = $('xDim'), og = $('xOrd'), box = $('xChart');
+      if (ms) ms.onchange = () => { xMet = ms.value; render(); };
+      if (ds) ds.onchange = () => { xDim = ds.value; render(); };
+      if (og) og.onclick = e => { const b = e.target.closest('button'); if (b) { xLow = b.dataset.v === 'low'; render(); } };
+      if (box) box.onclick = e => { const r = e.target.closest('.tap'); if (r && d.prof) { prof = { dim: xDim, key: r.dataset.k }; profBack = null; render(); window.scrollTo(0, 0); } };
+    }, 0);
+    const sorted = items.slice().sort((p, q) => asc ? p.value - q.value : q.value - p.value);
+    return sec('Explore', 'pick what to measure and how to split it',
+      '<div class="xbar"><label class="sel"><span>Measure</span><select id="xMet">' + mets.map(k => '<option value="' + k + '"' + (k === xMet ? ' selected' : '') + '>' + MET[k].l + '</option>').join('') + '</select></label>' +
+      '<label class="sel"><span>Split by</span><select id="xDim">' + dims.map(k => '<option value="' + k + '"' + (k === xDim ? ' selected' : '') + '>' + DIM[k].l + '</option>').join('') + '</select></label>' +
+      (d.time ? '' : '<div class="seg2" id="xOrd"><button type="button" data-v="best" class="' + (!xLow ? 'on' : '') + '">' + (m.low ? 'Lowest' : 'Highest') + ' first</button><button type="button" data-v="low" class="' + (xLow ? 'on' : '') + '">' + (m.low ? 'Highest' : 'Lowest') + ' first</button></div>') + '</div>' +
+      '<div id="xChart">' + chart + '</div>' + (d.prof && items.length ? '<div class="muted2" style="margin-top:8px">Tap a ' + d.l.toLowerCase() + ' to open its profile.</div>' : ''),
+      () => m.l + ' by ' + d.l.toLowerCase() + '\n' + (d.time ? items.sort((p, q) => p.key < q.key ? -1 : 1).map(x => x.label + ' – ' + x.text).join('\n') : lines(sorted, 15))) +
+      quickSplits(T);
+  }
+  // three ready-made splits under the explorer so the common questions are one glance away
+  function quickSplits(T) {
+    if (!T.length) return '';
+    const box = (dim, met, title) => { const it = metItems(T, dim, met).sort((p, q) => MET[met].low ? p.value - q.value : q.value - p.value);
+      return sec(title, MET[met].l.toLowerCase(), hbar(it, { top: 8, click: 1, asc: !!MET[met].low }) , () => lines(it, 10)); };
+    setTimeout(() => document.querySelectorAll('.qs').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { prof = { dim: el.dataset.d, key: r.dataset.k }; render(); window.scrollTo(0, 0); } }), 0);
+    return '<div class="cgrid">' + ['truck', 'driver', 'dest', 'party'].map(dm => '<div class="qs" data-d="' + dm + '">' + box(dm, 'trips', 'Trips by ' + DIM[dm].l.toLowerCase()) + '</div>').join('') + '</div>';
+  }
+  function profile(T, dim, key) {
+    const d = DIM[dim], tt = T.filter(x => d.k(x) === key), a = agg(tt), all = agg(T);
+    const vs = (met) => { const v = MET[met].f(a), o = MET[met].f(all); if (isNaN(v) || isNaN(o) || !o || MET[met].add) return ''; const better = MET[met].low ? v < o : v > o; return '<span style="color:' + (better ? 'var(--ok)' : 'var(--red)') + '">' + (better ? '▲' : '▼') + ' vs ' + MET[met].t(o) + ' overall</span>'; };
+    const k = (met, l) => (MET[met].money && !MONEY()) ? '' : kpi(l || MET[met].l, isNaN(MET[met].f(a)) ? '—' : MET[met].t(MET[met].f(a)), vs(met));
+    const dates = []; for (let x = new Date(M.from); x <= M.to; x = new Date(x.getTime() + 864e5)) dates.push(iso(x));
+    const other = { truck: ['dest', 'driver'], driver: ['dest', 'truck'], dest: ['truck', 'driver'], party: ['dest', 'truck'], cls: ['truck', 'dest'], load: ['dest', 'truck'] }[dim];
+    setTimeout(() => {
+      const bk = $('profBack'); if (bk) bk.onclick = () => { prof = profBack; profBack = null; render(); window.scrollTo(0, 0); };
+      document.querySelectorAll('.pq').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { profBack = prof; prof = { dim: el.dataset.d, key: r.dataset.k }; render(); window.scrollTo(0, 0); } });
+    }, 0);
+    let extra = '';
+    if (dim === 'truck') {
+      const t = M.truckM[key] || {}, s0 = M.status[key] || {}, offs = M.bds.filter(b => b.Truck_No === key);
+      extra = sec('Truck', '', '<div class="kv">' + [['Size', (t.cap || '?') + ' T ' + (t.cargo || '')], ['Now', s0.st === 'off' ? 'Off road – ' + s0.why + (s0.note ? ' (' + s0.note + ')' : '') : s0.st === 'load' ? 'Loaded, on the way (estimate)' : s0.st === 'ret' ? 'Returning (estimate)' : 'Waiting for load (estimate)'],
+        ['Off-road records', offs.length ? offs.map(b => (b.Off_Road_Type || 'Breakdown') + ' ' + JNP.dmy(iso(b.start || new Date())) + (b.open ? ' (open)' : '')).join(', ') : 'none in this period']].map(r => '<span>' + r[0] + '</span><b>' + E(r[1]) + '</b>').join('') + '</div>');
+    }
+    return '<div class="card prof-h"><button type="button" class="back" id="profBack">‹ Back</button><div><div class="muted2">' + d.l + '</div><b>' + E(d.lab ? d.lab(key) : key) + '</b></div></div>' +
+      '<div class="kpis">' + k('trips') + k('mt') + k('rev') + k('rpl') + k('rot') + k('tat') + k('idle') + k('kmpl') + k('fill') + k('short') + '</div>' +
+      sec('Trips per day', E(d.lab ? d.lab(key) : key), columns('cProf', dates, [{ name: 'Trips', color: 'var(--s1)', values: dates.map(x => tt.filter(y => y.day === x).length) }], { unit: 'trips', label: x => x.slice(8, 10) + '/' + x.slice(5, 7) }),
+        () => (d.l + ': ' + key) + '\nTrips ' + a.trips + ' · ' + fmt(a.mt, 0) + ' MT' + (MONEY() ? ' · ' + inr(a.rev) : '') + '\nRotation ' + dd(a.rot) + ' · delivery ' + h1(a.tat) + ' · idle ' + h1(a.idle) + (a.short ? '\nShortage ' + fmt(a.short) + ' kg' : '')) +
+      extra +
+      '<div class="cgrid">' + other.map(o => '<div class="pq" data-d="' + o + '">' + sec('By ' + DIM[o].l.toLowerCase(), 'trips', hbar(metItems(tt, o, 'trips'), { top: 8, click: 1 }), () => lines(metItems(tt, o, 'trips').sort((p, q) => q.value - p.value), 10)) + '</div>').join('') + '</div>' +
+      detailHtml('Trips', tt);
   }
 
   function overview(T) {
@@ -496,7 +659,13 @@
       drill = '<div class="drill">' + sec(d.title, 'split — tap the card again to close', '<div class="cgrid"><div>' + donut([{ label: 'Bulk', value: sum(bulk, d.f), color: 'var(--s1)', text: d.txt(sum(bulk, d.f)) }, { label: 'Bag', value: sum(bag, d.f), color: 'var(--s2)', text: d.txt(sum(bag, d.f)) }], d.centre) + '</div><div><div class="muted2" style="margin-bottom:6px">By truck size</div>' + stackByClass(T, d.f, d.txt) + '</div></div>') + '</div>';
     }
     setTimeout(() => { const k = $('kp'); if (k) k.onclick = e => { const c = e.target.closest('.kpi.tap'); if (!c) return; drillKey = drillKey === c.dataset.d ? '' : c.dataset.d; render(); }; }, 0);
-    return fleetStatus() + '<div class="kpis" id="kp">' +
+    const perf = T.length ? sec('Performance', 'top by trips · tap any name for its profile', '<div class="cgrid3">' + ['truck', 'driver', 'dest'].map(dm =>
+        '<div class="qs" data-d="' + dm + '"><div class="muted2" style="margin-bottom:6px;font-weight:700">' + DIM[dm].l + 's</div>' + hbar(metItems(T, dm, 'trips'), { top: 5, click: 1 }) + '</div>').join('') + '</div>' +
+        '<button type="button" class="btn2" id="goX">Open Explore – every measure, every split ›</button>') : '';
+    setTimeout(() => { const g = $('goX'); if (g) g.onclick = () => { tab = 'explore'; prof = null; drawNav(); render(); window.scrollTo(0, 0); };
+      document.querySelectorAll('#view .qs').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { tab = 'explore'; prof = { dim: el.dataset.d, key: r.dataset.k }; profBack = null; drawNav(); render(); window.scrollTo(0, 0); } }); }, 0);
+    SHARE.kp0 = { title: 'Headline numbers', fn: 'kpis' };
+    return fleetStatus() + '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
       card('trips', 'Trips', fmt(a.trips), activeTrucks + ' trucks · Bulk ' + bulk.length + ' / Bag ' + bag.length, 'var(--blue)') +
       card('mt', 'MT carried', fmt(a.mt, 0), a.est ? a.est + ' trips without builty' : 'from builty', 'var(--blue)') +
       (MONEY() ? card('rev', 'Freight revenue', inr(a.rev), 'Bulk ' + inr(sum(bulk, x => x.rev)) + ' · Bag ' + inr(sum(bag, x => x.rev)), 'var(--orange)') : '') +
@@ -510,7 +679,7 @@
       kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
       (MONEY() ? kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') : '') +
       kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
-      '</div>' +
+      '</div></div>' + perf +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
       '<div class="cgrid">' +
       sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) +
@@ -519,13 +688,14 @@
   }
 
   // WhatsApp report — same layout as the daily "vehicles not on road" message
-  function report() {
+  function fleetText() { return report(true); }
+  function report(fleetOnly) {
     const fl = M.fleet.filter(t => keepTruck(t.no)), T = M.trips.filter(keepT), a = agg(T), st = t => M.status[t.no] || {};
     const off = fl.filter(t => st(t).st === 'off'), on = fl.filter(t => st(t).st !== 'off');
     const n = k => fl.filter(t => st(t).st === k).length, tons = arr => sum(arr, t => t.cap);
     const L = [], short = no => String(no).slice(-4), d2 = d => d ? JNP.dmy(iso(d)).slice(0, 5) : '';
     L.push('*JNP FLEET REPORT · ' + JNP.dmy(iso(M.asOf)) + '*');
-    if (fSize !== 'All' || fLoad !== 'All') L.push('Filter: ' + [fSize !== 'All' ? fSize : '', fLoad !== 'All' ? fLoad : ''].filter(Boolean).join(' · '));
+    if (fSize.size || fLoad !== 'All') L.push('Filter: ' + [fSize.size ? sizeLabel() : '', fLoad !== 'All' ? fLoad : ''].filter(Boolean).join(' · '));
     L.push('————————');
     L.push('🚚 Fleet: ' + fl.length + ' trucks · ' + fmt(tons(fl)) + ' T');
     L.push('✅ On road: ' + on.length + '  (Loaded ' + n('load') + ' · Returning ' + n('ret') + ' · Waiting ' + n('wait') + ')');
@@ -541,6 +711,7 @@
       const nc = off.filter(t => !t.cap); if (nc.length) L.push('(capacity missing in Truck_Master: ' + nc.map(t => short(t.no)).join(', ') + ')');
       L.push(''); L.push('Total down: ' + off.length + ' trucks · Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' T · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ' T');
     }
+    if (fleetOnly) return L.slice(1).filter(x => x !== '————————' || true).join('\n').replace(/^————————\n/, '');
     L.push('————————');
     L.push('📦 Trips ' + JNP.dmy(RAW.from).slice(0, 5) + ' to ' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + a.trips + ' · ' + fmt(a.mt, 0) + ' MT');
     L.push('  Bulk ' + T.filter(x => x.load === 'BULK').length + ' · Bag ' + T.filter(x => x.load === 'BAG').length);
