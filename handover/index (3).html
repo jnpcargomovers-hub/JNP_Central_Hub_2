@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Vehicle Handover · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <form id="f" autocomplete="off" novalidate>
+      <div class="card">
+        <h3 class="cardh"><span>Vehicle Handover · गाड़ी हैंडओवर</span></h3>
+        <div id="top"></div>
+        <div id="issueInfo"></div>
+      </div>
+      <div class="card" id="chkCard">
+        <h3 class="cardh"><span>Checklist · चेकलिस्ट</span><button class="mini" type="button" id="allOk">All OK</button></h3>
+        <div class="hint" id="chkHint">Mark every item. Take a photo of anything damaged.</div>
+        <div id="chk"></div>
+      </div>
+      <div class="card">
+        <h3 class="cardh"><span>Photos · फोटो</span></h3>
+        <div id="photos"></div>
+      </div>
+      <div class="card hidden" id="debitCard">
+        <h3 class="cardh"><span>Driver debit · ड्राइवर से वसूली</span></h3>
+        <div class="nums" id="cmpNums"></div>
+        <div id="debit"></div>
+      </div>
+      <div class="card">
+        <div id="err" class="err hidden"></div>
+        <button id="saveBtn" class="btn orange" type="submit">Save Handover · सेव करें</button>
+      </div>
+    </form>
+    <div id="doneCard" class="card hidden"></div>
+    <div class="card list">
+      <h3 class="cardh"><span>Recent handovers</span><button class="mini" id="reload" type="button">↻</button></h3>
+      <div id="recent" class="muted">Loading…</div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  JNP.header($('hdr'), 'Vehicle Handover', 'ISSUE / RETURN · गाड़ी देना / वापस लेना');
+  const ctx = await JNP.requireModule('OPS-04');
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  if (!ctx.can('E')) $('f').classList.add('hidden');
+  const L = n => JNP.list(n);
+  let issue = null, issueItems = {}, clientReqId = JNP.uid(), debitTouched = false;
+
+  const T = JNP.form($('top'), [
+    { k: 'Handover_Type', label: 'Type', type: 'seg', options: [{ v: 'ISSUE', t: '➡️ ISSUE to driver' }, { v: 'RETURN', t: '⬅️ RETURN from driver' }], req: true, value: 'ISSUE' },
+    { k: 'Truck_No', label: 'Truck Number', hi: 'गाड़ी नंबर', type: 'truck', req: true, ph: 'e.g. MH40CQ8307' },
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver', req: true },
+    { k: 'Driver_Mobile', label: 'Driver mobile', type: 'num', ph: '10 digits', half: true },
+    { k: 'Odometer_KM', label: 'Odometer KM', type: 'num', req: true, half: true },
+    { k: 'Reason', label: 'Reason', hi: 'कारण', type: 'select', list: 'Handover_Reason', req: true },
+    { k: 'Leave_From', label: 'Leave from', type: 'date', half: true, show: v => /leave|absent/i.test(v.Reason) },
+    { k: 'Leave_To', label: 'Leave to', type: 'date', half: true, show: v => /leave|absent/i.test(v.Reason) },
+    { k: 'Location', label: 'Location', hi: 'जगह', ph: 'e.g. Dhule yard' },
+    { k: 'Diesel_Gauge', label: 'Diesel gauge', hi: 'डीजल', type: 'seg', options: ['Full', '3/4', '1/2', '1/4', 'Reserve'], req: true },
+    { k: 'Diesel_Est_Ltr', label: 'Diesel (approx. litres)', type: 'num', half: true },
+    { k: 'Working_Condition', label: 'Condition', type: 'select', list: 'Working_Condition', req: true, half: true },
+    { k: 'Issues_Noted', label: 'Issues noticed', hi: 'समस्या', type: 'textarea', ph: 'Anything not working, noises, leaks…' },
+  ], { module: 'OPS-04' });
+
+  const P = JNP.form($('photos'), [
+    { k: 'Driver_Photo_URL', label: 'Driver photo (with truck)', hi: 'ड्राइवर फोटो', type: 'photo', req: true },
+    { k: 'Truck_Photo_URLs', label: 'Truck photos (4 sides)', type: 'photo', multiple: true },
+    { k: 'Odometer_Photo_URL', label: 'Odometer', type: 'photo' },
+    { k: 'Fuel_Gauge_Photo_URL', label: 'Fuel gauge', type: 'photo' },
+    { k: 'Signed_Sheet_Photo_URL', label: 'Signed handover sheet', type: 'photo' },
+  ], { module: 'OPS-04' });
+
+  const D = JNP.form($('debit'), [
+    { k: 'Proposed_Debit', label: 'Debit amount (₹)', type: 'num', hint: 'Auto from checklist rates — you can change it' },
+    { k: 'Debit_Reason', label: 'Debit reason', type: 'textarea' },
+    { k: 'Approver_Requested', label: 'Approval by', hi: 'अप्रूवल', type: 'approver', module: 'OPS-04', amountKey: 'Proposed_Debit', req: v => Number(v.Proposed_Debit) > 0, show: v => Number(v.Proposed_Debit) > 0 },
+  ], { module: 'OPS-04' });
+  D.input('Proposed_Debit').addEventListener('input', () => debitTouched = true);
+
+  // ---------- checklist
+  const CL = JNP.M().checklist || [];
+  const state = {};   // code|item → {Status, Photo_URL}
+  const keyOf = c => c.code + '|' + c.item;
+  function opts(c) { return c.type === 'Tyre' ? (L('Tyre_Condition').length ? L('Tyre_Condition') : ['Good', 'Worn', 'Damaged', 'Missing']) : (L('Item_Status').length ? L('Item_Status') : ['OK', 'Damaged', 'Missing', 'N.A.']); }
+  const RANK = { OK: 0, Good: 0, 'N.A.': 0, Worn: 1, Damaged: 2, Missing: 3 };
+  function drawChecklist() {
+    let g = '', h = '';
+    CL.forEach((c, i) => {
+      if (c.group !== g) { g = c.group; h += '<div class="grouph">' + JNP.esc(g) + '</div>'; }
+      const k = keyOf(c); state[k] = state[k] || { Status: opts(c)[0], Photo_URL: '' };
+      h += '<div class="chk" id="ck' + i + '"><div class="nm"><span>' + JNP.esc(c.item) + '</span><small>' + JNP.esc(c.hindi || '') + '</small></div><div class="was" id="was' + i + '"></div>' +
+        '<div class="seg small" data-i="' + i + '">' + opts(c).map(o => '<button type="button" class="' + o.replace(/\W/g, '') + '" data-v="' + JNP.esc(o) + '">' + JNP.esc(o) + '</button>').join('') + '</div>' +
+        '<div class="hidden" id="cp' + i + '" style="margin-top:6px"><label class="photo-add" style="padding:6px 10px;font-size:13px"><input type="file" accept="image/*" capture="environment" hidden data-i="' + i + '">📷 Photo</label> <span id="cpi' + i + '" class="hint"></span></div></div>';
+    });
+    $('chk').innerHTML = h || '<div class="muted">Checklist is empty — HO adds items in DB_Master › Handover_Checklist.</div>';
+    paint();
+  }
+  function paint() {
+    const ret = T.val('Handover_Type') === 'RETURN';
+    let debit = 0; const dmg = [], miss = [];
+    CL.forEach((c, i) => {
+      const st = state[keyOf(c)], seg = document.querySelector('.seg[data-i="' + i + '"]');
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === st.Status));
+      const before = issueItems[keyOf(c)];
+      $('was' + i).innerHTML = ret && before ? 'At issue: <b>' + JNP.esc(before) + '</b>' : '';
+      const worse = ret && before !== undefined && (RANK[st.Status] || 0) > (RANK[before] || 0);
+      $('ck' + i).classList.toggle('changed', worse);
+      if (worse) { if (st.Status === 'Missing') { miss.push(c.item); debit += Number(c.debitMissing) || 0; } else { dmg.push(c.item); debit += Number(c.debitDamaged) || 0; } }
+      $('cp' + i).classList.toggle('hidden', !/Damaged|Missing|Worn/.test(st.Status));
+    });
+    $('debitCard').classList.toggle('hidden', !ret);
+    if (ret) {
+      if (!debitTouched) { D.set('Proposed_Debit', debit || ''); D.set('Debit_Reason', [dmg.length ? 'Damaged: ' + dmg.join(', ') : '', miss.length ? 'Missing: ' + miss.join(', ') : ''].filter(Boolean).join(' | ')); D.setFire('Proposed_Debit', D.val('Proposed_Debit')); }
+      const km = issue ? Number(T.val('Odometer_KM')) - Number(issue.Odometer_KM || 0) : '';
+      const dz = issue ? (Number(issue.Diesel_Est_Ltr) || 0) - (Number(T.val('Diesel_Est_Ltr')) || 0) : '';
+      $('cmpNums').innerHTML = '<div class="num"><b>' + (km !== '' && T.val('Odometer_KM') ? km.toLocaleString('en-IN') : '—') + '</b><span>KM run</span></div>' +
+        '<div class="num ' + (dz > 0 ? 'warn' : '') + '"><b>' + (dz !== '' && T.val('Diesel_Est_Ltr') ? dz : '—') + '</b><span>Diesel less (L)</span></div>' +
+        '<div class="num ' + (debit ? 'bad' : 'ok') + '"><b>' + (debit ? JNP.inr(debit) : '₹0') + '</b><span>' + (dmg.length + miss.length) + ' new issues</span></div>';
+    }
+  }
+  $('chk').addEventListener('click', e => {
+    const b = e.target.closest('.seg button'); if (!b) return;
+    const c = CL[Number(b.parentNode.dataset.i)]; state[keyOf(c)].Status = b.dataset.v; paint();
+  });
+  $('chk').addEventListener('change', async e => {
+    const inp = e.target; if (inp.type !== 'file' || !inp.files[0]) return;
+    const i = Number(inp.dataset.i), c = CL[i]; $('cpi' + i).textContent = 'Uploading…';
+    try { const up = await JNP.uploadPhoto(inp.files[0], 'OPS-04', c.code); state[keyOf(c)].Photo_URL = up.url; $('cpi' + i).innerHTML = '<span class="okline">Photo added ✓</span>'; }
+    catch (ex) { $('cpi' + i).innerHTML = '<span class="err">' + JNP.esc(ex.message) + '</span>'; }
+    inp.value = '';
+  });
+  $('allOk').onclick = () => { CL.forEach(c => state[keyOf(c)].Status = opts(c)[0]); paint(); };
+  drawChecklist();
+
+  // ---------- truck → open issue
+  let lastTruck = '';
+  T.on(async k => {
+    if (k === 'Handover_Type') { paint(); showIssue(); }
+    if (k === 'Odometer_KM' || k === 'Diesel_Est_Ltr') paint();
+    if (k === 'Driver_Name') { const d = JNP.findDriver(T.val('Driver_Name')); if (d && d.mobile && !T.val('Driver_Mobile')) T.set('Driver_Mobile', d.mobile); T.info('Driver_Name', T.val('Driver_Name') && !d ? '<span class="warnline">New driver — will be added to the master</span>' : d && d.truck && d.truck !== T.val('Truck_No') ? 'Now on <b>' + JNP.esc(d.truck) + '</b>' : ''); }
+    if (k === 'Truck_No') {
+      const t = T.val('Truck_No'); if (!t || t === lastTruck) return; lastTruck = t;
+      const tm = JNP.findTruck(t);
+      T.info('Truck_No', tm ? [tm.brand, tm.capacity ? tm.capacity + ' T' : '', tm.odo ? 'Last KM <b>' + Number(tm.odo).toLocaleString('en-IN') + '</b>' : '', tm.driver ? 'Driver <b>' + JNP.esc(tm.driver) + '</b>' : ''].filter(Boolean).join(' · ') : '<span class="warnline">New truck</span>');
+      try {
+        const out = await JNP.call('lastIssue', { truck: t });
+        issue = out.issue; issueItems = {};
+        (out.items || []).forEach(x => issueItems[x.Item_Code + '|' + x.Item] = x.Status);
+        if (issue) { T.setFire('Handover_Type', 'RETURN'); if (!T.val('Driver_Name')) T.setFire('Driver_Name', issue.Driver_Name); if (!T.val('Driver_Mobile')) T.set('Driver_Mobile', issue.Driver_Mobile || ''); }
+        else T.setFire('Handover_Type', 'ISSUE');
+        showIssue(); paint();
+      } catch (e) { JNP.toast(e.message, 'bad'); }
+    }
+  });
+  function showIssue() {
+    const ret = T.val('Handover_Type') === 'RETURN';
+    $('issueInfo').innerHTML = !T.val('Truck_No') ? '' : issue
+      ? '<div class="' + (ret ? 'okline' : 'badline') + '" style="display:block">' + (ret ? 'Comparing with ISSUE ' : 'Still issued — record RETURN first. ISSUE ') + JNP.esc(issue.Record_ID) + ' to <b>' + JNP.esc(issue.Driver_Name) + '</b> on ' + JNP.esc(JNP.dmy(issue.Created_At)) + ' · KM ' + JNP.esc(issue.Odometer_KM) + ' · Diesel ' + JNP.esc(issue.Diesel_Gauge || '') + '</div>'
+      : (ret ? '<div class="badline" style="display:block">No open ISSUE for this truck — choose ISSUE</div>' : '');
+    $('chkHint').textContent = ret ? 'Items worse than at ISSUE are highlighted and add to the driver debit.' : 'Mark every item. Take a photo of anything damaged.';
+  }
+
+  // ---------- save
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = T.check() || P.check() || D.check(); if (bad) throw new Error(bad);
+      const ret = T.val('Handover_Type') === 'RETURN';
+      if (ret && !issue) throw new Error('No open ISSUE for ' + T.val('Truck_No'));
+      if (!ret && issue) throw new Error('Truck is still issued to ' + issue.Driver_Name + ' — record RETURN first');
+      const items = CL.map(c => ({ Item_Code: c.code, Item_Group: c.group, Item: c.item, Status: state[keyOf(c)].Status, Photo_URL: state[keyOf(c)].Photo_URL }));
+      const data = Object.assign({}, T.values(), P.values(), ret ? D.values() : {}, { items: items });
+      const out = await JNP.call('save', { module: 'OPS-04', clientReqId: clientReqId, data: data });
+      done(out.record, out);
+    });
+  });
+  function done(r, out) {
+    const ret = r.Handover_Type === 'RETURN';
+    const msg = JNP.waText('VEHICLE ' + r.Handover_Type + ' · ' + r.Truck_No, [
+      [ret ? 'Returned by' : 'Issued to', r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '')], ['Reason', r.Reason],
+      ['Leave', r.Leave_From ? JNP.dmy(r.Leave_From) + ' to ' + JNP.dmy(r.Leave_To) : ''], ['Location', r.Location],
+      ['Odometer', r.Odometer_KM + ' km' + (ret && r.KM_Since_Issue !== undefined ? ' (ran ' + r.KM_Since_Issue + ' km)' : '')],
+      ['Diesel', (r.Diesel_Gauge || '') + (r.Diesel_Est_Ltr ? ' · ~' + r.Diesel_Est_Ltr + ' L' : '')], ['Condition', r.Working_Condition], ['Issues', r.Issues_Noted],
+      ['Checklist', r.Items_OK + ' OK · ' + r.Items_Damaged + ' damaged · ' + r.Items_Missing + ' missing'],
+      ['New damage', r.New_Damages], ['Missing', r.Missing_Items], ['Debit proposed', r.Proposed_Debit > 0 ? JNP.inr(r.Proposed_Debit) + ' (approval: ' + r.Approver_Requested + ')' : ''],
+      ['Driver photo', r.Driver_Photo_URL]]);
+    $('f').classList.add('hidden');
+    JNP.done($('doneCard'), { title: r.Handover_Type + ' SAVED', big: r.Truck_No, sub: r.Driver_Name + ' · ' + r.Record_ID,
+      buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }].concat(JNP.approvalButtons(out, msg)),
+      onNew: () => location.reload() });
+    loadRecent();
+  }
+
+  async function loadRecent() {
+    try {
+      const out = await JNP.call('list', { module: 'OPS-04', days: 15, limit: 25 });
+      $('recent').innerHTML = JNP.rowsHtml(out.rows, r => ({ t: JNP.esc(r.Handover_Type + ' · ' + r.Truck_No), s: JNP.esc(r.Driver_Name + ' · KM ' + r.Odometer_KM + ' · ' + JNP.dmy(r.Created_At) + (r.Proposed_Debit > 0 ? ' · debit ' + JNP.inr(r.Proposed_Debit) : '')),
+        tag: r.Proposed_Debit > 0 ? (r.Status || r.Debit_Status) : r.Handover_Type, cls: r.Proposed_Debit > 0 ? JNP.statusCls(r.Status) : r.Handover_Type === 'ISSUE' ? 'blue' : '' }), 'No handovers yet.');
+    } catch (e) { $('recent').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('reload').onclick = loadRecent; loadRecent();
+})();
+</script>
+</body>
+</html>
