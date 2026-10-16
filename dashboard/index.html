@@ -17,6 +17,8 @@
     .sel { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: #fff; border: 1.5px solid #CCD5E2; border-radius: 12px; padding: 4px 30px 4px 10px; }
     .sel::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
     .sel span { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .sel.date { padding-right: 8px; } .sel.date::after { content: ''; }
+    .sel input[type=date] { border: 0; background: transparent; font-weight: 800; color: var(--navy); font-size: 14.5px; padding: 0; outline: none; width: 100%; min-height: 22px; font-family: inherit; }
     .sel select { border: 0; background: transparent; font-weight: 800; color: var(--navy); font-size: 14.5px; padding: 0; -webkit-appearance: none; appearance: none; outline: none; width: 100%; }
     .sel.view { flex: 3; background: var(--navy); border-color: var(--navy); } .sel.view span { color: #9FB6DA; } .sel.view select { color: #fff; font-size: 15.5px; } .sel.view::after { color: #fff; }
     .sel.view select option { color: var(--ink); }
@@ -109,14 +111,12 @@
   <div class="wrap viz">
     <div class="filters">
       <div class="fbar">
-        <label class="sel"><span>Period</span><select id="period">
-          <option value="0">Today</option><option value="y">Yesterday</option><option value="6">7 days</option><option value="29" selected>30 days</option>
-          <option value="tm">This month</option><option value="lm">Last month</option><option value="89">90 days</option><option value="c">Custom…</option></select></label>
+        <label class="sel date"><span>From</span><input type="date" id="from"></label>
+        <label class="sel date"><span>To</span><input type="date" id="to"></label>
+      </div>
+      <div class="fbar" style="margin-top:8px">
         <label class="sel"><span>Load</span><select id="fLoadSel"><option value="All">All</option><option value="BULK">Bulk</option><option value="BAG">Bag</option></select></label>
         <label class="sel"><span>Size</span><select id="fSizeSel"><option value="All">All</option></select></label>
-      </div>
-      <div class="fbar hidden" id="customRow" style="margin-top:8px">
-        <input type="date" id="from" class="input" aria-label="From"><input type="date" id="to" class="input" aria-label="To"><button class="chip" id="go" style="background:var(--orange);border-color:var(--orange);color:#fff">Apply</button>
       </div>
       <div class="fbar" style="margin-top:8px">
         <label class="sel view"><span>View</span><select id="viewSel"></select></label>
@@ -155,18 +155,11 @@
   $('to').value = iso(today); $('from').value = iso(new Date(today.getTime() - 29 * 864e5));
   $('fSizeSel').innerHTML = '<option value="All">All sizes</option>' + CLASSES.map(c => '<option value="' + c + 'T">' + c + ' T</option>').join('');
   let fLoad = 'All', fSize = 'All';
-  $('period').onchange = () => {
-    const q = $('period').value, t = new Date();
-    $('customRow').classList.toggle('hidden', q !== 'c'); if (q === 'c') return;
-    if (q === 'tm') { $('from').value = iso(new Date(t.getFullYear(), t.getMonth(), 1)); $('to').value = iso(t); }
-    else if (q === 'lm') { $('from').value = iso(new Date(t.getFullYear(), t.getMonth() - 1, 1)); $('to').value = iso(new Date(t.getFullYear(), t.getMonth(), 0)); }
-    else if (q === 'y') { const y = new Date(t.getTime() - 864e5); $('from').value = iso(y); $('to').value = iso(y); }
-    else { $('to').value = iso(t); $('from').value = iso(new Date(t.getTime() - Number(q) * 864e5)); }
-    load();
-  };
+  let tmrLoad;
+  const onDate = () => { clearTimeout(tmrLoad); tmrLoad = setTimeout(() => { if ($('from').value && $('to').value) { if ($('from').value > $('to').value) { const x = $('from').value; $('from').value = $('to').value; $('to').value = x; } load(); } }, 400); };
+  $('from').onchange = onDate; $('to').onchange = onDate;
   $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
   $('fSizeSel').onchange = () => { fSize = $('fSizeSel').value; render(); };
-  $('go').onclick = load;
 
   const TABS = [{ id: 'overview', label: '📊 Overview' }, { id: 'trips', label: '🚚 Trips & destinations' }, { id: 'trucks', label: '🛻 Trucks' }, { id: 'drivers', label: '🧑‍✈️ Drivers' },
     { id: 'dest', label: '📍 Destination performance' }, { id: 'fleet', label: '🔧 Fleet health & off-road' }, { id: 'diesel', label: '⛽ Diesel' }];
@@ -187,7 +180,17 @@
   function model(R) {
     const from = D(R.from), to = new Date(D(R.to).getTime() + 864e5 - 1), now = new Date(), end = to < now ? to : now;
     const days = Math.round((D(R.to) - D(R.from)) / 864e5) + 1;
+    // ---- truck master: match numbers whatever the spacing; read "31 Ton" as 31
+    const capNum = v => { const m = String(v === null || v === undefined ? '' : v).match(/\d+(\.\d+)?/); return m ? Number(m[0]) : ''; };
+    R.trucks.forEach(t => { t.no = JNP.normTruck(t.no); t.cap = capNum(t.cap); });
     const truckM = {}; R.trucks.forEach(t => truckM[t.no] = t);
+    const last4 = {}; R.trucks.forEach(t => { const k = t.no.slice(-4); last4[k] = last4[k] === undefined ? t.no : null; });   // null = ambiguous
+    const fixNo = no => { no = JNP.normTruck(no); if (!no || truckM[no]) return no; const k = no.slice(-4); return /^\d{4}$/.test(k) && last4[k] ? last4[k] : no; };
+    ['loader', 'breakdowns', 'maintenance', 'truckExp', 'tyreEv', 'handover'].forEach(key => { const t = R[key]; if (!t || !t.cols) return; const i = t.cols.indexOf('Truck_No'); if (i >= 0) t.rows.forEach(r => r[i] = fixNo(r[i])); });
+    // capacity missing in master → take it from the truck's own builty loads (nearest size)
+    const maxMt = {};
+    { const bl = {}; rows(R.builty).forEach(b => bl[b.LR_No] = n0(b.Qty_MT)); rows(R.loader).forEach(r => { const q = bl[r.LR_No]; if (q > 0 && q < 60) maxMt[r.Truck_No] = Math.max(maxMt[r.Truck_No] || 0, q); }); }
+    R.trucks.forEach(t => { if (!t.cap && maxMt[t.no]) { t.cap = Number(classOf(maxMt[t.no]).replace('T', '')); t.capGuess = true; } });
     const destM = {}; (R.dests || []).forEach(d => destM[JNP.keyOf(d.name)] = d);
     const blt = {}; rows(R.builty).forEach(b => blt[b.LR_No] = b);
     const ind = {}; rows(R.indent).forEach(i => ind[i.LR_No] = i);
@@ -217,7 +220,8 @@
     const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
     // fleet
     const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
-    all.forEach(x => { if (!truckM[x.truck]) { truckM[x.truck] = { no: x.truck, cap: '', cargo: x.load, status: 'Not in master' }; R.trucks.push(truckM[x.truck]); } });
+    all.forEach(x => { if (!truckM[x.truck]) { const g = maxMt[x.truck] ? Number(classOf(maxMt[x.truck]).replace('T', '')) : ''; truckM[x.truck] = { no: x.truck, cap: g, capGuess: !!g, cargo: x.load, status: 'Not in master', missing: true }; R.trucks.push(truckM[x.truck]); } });
+    rows(R.breakdowns).forEach(b => { if (b.Truck_No && !truckM[b.Truck_No]) { truckM[b.Truck_No] = { no: b.Truck_No, cap: '', cargo: '', status: 'Not in master', missing: true }; R.trucks.push(truckM[b.Truck_No]); } });
     const openOff = new Set(rows(R.breakdowns).filter(b => !b.Back_On_Road_At).map(b => b.Truck_No));
     const fleet = R.trucks.filter(t => loadedNow.has(t.no) || openOff.has(t.no) || !/Archived|Sold/i.test(t.status + ' ' + t.compliance));
     const bds = rows(R.breakdowns).map(b => {
@@ -404,7 +408,10 @@
         { label: 'Waiting', value: tons(g('wait')), color: 'var(--s4)', text: fmt(tons(g('wait'))) + ' T' }, { label: 'Off road', value: tons(g('off')), color: 'var(--red)', text: fmt(tons(g('off'))) + ' T' }]) +
       '<div class="fs" id="fsBoxes" style="margin-top:12px">' + box('load', g('load'), 'capacity loaded now') + box('ret', g('ret'), 'unloaded / coming back') + box('wait', g('wait'), 'past round-trip time') +
         box('off', g('off'), Object.keys(why).map(k => k.replace('Driver not available', 'no driver').replace('Documents / RTO', 'documents').toLowerCase() + ' ' + why[k]).join(' · ')) + '</div>' +
-      '<div class="muted2" style="margin-top:8px">On road ' + on.length + ' of ' + fl.length + ' trucks (' + pct(fl.length ? on.length / fl.length : NaN) + '). Loaded = loaded within half of that destination\'s usual round trip (loading → next loading) and not yet unloaded; tap a box for the trucks.</div>' + listHtml);
+      (() => { const miss = fl.filter(t => !t.cap), guess = fl.filter(t => t.capGuess);
+        return (miss.length ? '<div class="note">⚠️ No capacity for ' + miss.length + ' truck(s), counted as 0 T: ' + miss.map(t => E(t.no) + (t.missing ? ' (not in Truck_Master)' : '')).join(', ') + '. Fill <b>Capacity (Tons)</b> in Truck_Master.</div>' : '') +
+          (guess.length ? '<div class="muted2" style="margin-top:6px">Capacity taken from builty loads (blank in Truck_Master): ' + guess.map(t => E(t.no) + ' ' + t.cap + 'T').join(', ') + '</div>' : ''); })() +
+      '<div class="muted2" style="margin-top:8px">On road = total fleet − off road: ' + on.length + ' of ' + fl.length + ' trucks, ' + fmt(tons(on)) + ' of ' + fmt(totT) + ' T (' + pct(totT ? tons(on) / totT : NaN) + '). Loaded = loaded within half of that destination\'s usual round trip (loading → next loading) and not yet unloaded; tap a box for the trucks.</div>' + listHtml);
   }
 
   function overview(T) {
@@ -466,11 +473,12 @@
     L.push('⚠️ Off road: ' + off.length + (off.length ? '  (' + Object.keys(why).map(k => k + ' ' + why[k]).join(' · ') + ')' : ''));
     if (off.length) {
       L.push(''); L.push('⚠️ *VEHICLES NOT ON ROAD*');
-      const grp = {}; off.forEach(t => { const k = (classOf(t.cap)) + ' ' + (t.cargo || 'BAG'); (grp[k] = grp[k] || []).push(t); });
-      Object.keys(grp).sort((p, q) => parseInt(p) - parseInt(q)).forEach(k => {
+      const grp = {}; off.forEach(t => { const k = (t.cap ? classOf(t.cap) : 'Size not known') + ' ' + (t.cargo || 'BAG'); (grp[k] = grp[k] || []).push(t); });
+      Object.keys(grp).sort((p, q) => (parseInt(p) || 999) - (parseInt(q) || 999)).forEach(k => {
         L.push(''); L.push('*' + k + ' (' + grp[k].length + ') · ' + fmt(tons(grp[k])) + ' T*');
         grp[k].forEach(t => { const s0 = st(t); L.push(' ' + short(t.no) + ' – ' + (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.note && s0.note.indexOf('Truck_Master') < 0 ? ' – ' + s0.note : '') + (s0.loc ? ' – ' + s0.loc : '') + (s0.since ? ' – ' + d2(s0.since) : '')); });
       });
+      const nc = off.filter(t => !t.cap); if (nc.length) L.push('(capacity missing in Truck_Master: ' + nc.map(t => short(t.no)).join(', ') + ')');
       L.push(''); L.push('Total down: ' + off.length + ' trucks · Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' T · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ' T');
     }
     L.push('————————');
