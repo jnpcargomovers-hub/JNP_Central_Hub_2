@@ -1,380 +1,734 @@
-/**
- * ============================================================================
- *  CORE.gs — paste into the Apps Script of DB_Master (together with Common.gs)
- *  Login · dropdown masters · photo upload · attendance · approvals inbox
- *  First time: run setupCore() once.
- * ============================================================================
- */
-const THIS_DB = 'Master';
-const MASTER_ID = '';                 // Core is attached to DB_Master itself — leave blank
-
-const BEFORE_SAVE = {}, AFTER_SAVE = {};
-
-function doPost(e) {
-  return route_(e, {
-    login: login_, me: me_, masters: (u) => ({ ok: true, masters: masters_(), access: accessFor_(u), user: publicUser_(u) }),
-    upload: upload_, punch: punch_, attendance: attendance_,
-    approvers: approvers_, inbox: inbox_, decide: decide_, pay: pay_, dash: dash_,
-  }, ['login']);
-}
-
-/* ---------------------------------------------------------------- LOGIN */
-function login_(_, req) {
-  const mobile = normMobile_(req.mobile), code = String(req.entryCode || '').trim();
-  if (!mobile || !code) return { ok: false, error: 'Mobile number and Entry Code are required' };
-  const u = users_().find(x => x.mobile === mobile);
-  if (!u || u.status !== 'Active') { audit_(null, 'LOGIN', 'FAILED', '', 'Unknown/inactive ' + mobile, req.device); return { ok: false, error: 'This mobile number is not registered or is inactive' }; }
-  if (!u.entryCode || u.entryCode !== code) { audit_(u, 'LOGIN', 'FAILED', '', 'Wrong entry code', req.device); return { ok: false, error: 'Wrong Entry Code' }; }
-  const token = signToken_(mobile, Number(setting_('Session_Days')) || 30);
-  audit_(u, 'LOGIN', 'LOGIN', '', 'OK', req.device);
-  return { ok: true, token: token, user: publicUser_(u), access: accessFor_(u), counts: counts_(u) };
-}
-function me_(u) { return { ok: true, user: publicUser_(u), access: accessFor_(u), counts: counts_(u) }; }
-
-/** Badge numbers for the Hub: approvals waiting for me, payments waiting, my attendance today. */
-function counts_(u) {
-  const q = readTable_(tab_('Approval_Queue'));
-  const today = ymd_(new Date());
-  const att = readTable_(tab_('Attendance')).filter(r => r.Mobile === u.mobile && ymd_(r.Punch_Time || r.Date) === today);
-  const last = att.sort((a, b) => (a.Punch_Time || 0) - (b.Punch_Time || 0)).pop();
-  return {
-    toApprove: q.filter(r => r.Status === 'Pending' && r.Approver_Mobile === u.mobile).length,
-    allPending: u.level === 'Level 1' ? q.filter(r => r.Status === 'Pending').length : 0,
-    toPay: q.filter(r => r.Status === 'Approved' && REG[r.Module_Code] && REG[r.Module_Code].payable && can_(u, r.Module_Code, 'P')).length,
-    myPending: q.filter(r => r.Status === 'Pending' && r.Requested_Mobile === u.mobile).length,
-    punchedIn: !!(last && last.Punch_Type === 'IN'), lastPunch: last ? serial_(last).Punch_Time : ''
-  };
-}
-
-/* ---------------------------------------------------------------- MASTERS (dropdowns — never bank/Aadhaar/salary) */
-function masters_() {
-  return cached_('masters', 300, () => {
-    const T = n => readTable_(mtab_(n));
-    const lists = {}, lv = mtab_('Lists').getDataRange().getValues();
-    for (let c = 0; c < lv[0].length; c++) { const k = str_(lv[0][c]); if (k) lists[k] = lv.slice(1).map(r => str_(r[c])).filter(Boolean); }
-    const st = settingsAll_(), pub = ['Company_Name', 'Logo_URL', 'Company_GSTIN', 'Company_Address', 'Company_PAN', 'Transport_Code',
-      'Plant_Loading_Mobile', 'Vehicle_Maintenance_Mobile', 'Consignor_Name', 'Consignor_Address', 'Consignor_GSTIN', 'Consignor_PAN',
-      'Builty_Terms', 'LR_Prefix', 'Approval_Limit_Dept_Head', 'Repeat_Fault_Window_Days', 'Second_Quote_Above', 'Attendance_Selfie',
-      'Tyre_Expected_Life_New', 'Tyre_Expected_Life_Retread', 'Dashboard_Roles', 'Dashboard_Ops_Roles'];
-    const settings = {}; pub.forEach(k => { if (st[k] !== undefined) settings[k] = st[k]; });
-    return {
-      trucks: T('Truck_Master').filter(r => str_(r['Vehicle Number'])).map(r => ({
-        no: normTruck_(r['Vehicle Number']), brand: str_(r['Truck Brand']), tyres: r['Tyres'] || '', capacity: r['Capacity (Tons)'] || '',
-        cargo: str_(r['Cargo Type']), compliance: str_(r['Compliance Status']), opStatus: str_(r['Operational_Status']),
-        driver: str_(r['Current_Driver']), odo: r['Last_Odometer_KM'] || '', ownership: str_(r['Ownership']), handover: str_(r['Current_Handover_ID'])
-      })),
-      drivers: T('Driver_Master').filter(r => str_(r['Driver Name'])).map(r => ({
-        name: str_(r['Driver Name']), mobile: normMobile_(r['Mobile No.']), status: str_(r['Status']), cargo: str_(r['Cargo Type']),
-        truck: str_(r['Current_Truck']), alt: str_(r['Other_Spellings']), photo: str_(r['Photo_URL'])
-      })),
-      destinations: T('Destinations').filter(r => str_(r['Destination']) && str_(r['Status']) !== 'Inactive').map(r => ({
-        name: str_(r['Destination']), code: str_(r['Ship_To_Code']), alt: str_(r['Other_Spellings']), km: r['Distance_KM (one way)'] || '', tat: r['Target_TAT_Hrs'] || ''
-      })),
-      parties: T('Parties').filter(r => str_(r['Party Name']) && str_(r['Status']) !== 'Inactive').map(r => ({
-        name: str_(r['Party Name']), alt: str_(r['Other_Spellings']), dest: str_(r['Default Destination']), credit: r['Credit_Days'] || ''
-      })),
-      faults: T('R&M_Master').filter(r => str_(r['Fault_Code'])).map(r => ({
-        code: str_(r['Fault_Code']), system: str_(r['System']), name: str_(r['Work / Fault']), hindi: str_(r['Hindi / Local Name']),
-        category: str_(r['Repair_Category']), tat: r['Target_TAT_Hrs'] || '', repeat: str_(r['Repeat_Check']), symptom: str_(r['Driver_Symptom (Breakdown Report)'])
-      })),
-      pm: T('R&M_PM_Schedule').filter(r => str_(r['Check_Code'])).map(r => ({ code: str_(r['Check_Code']), name: str_(r['Check Item']), hindi: str_(r['Hindi']), km: r['Interval_KM'] || '', days: r['Interval_Days'] || '' })),
-      parts: T('R&M_Parts').filter(r => str_(r['Part_Code']) && str_(r['Status']) !== 'Inactive').map(r => ({ code: str_(r['Part_Code']), name: str_(r['Part Name']), hindi: str_(r['Hindi / Local']), unit: str_(r['Unit']), rate: r['Std_Rate'] || '' })),
-      vendors: T('Vendors').filter(r => str_(r['Vendor Name']) && str_(r['Status']) !== 'Inactive').map(r => ({ name: str_(r['Vendor Name']), type: str_(r['Vendor_Type']), location: str_(r['Location']), usedBy: str_(r['Used_By']) })),
-      checklist: T('Handover_Checklist').filter(r => str_(r['Item_Code']) && str_(r['Status']) !== 'Inactive').map(r => ({
-        code: str_(r['Item_Code']), group: str_(r['Item_Group']), item: str_(r['Item']), hindi: str_(r['Hindi']), type: str_(r['Check_Type']),
-        debitMissing: r['Std_Debit_Missing'] || 0, debitDamaged: r['Std_Debit_Damaged'] || 0, photo: str_(r['Photo_If_Damaged'])
-      })),
-      users: users_().filter(u => u.status === 'Active').map(u => ({ name: u.name, role: u.role, level: u.level, mobile: u.mobile })),
-      lists: lists, settings: settings, version: now_()
-    };
-  });
-}
-
-/* ---------------------------------------------------------------- PHOTO UPLOAD → Google Drive */
-function upload_(u, req) {
-  const m = String(req.dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
-  if (!m) throw err_('Not an image');
-  const bytes = Utilities.base64Decode(m[2]);
-  if (bytes.length > 4 * 1024 * 1024) throw err_('Photo too large (max 4 MB)');
-  const module = String(req.module || 'GEN').replace(/[^A-Z0-9-]/gi, '');
-  const folder = photoFolder_(module);
-  const name = [module, Utilities.formatDate(new Date(), TZ, 'yyMMdd-HHmmss'), String(req.label || 'photo').replace(/[^\w-]/g, '_').slice(0, 40), u.name.replace(/\W/g, '')].join('_') + '.jpg';
-  const file = folder.createFile(Utilities.newBlob(bytes, m[1], name));
-  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { /* org may block link sharing */ }
-  const id = file.getId();
-  return { ok: true, id: id, url: 'https://drive.google.com/file/d/' + id + '/view', thumb: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w600' };
-}
-function photoFolder_(module) {
-  let rootId = str_(setting_('Photo_Folder_ID')), root;
-  try { root = rootId ? DriveApp.getFolderById(rootId) : null; } catch (e) { root = null; }
-  if (!root) { root = DriveApp.createFolder('JNP_Photos'); setSetting_('Photo_Folder_ID', root.getId()); }
-  const sub = (parent, n) => { const it = parent.getFoldersByName(n); return it.hasNext() ? it.next() : parent.createFolder(n); };
-  return sub(sub(root, module), Utilities.formatDate(new Date(), TZ, 'yyyy-MM'));
-}
-
-/* ---------------------------------------------------------------- ATTENDANCE (selfie + GPS, any location) */
-function punch_(u, req) {
-  need_(u, 'ATT-01', 'E');
-  const type = String(req.type || '').toUpperCase();
-  if (type !== 'IN' && type !== 'OUT') throw err_('Punch type must be IN or OUT');
-  const lat = Number(req.lat), lng = Number(req.lng);
-  if (!lat || !lng) throw err_('Location not received — allow location for this site and try again');
-  const selfieNeeded = String(setting_('Attendance_Selfie') || 'Yes').toLowerCase() !== 'no';
-  if (selfieNeeded && !req.selfieUrl) throw err_('Selfie is required for attendance');
-  const lock = LockService.getScriptLock(); lock.waitLock(20000);
-  try {
-    const sh = tab_('Attendance'), now = new Date(), today = ymd_(now);
-    const mine = readTable_(sh).filter(r => r.Mobile === u.mobile && ymd_(r.Punch_Time || r.Date) === today).sort((a, b) => a.Punch_Time - b.Punch_Time);
-    const last = mine[mine.length - 1];
-    if (type === 'IN' && last && last.Punch_Type === 'IN') throw err_('Already punched IN today at ' + Utilities.formatDate(last.Punch_Time, TZ, 'HH:mm'));
-    if (type === 'OUT' && (!last || last.Punch_Type !== 'IN')) throw err_('Punch IN first');
-    let address = '';
-    try { const g = Maps.newGeocoder().reverseGeocode(lat, lng); address = g && g.results && g.results[0] ? g.results[0].formatted_address : ''; } catch (e) { address = ''; }
-    const rec = {
-      Record_ID: newId_('ATT'), Date: today, Punch_Type: type, Punch_Time: now, User_Name: u.name, Mobile: u.mobile, Role: u.role,
-      Department: u.dept, Latitude: lat, Longitude: lng, Accuracy_m: Math.round(Number(req.acc) || 0), Address: address,
-      Map_Link: 'https://maps.google.com/?q=' + lat + ',' + lng, Selfie_URL: req.selfieUrl || '',
-      Hours_Worked: type === 'OUT' ? round_((now - last.Punch_Time) / 36e5, 2) : '', Device: String(req.device || '').slice(0, 120), Remark: str_(req.remark)
-    };
-    appendObj_(sh, rec);
-    audit_(u, 'ATT-01', 'PUNCH_' + type, rec.Record_ID, address, req.device);
-    return { ok: true, record: serial_(rec) };
-  } finally { lock.releaseLock(); }
-}
-
-/** Own attendance; Level 1 (or V right) can see everyone. */
-function attendance_(u, req) {
-  need_(u, 'ATT-01', 'E');
-  const all = u.level === 'Level 1' && req.all;
-  const from = req.from || ymd_(new Date(Date.now() - 6 * 864e5)), to = req.to || ymd_(new Date());
-  const rows = readTable_(tab_('Attendance')).filter(r => (all || r.Mobile === u.mobile) && r.Date >= from && r.Date <= to)
-    .sort((a, b) => b.Punch_Time - a.Punch_Time).map(serial_);
-  return { ok: true, rows: rows };
-}
-
-/* ---------------------------------------------------------------- APPROVALS */
-function approvers_(u, req) {
-  return { ok: true, approvers: approversFor_(String(req.module), Number(req.amount) || 0, u, req.overLimit === true || req.overLimit === 'Yes') };
-}
-
-/** view: 'toMe' (default) | 'mine' | 'toPay' | 'all' (Level 1) | 'done' */
-function inbox_(u, req) {
-  need_(u, 'APR-01', 'E');
-  const view = req.view || 'toMe', days = Number(req.days) || 30, since = Date.now() - days * 864e5;
-  let rows = readTable_(tab_('Approval_Queue'));
-  if (view === 'toMe') rows = rows.filter(r => r.Status === 'Pending' && r.Approver_Mobile === u.mobile);
-  else if (view === 'mine') rows = rows.filter(r => r.Requested_Mobile === u.mobile && r.Created_At >= since);
-  else if (view === 'toPay') rows = rows.filter(r => r.Status === 'Approved' && REG[r.Module_Code] && REG[r.Module_Code].payable && can_(u, r.Module_Code, 'P'));
-  else if (view === 'all') { if (u.level !== 'Level 1') throw err_('Only HO can see all approvals', 'DENIED'); rows = rows.filter(r => r.Status === 'Pending' || r.Created_At >= since); }
-  else if (view === 'done') rows = rows.filter(r => r.Decided_By === u.name && r.Decided_At >= since);
-  rows.sort((a, b) => (b.Created_At || 0) - (a.Created_At || 0));
-  return { ok: true, rows: rows.slice(0, 200).map(serial_) };
-}
-
-/** Approve / reject / hold. Only the chosen approver — or any Level 1 — can decide. */
-function decide_(u, req) {
-  const decision = String(req.decision || '').toLowerCase();
-  const map = { approve: 'Approved', reject: 'Rejected', hold: 'On Hold' };
-  if (!map[decision]) throw err_('Decision must be approve, reject or hold');
-  const lock = LockService.getScriptLock(); lock.waitLock(25000);
-  try {
-    const qs = tab_('Approval_Queue'), f = findRow_(qs, 'Request_ID', req.requestId);
-    if (!f) throw err_('Approval request not found');
-    const q = f.obj, code = q.Module_Code;
-    if (['Approved', 'Rejected', 'Paid'].indexOf(q.Status) >= 0) throw err_('Already ' + q.Status + ' by ' + q.Decided_By);
-    const isChosen = q.Approver_Mobile === u.mobile, isL1 = u.level === 'Level 1';
-    if (!isChosen && !isL1) throw err_('This request is waiting for ' + q.Approver_Requested, 'DENIED');
-    if (q.Requested_Mobile === u.mobile && !isL1) throw err_('You cannot approve your own request', 'DENIED');
-    if (!isL1) {
-      const ok = approversFor_(code, Number(q.Amount) || 0, { mobile: q.Requested_Mobile }, false).some(x => x.mobile === u.mobile);
-      if (!ok) throw err_('Amount ₹' + q.Amount + ' needs Level 1 approval', 'DENIED');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Dashboard · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .wrap { max-width: 1180px; }
+    .viz { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --grid: #E6EBF2; }
+    .filters { position: sticky; top: 66px; z-index: 15; background: var(--bg); padding: 10px 0 6px; }
+    .fbar { display: flex; gap: 8px; align-items: stretch; }
+    .fbar .input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 14px; }
+    .sel { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: #fff; border: 1.5px solid #CCD5E2; border-radius: 12px; padding: 4px 30px 4px 10px; }
+    .sel::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .sel span { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .sel.date { padding-right: 8px; } .sel.date::after { content: ''; }
+    .sel input[type=date] { border: 0; background: transparent; font-weight: 800; color: var(--navy); font-size: 14.5px; padding: 0; outline: none; width: 100%; min-height: 22px; font-family: inherit; }
+    .sel select { border: 0; background: transparent; font-weight: 800; color: var(--navy); font-size: 14.5px; padding: 0; -webkit-appearance: none; appearance: none; outline: none; width: 100%; }
+    .sel.view { flex: 3; background: var(--navy); border-color: var(--navy); } .sel.view span { color: #9FB6DA; } .sel.view select { color: #fff; font-size: 15.5px; } .sel.view::after { color: #fff; }
+    .sel.view select option { color: var(--ink); }
+    .sharebtn { flex: 1; border: 0; border-radius: 12px; background: linear-gradient(135deg, #1FAF5E, #12804A); color: #fff; font-weight: 800; font-size: 14px; white-space: nowrap; padding: 0 12px; cursor: pointer; }
+    .kpi.tap { cursor: pointer; } .kpi.tap .l::after { content: ' ›'; color: var(--orange); font-weight: 900; } .kpi.sel1 { outline: 2.5px solid var(--orange); }
+    .drill { grid-column: 1 / -1; }
+    .donut { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .donut svg { width: 150px; height: 150px; flex: none; }
+    .stk { display: grid; grid-template-columns: 56px 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+    .stk .bars { display: flex; gap: 2px; height: 16px; } .stk .bars div { border-radius: 3px; min-width: 2px; }
+    .fs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .fs .b { border-radius: 12px; padding: 10px; background: var(--bg); cursor: pointer; border: 2px solid transparent; }
+    .fs .b.on { border-color: var(--orange); background: #fff; }
+    .fs .b b { display: block; font-size: 22px; color: var(--navy); line-height: 1.1; } .fs .b span { font-size: 11.5px; color: var(--muted); font-weight: 700; } .fs .b small { display: block; font-size: 11.5px; color: var(--char); }
+    .fs .b.down b { color: var(--red); } .fs .b.ld b { color: var(--blue); } .fs .b.rt b { color: var(--s3); } .fs .b.wt b { color: var(--orange); }
+    @media (max-width: 820px) { .fs { grid-template-columns: 1fr 1fr; } .filters { position: static; } .donut svg { width: 120px; height: 120px; } }
+    .frow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .frow .input { width: auto; padding: 8px 10px; min-height: 0; font-size: 14px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { border: 1.5px solid #CCD5E2; background: #fff; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 13px; color: var(--char); cursor: pointer; }
+    .chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .chip.sm { padding: 4px 10px; font-size: 12.5px; }
+    .flabel { font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-right: 2px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; margin-top: 12px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+    .kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--k, var(--blue)); }
+    .kpi .l { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .kpi .v { font-size: 24px; font-weight: 900; color: var(--ink); line-height: 1.15; margin-top: 2px; letter-spacing: -.3px; }
+    .kpi .s { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .sec { margin-top: 18px; }
+    .sec h2 { font-size: 15px; color: var(--navy); margin: 0 0 8px; font-weight: 900; display: flex; align-items: center; gap: 8px; }
+    .sec h2::before { content: ''; width: 5px; height: 18px; border-radius: 3px; background: var(--orange); }
+    .sec h2 small { font-weight: 600; color: var(--muted); font-size: 12px; }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tbl th { text-align: left; font-size: 11.5px; color: var(--muted); font-weight: 800; padding: 8px 8px; border-bottom: 1.5px solid var(--line); white-space: nowrap; cursor: pointer; user-select: none; background: #fff; position: sticky; top: 0; }
+    .tbl th.nr, .tbl td.nr { text-align: right; }
+    .tbl th.sorted::after { content: ' ▾'; } .tbl th.sorted.asc::after { content: ' ▴'; }
+    .tbl td { padding: 8px 8px; border-bottom: 1px solid #EEF1F5; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tbl tr.tap { cursor: pointer; } .tbl tr.tap:hover td { background: #F5F8FD; }
+    .tbl tfoot td { font-weight: 800; border-top: 1.5px solid var(--line); }
+    .tscroll { overflow: auto; max-height: 560px; border-radius: 12px; }
+    .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--s1); vertical-align: middle; margin-left: 6px; }
+    .muted2 { color: var(--muted); font-size: 12px; }
+    .flag { display: inline-block; font-size: 10.5px; font-weight: 800; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+    .flag.est { background: var(--warn-bg); color: var(--warn); } .flag.bad { background: var(--bad-bg); color: var(--bad); } .flag.ok { background: var(--ok-bg); color: var(--ok); }
+    .chart { position: relative; }
+    .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--char); margin: 4px 0 6px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    .tip { position: absolute; pointer-events: none; background: #1B2430; color: #fff; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.2); white-space: nowrap; z-index: 5; transform: translate(-50%, -100%); margin-top: -10px; }
+    .tip b { display: block; margin-bottom: 2px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } .filters { position: static; } }
+    .note { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; font-weight: 600; margin-top: 8px; }
+    .search { max-width: 260px; }
+    .hb { display: grid; grid-template-columns: minmax(90px, 32%) 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+    .hb .lb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-weight: 600; }
+    .hb .lb small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+    .hb .tr { height: 14px; background: #F0F3F8; border-radius: 4px; position: relative; cursor: pointer; }
+    .hb .fl { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; min-width: 2px; }
+    .hb .vl { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; font-size: 12.5px; }
+    .hb .ref { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: .55; }
+    .more { margin-top: 8px; }
+    .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; gap: 2px; background: #fff; }
+    .split div { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; min-width: 2px; }
+    .splitlg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; margin-top: 6px; color: var(--char); }
+    .splitlg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    details.tv { margin-top: 12px; }
+    details.tv > summary { cursor: pointer; font-weight: 800; color: var(--blue); font-size: 13px; list-style: none; padding: 6px 0; }
+    details.tv > summary::before { content: '▸ '; } details.tv[open] > summary::before { content: '▾ '; }
+    .cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .cgrid .sec { margin-top: 0; }
+    .sec.card { margin-top: 14px; }
+    .chipscroll { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+    @media (max-width: 820px) {
+      .cgrid { grid-template-columns: 1fr; }
+      .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .kpi { padding: 10px 11px; } .kpi .v { font-size: 20px; } .kpi .s { font-size: 11px; }
+      .frow .input { flex: 1 1 40%; min-width: 0; }
+      .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+      .frow { flex-wrap: wrap; }
+      .card { padding: 12px; }
+      .hb { grid-template-columns: minmax(80px, 38%) 1fr auto; font-size: 12.5px; }
     }
-    const status = map[decision], now = new Date(), remark = str_(req.remark);
-    if (decision === 'reject' && !remark) throw err_('Please give a reason for rejecting');
-    writePatch_(qs, f.row, f.head, { Status: status, Decided_By: u.name, Decided_At: now, Decision_Remark: remark,
-      Response_Hrs: round_((now - q.Created_At) / 36e5, 1) });
-    const src = patchById_(q.Source_Tab, q.Record_ID, { Status: status, Approved_By: u.name, Approved_At: now, Approval_Remark: remark, Updated_At: now, Updated_By: u.name });
-    if (AFTER_DECIDE[code]) AFTER_DECIDE[code](u, status, src, q);
-    audit_(u, code, status.toUpperCase(), q.Record_ID, 'Request ' + q.Request_ID + ' ' + remark, req.device);
-    return { ok: true, status: status, request: serial_(Object.assign({}, q, { Status: status, Decided_By: u.name, Decided_At: now, Decision_Remark: remark })),
-      record: serial_(src), requester: { name: q.Requested_By, mobile: q.Requested_Mobile } };
-  } finally { lock.releaseLock(); }
-}
+    .empty { padding: 30px; text-align: center; color: var(--muted); }
 
-/** Finance marks an approved request as paid (UTR / reference). */
-function pay_(u, req) {
-  const lock = LockService.getScriptLock(); lock.waitLock(25000);
-  try {
-    const qs = tab_('Approval_Queue'), f = findRow_(qs, 'Request_ID', req.requestId);
-    if (!f) throw err_('Approval request not found');
-    const q = f.obj, code = q.Module_Code;
-    need_(u, code, 'P');
-    if (!REG[code].payable) throw err_('This request has no payment step');
-    if (q.Status !== 'Approved') throw err_('Only an Approved request can be marked Paid (now: ' + q.Status + ')');
-    const mode = str_(req.mode), ref = str_(req.ref), now = new Date();
-    if (!mode) throw err_('Select payment mode');
-    if (mode !== 'Cash' && !ref) throw err_('Enter UTR / reference number');
-    writePatch_(qs, f.row, f.head, { Status: 'Paid', Paid_By: u.name, Paid_At: now, Payment_Ref: ref });
-    const src = patchById_(q.Source_Tab, q.Record_ID, { Status: 'Paid', Paid_By: u.name, Paid_At: now, Payment_Mode: mode, Payment_Ref: ref, Updated_At: now, Updated_By: u.name });
-    if (AFTER_PAY[code]) AFTER_PAY[code](u, src, q);
-    audit_(u, code, 'PAID', q.Record_ID, mode + ' ' + ref, req.device);
-    return { ok: true, record: serial_(src), requester: { name: q.Requested_By, mobile: q.Requested_Mobile } };
-  } finally { lock.releaseLock(); }
-}
+    /* ===== Look v2 — fleet board, Barlow (highway-signage) type, quiet panels ===== */
+    body { font-family: Barlow, system-ui, sans-serif; background: #EEF1F5; }
+    .viz { --st-load: #1565D8; --st-ret: #12936A; --st-wait: #D48A00; --st-off: #B9061E; --panel: #fff; --rule: #E3E8EF; }
+    .num-f, .kpi .v, .fs .b b, .donebox .v, .bigno { font-family: 'Barlow Condensed', Barlow, sans-serif; letter-spacing: 0; }
+    .filters { background: #EEF1F5; }
+    .fbar { gap: 6px; }
+    .sel { border: 1px solid var(--rule); border-radius: 10px; box-shadow: none; padding: 5px 28px 5px 10px; }
+    .sel span { text-transform: none; letter-spacing: 0; font-size: 11.5px; font-weight: 600; }
+    .sel select, .sel input[type=date] { font-size: 15px; font-weight: 700; }
+    .sel.view { background: #022A5B; border-color: #022A5B; }
+    .sharebtn { background: #F7821A; box-shadow: none; border-radius: 10px; font-size: 15px; }
+    #rangeTxt { font-size: 13px; }
+    .card, .sec.card { border: 1px solid var(--rule); box-shadow: none; border-radius: 14px; }
+    .sec h2 { font-family: 'Barlow Condensed', Barlow, sans-serif; font-size: 19px; font-weight: 700; color: #022A5B; letter-spacing: .1px; }
+    .sec h2::before { display: none; }
+    .sec h2 small { font-family: Barlow, sans-serif; font-size: 13px; }
+    /* headline numbers: one panel, hairline dividers */
+    .kpis { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; gap: 0; overflow: hidden; margin-top: 14px; }
+    .kpi { border: 0; border-radius: 0; box-shadow: none; background: transparent; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 12px 14px; }
+    .kpi::before { display: none; }
+    .kpi .l { color: #4A5566; font-size: 13px; font-weight: 600; }
+    .kpi .v { font-size: 30px; font-weight: 700; color: #022A5B; }
+    .kpi .s { font-size: 12px; }
+    .kpi.tap .l::after { content: ' ›'; color: #F7821A; }
+    .kpi.sel1 { outline: none; background: #FFF6EC; }
+    .kpis .drill { border-bottom: 1px solid var(--rule); background: #FBFCFE; }
+    .kpis .drill .sec.card { border: 0; margin: 0; background: transparent; }
+    /* fleet board */
+    .fleet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .fleet-head .bigno { font-size: 44px; font-weight: 700; color: #022A5B; line-height: 1; }
+    .fleet-head .bigno small { font-family: Barlow, sans-serif; font-size: 15px; font-weight: 600; color: #4A5566; margin-left: 6px; }
+    .lanes { display: grid; gap: 12px; margin-top: 14px; }
+    .lane { border-top: 3px solid var(--c); padding-top: 8px; }
+    .lane-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; }
+    .lane-h b { font-size: 15px; color: #1B2430; } .lane-h b i { font-style: normal; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; color: var(--c); margin-right: 6px; }
+    .lane-h span { font-size: 13px; color: #4A5566; font-weight: 600; white-space: nowrap; }
+    .chips2 { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .tk { white-space: nowrap; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; line-height: 1; padding: 6px 7px 5px; border-radius: 6px; background: color-mix(in srgb, var(--c) 12%, #fff); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 35%, #fff); cursor: pointer; }
+    .tk small { font-family: Barlow, sans-serif; font-weight: 600; font-size: 10px; opacity: .8; margin-left: 3px; }
+    .tk.sel { background: var(--c); color: #fff; }
+    .tkinfo { margin-top: 10px; background: #F7F9FC; border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
+    .capbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin-top: 12px; background: #fff; }
+    .capbar div { min-width: 2px; }
+    .fs { display: none; }
+    @media (min-width: 821px) { .lanes { grid-template-columns: repeat(4, 1fr); } .kpis { grid-template-columns: repeat(4, 1fr); } }
+    @media (max-width: 820px) { .kpis { grid-template-columns: 1fr 1fr; gap: 0; } .kpi .v { font-size: 26px; } .fleet-head .bigno { font-size: 38px; } }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap viz">
+    <div class="filters">
+      <div class="fbar">
+        <label class="sel date"><span>From</span><input type="date" id="from"></label>
+        <label class="sel date"><span>To</span><input type="date" id="to"></label>
+      </div>
+      <div class="fbar" style="margin-top:8px">
+        <label class="sel"><span>Load</span><select id="fLoadSel"><option value="All">All</option><option value="BULK">Bulk</option><option value="BAG">Bag</option></select></label>
+        <label class="sel"><span>Size</span><select id="fSizeSel"><option value="All">All</option></select></label>
+      </div>
+      <div class="fbar" style="margin-top:8px">
+        <label class="sel view"><span>View</span><select id="viewSel"></select></label>
+        <button class="sharebtn" id="shareRep" type="button" title="Share report on WhatsApp">📲 Report</button>
+      </div>
+      <div class="muted2" id="rangeTxt" style="margin-top:6px"></div>
+    </div>
+    <div id="status" class="empty">Loading…</div>
+    <div id="view"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Dashboard', 'डैशबोर्ड · ऑपरेशन्स + R&M');
+  const ctx = await JNP.requireModule(['OPS-01', 'RM-01', 'RM-02', 'FIN-01', 'FIN-02', 'APR-01']);
+  if (ctx.user.level === 'Level 3') { $('status').textContent = 'Dashboard is for HO and department heads.'; return; }
 
-/* What else happens after a decision / payment */
-const AFTER_DECIDE = {
-  'OPS-04': (u, status, src) => {                    // driver debit from vehicle return
-    patchById_('Vehicle_Handover', src.Record_ID, { Debit_Status: status === 'Approved' ? 'Approved' : status === 'Rejected' ? 'Rejected' : 'Proposed' });
-    if (status === 'Approved') postLedger_(u, src.Driver_Name, 'Debit-Damage', -Math.abs(Number(src.Proposed_Debit) || 0), 'OPS-04', src.Record_ID, src.Truck_No, src.Debit_Reason || src.New_Damages || src.Missing_Items);
-  },
-  'RM-03': (u, status, src) => {                     // truck expense linked to a breakdown
-    if (status !== 'Approved' || !src.Breakdown_ID) return;
-    const sh = tab_('Breakdowns'), f = findRow_(sh, 'Record_ID', src.Breakdown_ID); if (!f) return;
-    const ids = str_(f.obj.Linked_Expense_IDs).split(',').map(s => s.trim()).filter(Boolean);
-    if (ids.indexOf(src.Record_ID) < 0) ids.push(src.Record_ID);
-    writePatch_(sh, f.row, f.head, { Linked_Expense_IDs: ids.join(', '), Repair_Cost: (Number(f.obj.Repair_Cost) || 0) + (Number(src.Amount) || 0) });
-  },
-  'RM-04': (u, status, src) => { if (status === 'Approved') patchById_('Depot_Indent', src.Record_ID, { Indent_Status: 'Open' }); },
-};
-const AFTER_PAY = {
-  'FIN-01': (u, src) => postLedger_(u, src.Driver_Name, 'Advance Paid', -Math.abs(Number(src.Amount) || 0), 'FIN-01', src.Record_ID, src.Truck_No, src.Advance_Type),
-  'FIN-03': (u, src) => postLedger_(u, src.Driver_Name, 'Salary Paid', -Math.abs(Number(src.Net_Payable) || 0), 'FIN-03', src.Record_ID, '', src.Month),
-};
+  // ---------- helpers
+  const CLASSES = [12, 25, 31, 35, 42];
+  const classOf = cap => { cap = Number(cap); if (!cap) return 'Other'; let b = CLASSES[0]; CLASSES.forEach(c => { if (Math.abs(c - cap) < Math.abs(b - cap)) b = c; }); return b + 'T'; };
+  const CLASS_COLOR = { '12T': 'var(--s1)', '25T': 'var(--s2)', '31T': 'var(--s3)', '35T': 'var(--s4)', '42T': 'var(--s5)', Other: '#9AA4B2' };
+  // dates may arrive as 2026-10-16, 2026-10-16T10:00, or as typed in the sheet: 16/10/2026 10:00, 16-10-2026
+  const DMY = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:[ T,]+(\d{1,2}):(\d{2}))?/;
+  const isoOf = v => { const m = String(v || '').trim().match(DMY); if (!m) return v; const p = n => String(n).padStart(2, '0'); return m[3] + '-' + p(m[2]) + '-' + p(m[1]) + (m[4] ? 'T' + p(m[4]) + ':' + m[5] : ''); };
+  const D = v => { if (!v) return null; const s = String(isoOf(v)).trim().replace(' ', 'T'); const d = new Date(s.length <= 10 ? s + 'T00:00:00' : s); return isNaN(d) ? null : d; };
+  const hrs = (a, b) => (b - a) / 36e5;
+  const n0 = v => (Number(v) || 0);
+  const fmt = (v, d) => v === '' || v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d === undefined ? 0 : d, minimumFractionDigits: 0 });
+  const inr = v => v === '' || v === null || v === undefined || isNaN(v) ? '—' : '₹' + fmtShort(v);
+  function fmtShort(v) { v = Number(v); const a = Math.abs(v); if (a >= 1e7) return (v / 1e7).toFixed(2) + ' Cr'; if (a >= 1e5) return (v / 1e5).toFixed(2) + ' L'; return Math.round(v).toLocaleString('en-IN'); }
+  const pct = v => isNaN(v) || v === null ? '—' : Math.round(v * 100) + '%';
+  const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN;
+  const sum = (a, f) => a.reduce((s, x) => s + (f ? n0(f(x)) : n0(x)), 0);
+  const rows = t => (t && t.rows || []).map(r => { const o = {}; t.cols.forEach((c, i) => o[c] = r[i]); return o; });
+  const iso = d => { const x = new Date(d.getTime() - d.getTimezoneOffset() * 6e4); return x.toISOString().slice(0, 10); };
 
-/* ---------------------------------------------------------------- DASHBOARD FEED (Level 1 and Level 2 only)
- * One call returns the rows the dashboard needs from all four sheets for a date range.
- * Loader / builty / delivery rows start 35 days earlier so rotation and idle gaps at the start of the range are right. */
-/** Who may open the dashboard. Full view (with revenue, rates, costs): Settings › Dashboard_Roles (default MD + Directors).
- *  Operations-only view (no money figures): Settings › Dashboard_Ops_Roles (default nobody). Comma separated role names. */
-/** "31", 31, "31 Ton", "31T", "31.5 MT" → 31 / 31.5 ; blank → '' */
-function capNum_(v) { const m = String(v === null || v === undefined ? '' : v).replace(/,/g, '.').match(/\d+(\.\d+)?/); return m ? Number(m[0]) : ''; }
-function dashAccess_(u) {
-  // Entries can be a role (CEO, Dir_1, Ops_Head…), a user name (Ganesh) or a mobile number. Not case sensitive.
-  const list = k => String(setting_(k) || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
-  const me = [u.role, u.name, u.mobile].map(x => String(x || '').toUpperCase());
-  const hit = l => l.some(x => me.indexOf(x) >= 0 || (x.replace(/\D/g, '').length >= 10 && x.replace(/\D/g, '').slice(-10) === u.mobile));
-  const full = list('Dashboard_Roles');
-  if (full.length ? hit(full) : u.level === 'Level 1') return 'full';      // no setting = every Level 1 user
-  if (hit(list('Dashboard_Ops_Roles'))) return 'ops';
-  return '';
-}
-function dash_(u, req) {
-  const access = dashAccess_(u);
-  if (!access) throw err_('Dashboard is only for the MD and Directors', 'DENIED');
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.to) ? req.to : ymd_(new Date());
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.from) ? req.from : ymd_(new Date(Date.now() - 29 * 864e5));
-  const pre = ymd_(new Date(new Date(from + 'T00:00:00').getTime() - 35 * 864e5));
-  const post = ymd_(new Date(new Date(to + 'T00:00:00').getTime() + 20 * 864e5));
-  const isD = v => !!v && typeof v === 'object' && typeof v.getTime === 'function';
-  const dmy = v => { const m = String(v || '').trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:[ T,]+(\d{1,2}):(\d{2}))?/); if (!m) return String(v || ''); const p = n => ('0' + n).slice(-2); return m[3] + '-' + p(m[2]) + '-' + p(m[1]) + (m[4] ? 'T' + p(m[4]) + ':' + m[5] : ''); };
-  const day = v => isD(v) ? Utilities.formatDate(new Date(v.getTime()), TZ, 'yyyy-MM-dd') : dmy(v).slice(0, 10);
-  const ts = v => isD(v) ? Utilities.formatDate(new Date(v.getTime()), TZ, "yyyy-MM-dd'T'HH:mm") : (v ? dmy(v).replace(' ', 'T').slice(0, 16) : '');
-  const pick = (rows, cols, keep) => rows.filter(keep).map(r => cols.map(c => (isD(r[c]) || (/(_At|Date)$/.test(c) && r[c]) ? ts(r[c]) : r[c] === undefined ? '' : r[c])));
-  const safe = (name, fn) => { try { return fn(); } catch (e) { return { cols: [], rows: [], error: e.message }; } };
-  const T = (tab, cols, keep) => safe(tab, () => ({ cols: cols, rows: pick(readTable_(tab_(tab)), cols, keep) }));
-  const inR = (v, a, b) => { const d = day(v); return d >= a && d <= b; };
-  const out = {
-    ok: true, from: from, to: to, generated: now_(),
-    loader: T('Loader_Entries', ['LR_No', 'Created_At', 'Trip_Date', 'Truck_No', 'Driver_Name', 'Destination', 'Start_KM', 'Diesel_Ltr', 'Rate', 'Trip_Advance', 'Created_By'], r => inR(r.Trip_Date || r.Created_At, pre, to)),
-    builty: T('Builty_Entries', ['LR_No', 'Consignee', 'Grade', 'Load_Type', 'Qty_MT', 'Freight_Type'], r => inR(r.Created_At, pre, post)),
-    indent: T('Indent_Entries', ['LR_No', 'Created_At', 'Unloaded_At', 'Qty_Issued_MT', 'Qty_Delivered_MT', 'Shortage_KG', 'POD_Status'], r => inR(r.Created_At, pre, post)),
-    breakdowns: T('Breakdowns', ['Record_ID', 'Created_At', 'Truck_No', 'Driver_Name', 'Symptom', 'Fault_Code', 'Breakdown_Status', 'Back_On_Road_At', 'Downtime_Hrs', 'Repeat_Flag', 'Repair_Location', 'Repair_Cost', 'Off_Road_Type', 'Location', 'Vendor'],
-      r => day(r.Created_At) <= to && (!r.Back_On_Road_At || day(r.Back_On_Road_At) >= from)),
-    maintenance: T('Maintenance_Records', ['Created_At', 'Truck_No', 'Record_Type', 'Fault_Code', 'PM_Check_Codes', 'Total_Cost', 'Repair_TAT_Hrs', 'Repeat_Flag', 'Vendor'], r => inR(r.Created_At, from, to)),
-    truckExp: T('Truck_Expenses', ['Created_At', 'Truck_No', 'Expense_Head', 'Amount', 'Status', 'Fault_Code'], r => inR(r.Created_At, from, to)),
-    opsExp: T('Ops_Expenses', ['Created_At', 'Truck_No', 'Expense_Head', 'Amount', 'Status'], r => inR(r.Created_At, from, to)),
-    tyreEv: T('Tyre_Events', ['Created_At', 'Truck_No', 'Event_Type', 'Cost'], r => inR(r.Created_At, from, to)),
-    handover: T('Vehicle_Handover', ['Created_At', 'Handover_Type', 'Truck_No', 'Driver_Name', 'Reason', 'Proposed_Debit', 'Status'], r => inR(r.Created_At, pre, to)),
-    trucks: safe('t', () => readTable_(mtab_('Truck_Master')).filter(r => str_(r['Vehicle Number'])).map(r => ({
-      no: normTruck_(r['Vehicle Number']), cap: capNum_(r['Capacity (Tons)']), cargo: str_(r['Cargo Type']).toUpperCase(), own: str_(r['Ownership']),
-      status: str_(r['Operational_Status']), compliance: str_(r['Compliance Status']), odo: Number(r['Last_Odometer_KM']) || '',
-      svcKm: Number(r['Service_Interval_KM']) || '', lastSvc: Number(r['Last_Service_KM']) || '', budget: Number(r['Monthly_RM_Budget']) || '', driver: str_(r['Current_Driver']) }))),
-    dests: safe('d', () => readTable_(mtab_('Destinations')).filter(r => str_(r['Destination'])).map(r => ({ name: str_(r['Destination']), km: Number(r['Distance_KM (one way)']) || '', tat: Number(r['Target_TAT_Hrs']) || '' }))),
-    settings: { Diesel_Rate: setting_('Diesel_Rate') || '', Fleet_Uptime_Target: setting_('Fleet_Uptime_Target') || '', Repeat_Fault_Window_Days: setting_('Repeat_Fault_Window_Days') || 15 },
-  };
-  out.access = access;
-  if (access !== 'full') {                       // strip money for the operations-only view
-    const strip = (t, cols) => { if (!t || !t.cols) return; cols.forEach(c => { const i = t.cols.indexOf(c); if (i >= 0) t.rows.forEach(r => r[i] = ''); }); };
-    strip(out.loader, ['Rate', 'Trip_Advance']); strip(out.breakdowns, ['Repair_Cost']); strip(out.maintenance, ['Total_Cost']);
-    strip(out.truckExp, ['Amount']); strip(out.opsExp, ['Amount']); strip(out.tyreEv, ['Cost']); strip(out.handover, ['Proposed_Debit']);
-    out.trucks.forEach(t => t.budget = '');
+  // ---------- filters
+  const today = new Date();
+  $('to').value = iso(today); $('from').value = iso(new Date(today.getTime() - 29 * 864e5));
+  $('fSizeSel').innerHTML = '<option value="All">All sizes</option>' + CLASSES.map(c => '<option value="' + c + 'T">' + c + ' T</option>').join('');
+  let fLoad = 'All', fSize = 'All';
+  let tmrLoad;
+  const onDate = () => { clearTimeout(tmrLoad); tmrLoad = setTimeout(() => { if ($('from').value && $('to').value && !(RAW && RAW.from === $('from').value && RAW.to === $('to').value)) { if ($('from').value > $('to').value) { const x = $('from').value; $('from').value = $('to').value; $('to').value = x; } load(); } }, 400); };
+  ['change', 'input', 'blur'].forEach(ev => { $('from').addEventListener(ev, onDate); $('to').addEventListener(ev, onDate); });
+  $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
+  $('fSizeSel').onchange = () => { fSize = $('fSizeSel').value; render(); };
+
+  const TABS = [{ id: 'overview', label: '📊 Overview' }, { id: 'trips', label: '🚚 Trips & destinations' }, { id: 'trucks', label: '🛻 Trucks' }, { id: 'drivers', label: '🧑‍✈️ Drivers' },
+    { id: 'dest', label: '📍 Destination performance' }, { id: 'fleet', label: '🔧 Fleet health & off-road' }, { id: 'diesel', label: '⛽ Diesel' }];
+  let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
+  $('viewSel').innerHTML = TABS.map(t => '<option value="' + t.id + '"' + (t.id === tab ? ' selected' : '') + '>' + t.label + '</option>').join('');
+  $('viewSel').onchange = () => { tab = $('viewSel').value; render(); window.scrollTo(0, 0); };
+  $('shareRep').onclick = () => { if (M) JNP.whatsapp(report()); };
+  const MONEY = () => RAW && RAW.access === 'full';
+
+  // ---------- data
+  async function load() {
+    $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
+    try { RAW = await JNP.call('dash', { from: $('from').value, to: $('to').value }); M = model(RAW); render(); }
+    catch (e) { $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
   }
-  audit_(u, 'DASH', 'VIEW', '', from + ' to ' + to + ' (' + access + ')', req.device);
-  return out;
-}
 
-/* ---------------------------------------------------------------- ONE-TIME SETUP (run from the editor) */
-function setupCore() {
-  const ss = master_(); ss.setSpreadsheetTimeZone(TZ);
-  const log = [];
-  log.push(setupThisDb_().map(x => x.tab + ' +' + x.added).join(', '));
+  const M_DAYS_BACK = 35;
+  function model(R) {
+    // turn any day-first text dates from the sheets into ISO so every calculation below can read them
+    Object.keys(R).forEach(k => { const t = R[k]; if (!t || !t.cols || !t.rows) return; t.cols.forEach((c, i) => { if (/(_At|Date)$/.test(c)) t.rows.forEach(r => { if (typeof r[i] === 'string' && DMY.test(r[i])) r[i] = isoOf(r[i]); }); }); });
+    const from = D(R.from), to = new Date(D(R.to).getTime() + 864e5 - 1), now = new Date(), end = to < now ? to : now;
+    const days = Math.round((D(R.to) - D(R.from)) / 864e5) + 1;
+    // ---- truck master: match numbers whatever the spacing; read "31 Ton" as 31
+    const capNum = v => { const m = String(v === null || v === undefined ? '' : v).match(/\d+(\.\d+)?/); return m ? Number(m[0]) : ''; };
+    R.trucks.forEach(t => { t.no = JNP.normTruck(t.no); t.cap = capNum(t.cap); });
+    const truckM = {}; R.trucks.forEach(t => truckM[t.no] = t);
+    const last4 = {}; R.trucks.forEach(t => { const k = t.no.slice(-4); last4[k] = last4[k] === undefined ? t.no : null; });   // null = ambiguous
+    const fixNo = no => { no = JNP.normTruck(no); if (!no || truckM[no]) return no; const k = no.slice(-4); return /^\d{4}$/.test(k) && last4[k] ? last4[k] : no; };
+    ['loader', 'breakdowns', 'maintenance', 'truckExp', 'tyreEv', 'handover'].forEach(key => { const t = R[key]; if (!t || !t.cols) return; const i = t.cols.indexOf('Truck_No'); if (i >= 0) t.rows.forEach(r => r[i] = fixNo(r[i])); });
+    // capacity missing in master → take it from the truck's own builty loads (nearest size)
+    const maxMt = {};
+    { const bl = {}; rows(R.builty).forEach(b => bl[b.LR_No] = n0(b.Qty_MT)); rows(R.loader).forEach(r => { const q = bl[r.LR_No]; if (q > 0 && q < 60) maxMt[r.Truck_No] = Math.max(maxMt[r.Truck_No] || 0, q); }); }
+    R.trucks.forEach(t => { if (!t.cap && maxMt[t.no]) { t.cap = Number(classOf(maxMt[t.no]).replace('T', '')); t.capGuess = true; } });
+    const destM = {}; (R.dests || []).forEach(d => destM[JNP.keyOf(d.name)] = d);
+    const blt = {}; rows(R.builty).forEach(b => blt[b.LR_No] = b);
+    const ind = {}; rows(R.indent).forEach(i => ind[i.LR_No] = i);
+    const all = rows(R.loader).map(r => {
+      const t = truckM[r.Truck_No] || {}, b = blt[r.LR_No], i = ind[r.LR_No];
+      const mt = b && n0(b.Qty_MT) ? n0(b.Qty_MT) : i && n0(i.Qty_Issued_MT) ? n0(i.Qty_Issued_MT) : n0(t.cap);
+      const lt = b && b.Load_Type ? String(b.Load_Type).toUpperCase() : (t.cargo || '');
+      const at = D(r.Created_At), un = i && (i.Unloaded_At || i.Created_At) ? D(i.Unloaded_At || i.Created_At) : null;
+      return { lr: r.LR_No, at: at, day: String(r.Trip_Date || r.Created_At).slice(0, 10), truck: r.Truck_No, driver: r.Driver_Name, dest: r.Destination, km0: n0(r.Start_KM),
+        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', mt: mt, mtEst: !(b && n0(b.Qty_MT)),
+        rev: n0(r.Rate) * mt, consignee: b ? b.Consignee : '', unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
+        targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By };
+    }).sort((a, b) => a.at - b.at);
+    // rotation / km / idle need the sequence per truck and per driver (includes 35 days before the range)
+    const byTruck = {}, byDriver = {};
+    all.forEach(x => { (byTruck[x.truck] = byTruck[x.truck] || []).push(x); (byDriver[x.driver] = byDriver[x.driver] || []).push(x); });
+    Object.values(byTruck).forEach(a => a.forEach((x, k) => {
+      const p = a[k - 1], nx = a[k + 1];
+      x.rot = p ? hrs(p.at, x.at) : NaN; if (x.rot > 15 * 24) x.rot = NaN;                 // gap > 15 days = parked, not rotation
+      x.km = nx && nx.km0 > x.km0 && nx.km0 - x.km0 < 3000 ? nx.km0 - x.km0 : NaN;          // this trip's km = next loading's start KM − this one
+      x.busy = nx ? Math.min(hrs(x.at, nx.at), 96) : Math.min(hrs(x.at, end), 96);            // days this load kept the truck busy (max 4)
+      x.rotNext = nx ? hrs(x.at, nx.at) : NaN; if (x.rotNext > 15 * 24) x.rotNext = NaN;      // this trip's full cycle: loading → next loading
+      x.truckIdle = p && p.unload ? hrs(p.unload, x.at) : NaN;                                  // waiting after last unload
+    }));
+    Object.values(byDriver).forEach(a => a.forEach((x, k) => { const p = a[k - 1]; x.drvIdle = p && p.unload ? hrs(p.unload, x.at) : NaN; if (x.drvIdle > 30 * 24 || x.drvIdle < 0) x.drvIdle = NaN; }));
+    const trips = all.filter(x => x.day >= R.from && x.day <= R.to);
+    const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
+    // fleet
+    const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
+    all.forEach(x => { if (!truckM[x.truck]) { const g = maxMt[x.truck] ? Number(classOf(maxMt[x.truck]).replace('T', '')) : ''; truckM[x.truck] = { no: x.truck, cap: g, capGuess: !!g, cargo: x.load, status: 'Not in master', missing: true }; R.trucks.push(truckM[x.truck]); } });
+    rows(R.breakdowns).forEach(b => { if (b.Truck_No && !truckM[b.Truck_No]) { truckM[b.Truck_No] = { no: b.Truck_No, cap: '', cargo: '', status: 'Not in master', missing: true }; R.trucks.push(truckM[b.Truck_No]); } });
+    const openOff = new Set(rows(R.breakdowns).filter(b => !b.Back_On_Road_At).map(b => b.Truck_No));
+    const fleet = R.trucks.filter(t => loadedNow.has(t.no) || openOff.has(t.no) || !/Archived|Sold/i.test(t.status + ' ' + t.compliance));
+    const bds = rows(R.breakdowns).map(b => {
+      const s = D(b.Created_At), e = b.Back_On_Road_At ? D(b.Back_On_Road_At) : now;
+      const a = s < from ? from : s, z = e > end ? end : e;
+      return Object.assign(b, { start: s, endAt: e, open: !b.Back_On_Road_At, inHrs: Math.max(0, hrs(a, z)), cls: classOf((truckM[b.Truck_No] || {}).cap), rm: !b.Off_Road_Type || b.Off_Road_Type === 'Breakdown' || b.Off_Road_Type === 'Accident' });
+    });
+    const mnt = rows(R.maintenance).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
+    const tex = rows(R.truckExp).filter(x => /Approved|Paid/.test(x.Status)).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
+    const tyr = rows(R.tyreEv).filter(x => n0(x.Cost)).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
+    // ---- fleet status at the end of the range (now, if the range ends today)
+    const med = a => { a = a.filter(v => !isNaN(v)).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : NaN; };
+    const rotDest = {}; all.forEach(x => { if (!isNaN(x.rotNext)) (rotDest[x.dest] = rotDest[x.dest] || []).push(x.rotNext); });
+    Object.keys(rotDest).forEach(k => rotDest[k] = rotDest[k].length >= 2 ? med(rotDest[k]) : NaN);
+    const rotAll = med(all.map(x => x.rotNext)) || 36;
+    const asOf = end, isNow = Math.abs(now - end) < 864e5;
+    const OFF_STAT = { 'No Driver': 'Driver not available', 'In Workshop': 'Breakdown', 'Breakdown (On Route)': 'Breakdown', 'Accident / Insurance Hold': 'Accident', 'RTO / Documents Hold': 'Documents / RTO' };
+    const status = {};
+    fleet.forEach(t => {
+      const ob = bds.filter(b => b.Truck_No === t.no && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];
+      if (ob) { status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: ob.Symptom, loc: ob.Location, since: ob.start, rec: ob }; return; }
+      if (isNow && OFF_STAT[t.status]) { status[t.no] = { st: 'off', why: OFF_STAT[t.status], note: t.status + ' (Truck_Master)', loc: '', since: null }; return; }
+      const a = byTruck[t.no] ? byTruck[t.no].filter(x => x.at <= asOf) : [], L = a[a.length - 1];
+      if (!L) { status[t.no] = { st: 'wait', note: 'no loading in the last ' + (M_DAYS_BACK) + ' days' }; return; }
+      const R = rotDest[L.dest] || rotAll, el = hrs(L.at, asOf);
+      const del = L.unload && L.unload <= asOf;
+      if (!del && el <= R / 2) status[t.no] = { st: 'load', last: L, R: R, el: el };
+      else if (el <= R) status[t.no] = { st: 'ret', last: L, R: R, el: el, del: del };
+      else status[t.no] = { st: 'wait', last: L, R: R, el: el };
+    });
+    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, rotDest, rotAll };
+  }
 
-  // Checklist seed
-  const cl = mtab_('Handover_Checklist');
-  if (cl.getLastRow() < 2) CHECKLIST_SEED.forEach(c => appendObj_(cl, Object.assign({ Check_Type: c.Item_Group === 'Tyres' ? 'Tyre' : 'OK-Damaged-Missing', Photo_If_Damaged: 'Yes', Status: 'Active' }, c)));
+  // ---------- filtering (load type + class)
+  const keepT = x => (fLoad === 'All' || x.load === fLoad) && (fSize === 'All' || x.cls === fSize);
+  const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (fSize === 'All' || c === fSize) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
 
-  // New columns on existing master tabs
-  [['Users', ['Photo_URL']], ['Truck_Master', ['Current_Handover_ID']],
-   ['Driver_Master', ['Photo_URL', 'Bhatta_Per_Day', 'On_Duty_Since']], ['Parties', ['Credit_Days']]].forEach(([t, cols]) => {
-    const sh = mtab_(t), head = headOf_(sh), miss = cols.filter(c => head.indexOf(c) < 0);
-    if (miss.length) { sh.getRange(1, head.filter(String).length + 1, 1, miss.length).setValues([miss]); log.push(t + ' +' + miss.join('/')); }
-  });
+  function agg(list) {
+    const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
+    return { trips: list.length, mt: sum(list, x => x.mt), rev: sum(list, x => x.rev), diesel: sum(list, x => x.diesel), dieselTrips: withD.length,
+      cap: sum(list, x => x.cap), km: sum(km, x => x.km), kmDiesel: sum(km, x => x.diesel), rot: avg(list.map(x => x.rot).filter(v => !isNaN(v))),
+      tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length,
+      onTime: (() => { const z = list.filter(x => !isNaN(x.tat) && x.targetTat); return z.length ? z.filter(x => x.tat <= x.targetTat).length / z.length : NaN; })(),
+      busy: sum(list, x => x.busy) / 24 };
+  }
+  const revPerL = a => a.diesel ? a.rev / a.diesel : NaN;
 
-  // Settings keys
-  if (!str_(settingFresh_('Token_Secret'))) setSetting_('Token_Secret', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''));
-  [['Second_Quote_Above', 5000], ['Attendance_Selfie', 'Yes'], ['Tyre_Expected_Life_New', 100000], ['Tyre_Expected_Life_Retread', 60000],
-   ['Session_Days', 30], ['Photo_Folder_ID', '']].forEach(([k, v]) => { if (!findRow_(mtab_('Settings'), 'Key', k)) setSetting_(k, v); });
+  // ---------- table component (sortable, optional row click)
+  const TBL = {};
+  const MONEY_COLS = ['rev', 'rate', 'rpl', 'spend', 'adv', 'jobs', 'exp', 'tyres', 'total', 'budget', 'debit', 'amt', 'Repair_Cost'];
+  const $m = html => MONEY() ? html : '';
+  function table(id, cols, data, opt) {
+    if (!MONEY()) cols = cols.filter(c => MONEY_COLS.indexOf(c.k) < 0);
+    opt = opt || {}; const st = TBL[id] || (TBL[id] = { k: opt.sort || cols[1].k, asc: false });
+    const sorted = data.slice().sort((a, b) => { const x = a[st.k], y = b[st.k]; const c = (typeof x === 'number' || typeof y === 'number') ? (isNaN(x) ? -1e18 : x) - (isNaN(y) ? -1e18 : y) : String(x || '').localeCompare(String(y || '')); return st.asc ? c : -c; });
+    const max = {}; cols.forEach(c => { if (c.bar) max[c.k] = Math.max(1, ...data.map(r => n0(r[c.k]))); });
+    const h = '<div class="tscroll"><table class="tbl" id="' + id + '"><thead><tr>' + cols.map(c => '<th data-k="' + c.k + '" class="' + (c.num ? 'nr ' : '') + (st.k === c.k ? 'sorted' + (st.asc ? ' asc' : '') : '') + '">' + c.t + '</th>').join('') + '</tr></thead><tbody>' +
+      (sorted.length ? sorted.map((r, i) => '<tr' + (opt.click ? ' class="tap" data-i="' + data.indexOf(r) + '"' : '') + '>' + cols.map(c => '<td class="' + (c.num ? 'nr' : '') + '">' + (c.f ? c.f(r[c.k], r) : E(r[c.k])) + (c.bar ? '<span class="bar" style="width:' + Math.round(60 * n0(r[c.k]) / max[c.k]) + 'px;background:' + (c.color ? c.color(r) : 'var(--s1)') + '"></span>' : '') + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cols.length + '" class="empty">No data for these filters</td></tr>') +
+      '</tbody>' + (opt.foot ? '<tfoot><tr>' + cols.map(c => '<td class="' + (c.num ? 'nr' : '') + '">' + (opt.foot[c.k] !== undefined ? opt.foot[c.k] : '') + '</td>').join('') + '</tr></tfoot>' : '') + '</table></div>';
+    setTimeout(() => {
+      const el = $(id); if (!el) return;
+      el.querySelector('thead').onclick = e => { const th = e.target.closest('th'); if (!th) return; if (st.k === th.dataset.k) st.asc = !st.asc; else { st.k = th.dataset.k; st.asc = false; } render(); };
+      if (opt.click) el.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr.tap'); if (tr) opt.click(data[Number(tr.dataset.i)]); };
+    }, 0);
+    return h;
+  }
 
-  // Access matrix: rename OPS-04, adjust rights, add new modules
-  const am = mtab_('Access_Matrix'), head = headOf_(am);
-  const L1 = head.find(h => h.indexOf('Level 1') === 0);
-  const setRow = (code, tile, name, hindi, r) => {
-    const f = findRow_(am, 'Module_Code', code), obj = { Module_Code: code, Tile: tile, Module: name, 'Module (Hindi)': hindi };
-    obj[L1] = r[0]; obj['Ops_Head'] = r[1]; obj['R&M_Head'] = r[2]; obj['Fin_Head'] = r[3]; obj['Loader'] = r[4];
-    if (f) writePatch_(am, f.row, f.head, obj); else appendObj_(am, obj);
-  };
-  setRow('OPS-04', 'Operations', 'Vehicle Handover', 'गाड़ी हैंडओवर', ['E,A', 'E,A', 'V', 'V', 'E']);
-  setRow('OPS-05', 'Operations', 'Expense Approval (Non-Truck)', 'खर्च अनुमोदन (अन्य)', ['E,A', 'E,A', 'V', 'V,P', 'E']);
-  setRow('RM-03', 'Repair & Maintenance', 'Expense Approval (Truck)', 'खर्च अनुमोदन (गाड़ी)', ['E,A', 'V', 'E,A', 'V,P', '-']);
-  setRow('RM-04', 'Repair & Maintenance', 'Depot R&M Material Indent', 'डिपो मटेरियल इंडेंट', ['E,A', 'V', 'E,A', 'V,P', '-']);
-  setRow('RM-06', 'Repair & Maintenance', 'Tyre Management', 'टायर मैनेजमेंट', ['E,A', 'V', 'E', 'V', '-']);
-  setRow('RM-07', 'Repair & Maintenance', 'Depot Material Receipt', 'डिपो मटेरियल रसीद', ['E,A', 'V', 'E', 'V', '-']);
-  setRow('FIN-01', 'Finance', 'Driver Advance', 'ड्राइवर एडवांस', ['E,A', 'V', 'V', 'E,A,P', '-']);
-  setRow('FIN-03', 'Finance', 'Driver Ledger & Settlement', 'ड्राइवर खाता', ['E,A', 'V', '-', 'E,A,P', '-']);
-  setRow('FIN-04', 'Finance', 'Diesel Audit', 'डीजल ऑडिट', ['E,A', 'V', 'V', 'E', '-']);
-  setRow('ATT-01', 'General', 'Attendance', 'हाज़िरी', ['E', 'E', 'E', 'E', 'E']);
-  setRow('APR-01', 'General', 'Approvals', 'अप्रूवल', ['E,A', 'E,A', 'E,A', 'E,A,P', 'E']);
+  // ---------- column chart with hover tooltip (stacked, 2px gap, rounded top)
+  function columns(id, cats, series, opt) {
+    opt = opt || {};
+    const W = innerWidth < 600 ? 440 : 900, H = 220, P = { l: 36, r: 8, t: 10, b: 26 }, iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const tot = cats.map((c, i) => sum(series, s => s.values[i]));
+    const mx = Math.max(1, ...tot), step = opt.unit === 'trips' ? Math.max(1, niceStep(mx)) : niceStep(mx), top = Math.ceil(mx / step) * step;
+    const bw = Math.max(2, Math.min(28, iw / cats.length - 3)), gap = iw / cats.length;
+    let g = '';
+    for (let v = 0; v <= top; v += step) { const y = P.t + ih - ih * v / top; g += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--grid)"/><text x="' + (P.l - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="#5D6877">' + (top >= 1e5 ? fmtShort(v) : fmt(v)) + '</text>'; }
+    let bars = '';
+    cats.forEach((c, i) => {
+      let y0 = P.t + ih; const x = P.l + gap * i + (gap - bw) / 2;
+      series.forEach((s, k) => {
+        const v = n0(s.values[i]); if (!v) return; const h = ih * v / top, y = y0 - h;
+        const isTop = series.slice(k + 1).every(s2 => !n0(s2.values[i]));
+        bars += isTop ? '<path d="' + roundTop(x, y + (k ? 2 : 0) * 0, bw, Math.max(1, h - (k ? 2 : 0)), Math.min(4, bw / 2)) + '" fill="' + s.color + '"/>' : '<rect x="' + x + '" y="' + (y + 2) + '" width="' + bw + '" height="' + Math.max(0, h - 2) + '" fill="' + s.color + '"/>';
+        y0 = y;
+      });
+      bars += '<rect class="hit" data-i="' + i + '" x="' + (P.l + gap * i) + '" y="' + P.t + '" width="' + gap + '" height="' + ih + '" fill="transparent"/>';
+    });
+    const every = Math.ceil(cats.length / 12);
+    const xl = cats.map((c, i) => i % every ? '' : '<text x="' + (P.l + gap * i + gap / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="#5D6877">' + E(opt.label ? opt.label(c) : c) + '</text>').join('');
+    const html = '<div class="legend">' + (series.length > 1 ? series.map(s => '<span><i style="background:' + s.color + '"></i>' + E(s.name) + '</span>').join('') : '') + '</div><div class="chart" id="' + id + '"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + E(opt.title || '') + '">' + g + bars + xl + '</svg><div class="tip hidden"></div></div>';
+    setTimeout(() => {
+      const el = $(id); if (!el) return; const tip = el.querySelector('.tip'), svg = el.querySelector('svg');
+      el.addEventListener('mousemove', e => {
+        const r = e.target.closest('.hit'); if (!r) { tip.classList.add('hidden'); return; }
+        const i = Number(r.dataset.i), bb = svg.getBoundingClientRect(), sc = bb.width / W;
+        tip.innerHTML = '<b>' + E(opt.label ? opt.label(cats[i]) : cats[i]) + ' · ' + fmt(tot[i]) + ' ' + (opt.unit || '') + '</b>' + series.map(s => '<span style="display:block"><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + s.color + ';margin-right:5px"></i>' + E(s.name) + ': ' + fmt(s.values[i]) + '</span>').join('');
+        tip.style.left = ((P.l + gap * i + gap / 2) * sc) + 'px'; tip.style.top = ((P.t + ih - ih * tot[i] / top) * sc) + 'px'; tip.classList.remove('hidden');
+      });
+      el.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+      el.addEventListener('touchstart', e => { const t = e.touches[0]; el.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, bubbles: true })); }, { passive: true });
+    }, 0);
+    return html;
+  }
+  function roundTop(x, y, w, h, r) { r = Math.min(r, h); return 'M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z'; }
+  function niceStep(mx) { const raw = mx / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
 
-  // Lists for the new screens
-  const L = mtab_('Lists'), lh = headOf_(L);
-  const add = {
-    Handover_Type: ['ISSUE', 'RETURN'], Diesel_Gauge: ['Full', '3/4', '1/2', '1/4', 'Reserve'],
-    Working_Condition: ['Good', 'Minor issues', 'Not roadworthy'],
-    Handover_Reason: ['New assignment', 'Planned leave', 'Unplanned absent', 'Left job', 'Shift change', 'Truck to workshop', 'Other'],
-    Item_Status: ['OK', 'Damaged', 'Missing', 'N.A.'], Tyre_Condition: ['Good', 'Worn', 'Damaged', 'Missing'],
-    Tyre_Event: ['Purchase', 'Fit', 'Remove', 'Rotate', 'Puncture Repair', 'Retread Sent', 'Retread Received', 'Inspection', 'Scrap'],
-    Tyre_Status: ['In Store', 'Fitted', 'Under Repair', 'Sent for Retread', 'Scrapped'],
-    Shortage_Reason: ['Torn bags', 'Spillage', 'Weighbridge difference', 'Theft suspected', 'Other'],
-    Punch_Type: ['IN', 'OUT'], Ledger_Type: LEDGER_TYPES, Grade_Type: ['OPC', 'PPC'],
-  };
-  let col = lh.filter(String).length;
-  Object.keys(add).forEach(k => {
-    if (lh.indexOf(k) >= 0) return;
-    col++; L.getRange(1, col, 1, 1).setValue(k);
-    add[k].forEach((v, i) => L.getRange(i + 2, col, 1, 1).setValue(v));
-  });
+  // ranked horizontal bars — HTML, so it fits any phone width. items: {label, sub, value, color, text, tip}
+  let HB = 0;
+  function hbar(items, opt) {
+    opt = opt || {}; const id = 'hb' + (++HB), top = opt.top || 10;
+    items = items.filter(x => !isNaN(x.value) && x.value !== null).sort((a, b) => opt.asc ? a.value - b.value : b.value - a.value);
+    if (!items.length) return '<div class="empty">No data for these filters</div>';
+    const mx = Math.max(...items.map(x => Math.abs(x.value)), opt.ref || 0) || 1;
+    const row = x => '<div class="lb" title="' + E(x.label) + '">' + E(x.label) + (x.sub ? '<small>' + E(x.sub) + '</small>' : '') + '</div>' +
+      '<div class="tr" title="' + E(x.tip || (x.label + ': ' + (x.text || fmt(x.value, 1)))) + '"><div class="fl" style="width:' + (100 * Math.abs(x.value) / mx).toFixed(1) + '%;background:' + (x.color || 'var(--s1)') + '"></div>' +
+      (opt.ref ? '<div class="ref" style="left:' + (100 * opt.ref / mx).toFixed(1) + '%" title="' + E(opt.refLabel || '') + '"></div>' : '') + '</div><div class="vl">' + (x.text || fmt(x.value, 1)) + '</div>';
+    const first = items.slice(0, top), rest = items.slice(top);
+    return (opt.ref ? '<div class="muted2" style="margin-bottom:6px">▏ ' + E(opt.refLabel || '') + '</div>' : '') + '<div class="hb">' + first.map(row).join('') + '</div>' +
+      (rest.length ? '<details class="more"><summary class="muted2" style="cursor:pointer;font-weight:700">Show ' + rest.length + ' more</summary><div class="hb" style="margin-top:6px">' + rest.map(row).join('') + '</div></details>' : '');
+  }
+  // 100% share bar
+  function split(parts) {
+    const t = sum(parts, p => p.value) || 1;
+    return '<div class="split">' + parts.filter(p => p.value).map(p => '<div style="flex:' + p.value + ';background:' + p.color + '" title="' + E(p.label + ': ' + fmt(p.value, 1)) + '">' + (p.value / t > .12 ? Math.round(100 * p.value / t) + '%' : '') + '</div>').join('') + '</div>' +
+      '<div class="splitlg">' + parts.filter(p => p.value).map(p => '<span><i style="background:' + p.color + '"></i>' + E(p.label) + ' · ' + (p.text || fmt(p.value, 1)) + ' (' + Math.round(100 * p.value / t) + '%)</span>').join('') + '</div>';
+  }
+  const tv = (label, html) => '<details class="tv"' + (innerWidth >= 820 ? ' open' : '') + '><summary>' + label + '</summary>' + html + '</details>';
+  const kpi = (l, v, s, color) => '<div class="kpi" style="--k:' + (color || 'var(--blue)') + '"><div class="l">' + l + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>';
+  const sec = (title, sub, body) => '<div class="sec card"><h2>' + title + (sub ? ' <small>' + sub + '</small>' : '') + '</h2>' + body + '</div>';
+  const clsTag = c => '<span class="flag" style="background:#EEF2F8;color:var(--navy)">' + c + '</span>';
+  const h1 = v => isNaN(v) ? '—' : fmt(v, 1) + ' h';
+  const dd = v => isNaN(v) ? '—' : fmt(v / 24, 1) + ' d';
 
-  photoFolder_('SETUP');
-  refreshCaches();
-  log.push('Setup complete');
-  Logger.log(log.join('\n'));
-  return log;
-}
+  // ---------- RENDER
+  function render() {
+    if (!M) return; $('status').classList.add('hidden');
+    $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
+    const T = M.trips.filter(keepT);
+    const fn = { overview, trips: tripsView, trucks, drivers, dest, fleet, diesel }[tab];
+    $('view').innerHTML = fn(T);
+  }
 
-function selfTestCore() {
-  const out = ['Users ' + users_().length + ' (codes set ' + users_().filter(u => u.entryCode).length + ')',
-    'Modules ' + Object.keys(matrix_().modules).length, 'Token secret ' + (str_(setting_('Token_Secret')) ? 'OK' : 'MISSING'),
-    'Ops_DB ' + str_(setting_('Ops_DB_ID')).slice(0, 8) + '…  RM_DB ' + str_(setting_('RM_DB_ID')).slice(0, 8) + '…  Finance_DB ' + str_(setting_('Finance_DB_ID')).slice(0, 8) + '…'];
-  Logger.log(out.join('\n')); return out;
-}
+  // donut (pie) for 2–6 parts
+  function donut(parts, centre) {
+    const t = sum(parts, p => p.value) || 1; let a0 = -Math.PI / 2, paths = '';
+    const R = 60, r = 38, C = 75;
+    parts.filter(p => p.value > 0).forEach(p => {
+      const ang = 2 * Math.PI * p.value / t, a1 = a0 + ang - (parts.filter(q => q.value > 0).length > 1 ? 0.03 : 0);
+      if (ang >= 2 * Math.PI - 0.001) { paths += '<circle cx="' + C + '" cy="' + C + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + p.color + '" stroke-width="' + (R - r) + '"><title>' + E(p.label) + '</title></circle>'; }
+      else {
+        const big = ang > Math.PI ? 1 : 0, P = (rad, ang2) => (C + rad * Math.cos(ang2)).toFixed(2) + ',' + (C + rad * Math.sin(ang2)).toFixed(2);
+        paths += '<path d="M' + P(R, a0) + 'A' + R + ',' + R + ' 0 ' + big + ' 1 ' + P(R, a1) + 'L' + P(r, a1) + 'A' + r + ',' + r + ' 0 ' + big + ' 0 ' + P(r, a0) + 'Z" fill="' + p.color + '"><title>' + E(p.label + ': ' + (p.text || fmt(p.value, 1))) + '</title></path>';
+      }
+      a0 += ang;
+    });
+    return '<div class="donut"><svg viewBox="0 0 150 150">' + paths + '<text x="75" y="72" text-anchor="middle" font-size="17" font-weight="900" fill="#022A5B">' + E(centre[0]) + '</text><text x="75" y="90" text-anchor="middle" font-size="10.5" fill="#5D6877">' + E(centre[1]) + '</text></svg>' +
+      '<div class="splitlg" style="flex-direction:column;gap:6px">' + parts.filter(p => p.value).map(p => '<span><i style="background:' + p.color + '"></i><b>' + E(p.label) + '</b> · ' + (p.text || fmt(p.value, 1)) + ' (' + Math.round(100 * p.value / t) + '%)</span>').join('') + '</div></div>';
+  }
+  // stacked bar per class, Bulk vs Bag segments
+  function stackByClass(T, f, txt) {
+    const CL = CLASSES.map(c => c + 'T').concat(['Other']);
+    const rowsC = CL.map(c => ({ c, bulk: sum(T.filter(x => x.cls === c && x.load === 'BULK'), f), bag: sum(T.filter(x => x.cls === c && x.load === 'BAG'), f) })).filter(r => r.bulk + r.bag);
+    const mx = Math.max(1, ...rowsC.map(r => r.bulk + r.bag));
+    return '<div class="legend"><span><i style="background:var(--s1)"></i>Bulk</span><span><i style="background:var(--s2)"></i>Bag</span></div><div class="stk">' + rowsC.map(r =>
+      '<b>' + r.c + '</b><div class="bars" style="width:' + (100 * (r.bulk + r.bag) / mx) + '%">' + (r.bulk ? '<div style="flex:' + r.bulk + ';background:var(--s1)" title="Bulk ' + E(txt(r.bulk)) + '"></div>' : '') + (r.bag ? '<div style="flex:' + r.bag + ';background:var(--s2)" title="Bag ' + E(txt(r.bag)) + '"></div>' : '') + '</div><span class="vl" style="font-weight:800;font-size:12.5px">' + txt(r.bulk + r.bag) + '</span>').join('') + '</div>';
+  }
+  const STATE = { off: { t: 'Off road', c: 'down' }, load: { t: 'Loaded · on the way', c: 'ld' }, ret: { t: 'Returning empty', c: 'rt' }, wait: { t: 'Waiting for load', c: 'wt' } };
+  let tkSel = '';
+  function fleetStatus() {
+    const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
+    const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
+    const LANES = [['load', 'Loaded, on the way', 'var(--st-load)'], ['ret', 'Returning empty', 'var(--st-ret)'], ['wait', 'Waiting for load', 'var(--st-wait)'], ['off', 'Off road', 'var(--st-off)']];
+    const shortWhy = w => w === 'Driver not available' ? 'no driver' : w === 'Documents / RTO' ? 'documents' : String(w || '').toLowerCase();
+    const lane = ([k, label, c]) => {
+      const list = g(k).sort((p, q) => (q.cap || 0) - (p.cap || 0));
+      const why = {}; if (k === 'off') list.forEach(t => { const w = shortWhy(M.status[t.no].why); why[w] = (why[w] || 0) + 1; });
+      return '<div class="lane" style="--c:' + c + '"><div class="lane-h"><b><i>' + list.length + '</i>' + label + '</b><span>' + fmt(tons(list)) + ' T</span></div>' +
+        (k === 'off' && list.length ? '<div class="muted2" style="margin-top:2px">' + Object.keys(why).map(w => w + ' ' + why[w]).join(', ') + '</div>' : '') +
+        '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + '</small></span>').join('') + '</div></div>';
+    };
+    let info = '';
+    if (tkSel && M.status[tkSel]) {
+      const t = M.truckM[tkSel] || {}, s0 = M.status[tkSel];
+      info = '<div class="tkinfo"><b>' + E(tkSel) + '</b> · ' + (t.cap ? t.cap + ' T ' : '') + E(t.cargo || '') + '<br>' +
+        (s0.st === 'off' ? E(s0.why + (s0.note ? ' — ' + s0.note : '') + (s0.loc ? ', ' + s0.loc : '') + (s0.since ? ', since ' + JNP.dmy(iso(s0.since)) : ''))
+          : s0.last ? E('Loaded for ' + s0.last.dest + ' on ' + JNP.dmy(iso(s0.last.at)) + ', ' + fmt(s0.el, 0) + ' h ago (usual round trip ' + fmt(s0.R, 0) + ' h). Driver ' + s0.last.driver + (s0.del ? '. Unloaded.' : ''))
+          : E(s0.note || 'No loading recorded recently')) + '</div>';
+    }
+    setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); }; }, 0);
+    const miss = fl.filter(t => !t.cap);
+    return '<div class="sec card"><div class="fleet-head"><div class="bigno">' + on.length + '<small>of ' + fl.length + ' trucks on road</small></div>' +
+      '<div style="text-align:right"><div style="font-weight:700;color:#022A5B">' + fmt(tons(on)) + ' of ' + fmt(totT) + ' T on road (' + pct(totT ? tons(on) / totT : NaN) + ')</div><div class="muted2">' + (M.isNow ? 'Right now' : 'On ' + JNP.dmy(RAW.to)) + ' · tap a truck for details</div></div></div>' +
+      '<div class="capbar" title="Capacity by state">' + LANES.map(([k, l, c]) => tons(g(k)) ? '<div style="flex:' + tons(g(k)) + ';background:' + c + '" title="' + l + ': ' + fmt(tons(g(k))) + ' T"></div>' : '').join('') + '</div>' +
+      '<div class="lanes" id="lanes">' + LANES.map(lane).join('') + '</div>' + info +
+      (miss.length ? '<div class="note">No capacity in Truck_Master for ' + miss.map(t => E(t.no)).join(', ') + ' — shown as “?” and counted as 0 T.</div>' : '') +
+      '<div class="muted2" style="margin-top:10px">Loaded means loaded within half of that destination’s usual round trip (loading to next loading) and not yet unloaded.</div></div>';
+  }
+
+  function overview(T) {
+    const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no)), activeTrucks = new Set(T.map(x => x.truck)).size;
+    const bds = M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), downH = sum(bds, b => b.inHrs);
+    const offDrv = M.bds.filter(b => keepTruck(b.Truck_No) && b.Off_Road_Type === 'Driver not available');
+    const availDays = fleet.length * M.days - downH / 24;
+    const spend = sum(M.mnt.filter(m => keepTruck(m.Truck_No)), m => m.Total_Cost) + sum(M.tex.filter(m => keepTruck(m.Truck_No)), m => m.Amount) + sum(M.tyr.filter(m => keepTruck(m.Truck_No)), m => m.Cost);
+    const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+    const by = (lt) => dates.map(d => T.filter(x => x.day === d && x.load === lt).length);
+    const bulk = T.filter(x => x.load === 'BULK'), bag = T.filter(x => x.load === 'BAG');
+    const DR = {
+      trips: { f: () => 1, txt: v => fmt(v), title: 'Trips', centre: [fmt(a.trips), 'trips'] },
+      mt: { f: x => x.mt, txt: v => fmt(v, 0) + ' MT', title: 'MT carried', centre: [fmt(a.mt, 0), 'MT'] },
+      rev: { f: x => x.rev, txt: v => inr(v), title: 'Freight revenue', centre: [inr(a.rev), 'freight'] },
+      diesel: { f: x => x.diesel, txt: v => fmt(v) + ' L', title: 'Diesel', centre: [fmt(a.diesel), 'litres'] },
+    };
+    const card = (k, l, v, sub, col) => '<div class="kpi tap' + (drillKey === k ? ' sel1' : '') + '" data-d="' + k + '" style="--k:' + col + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + sub + '</div></div>';
+    let drill = '';
+    if (drillKey && DR[drillKey]) {
+      const d = DR[drillKey];
+      drill = '<div class="drill">' + sec(d.title, 'split — tap the card again to close', '<div class="cgrid"><div>' + donut([{ label: 'Bulk', value: sum(bulk, d.f), color: 'var(--s1)', text: d.txt(sum(bulk, d.f)) }, { label: 'Bag', value: sum(bag, d.f), color: 'var(--s2)', text: d.txt(sum(bag, d.f)) }], d.centre) + '</div><div><div class="muted2" style="margin-bottom:6px">By truck size</div>' + stackByClass(T, d.f, d.txt) + '</div></div>') + '</div>';
+    }
+    setTimeout(() => { const k = $('kp'); if (k) k.onclick = e => { const c = e.target.closest('.kpi.tap'); if (!c) return; drillKey = drillKey === c.dataset.d ? '' : c.dataset.d; render(); }; }, 0);
+    return fleetStatus() + '<div class="kpis" id="kp">' +
+      card('trips', 'Trips', fmt(a.trips), activeTrucks + ' trucks · Bulk ' + bulk.length + ' / Bag ' + bag.length, 'var(--blue)') +
+      card('mt', 'MT carried', fmt(a.mt, 0), a.est ? a.est + ' trips without builty' : 'from builty', 'var(--blue)') +
+      (MONEY() ? card('rev', 'Freight revenue', inr(a.rev), 'Bulk ' + inr(sum(bulk, x => x.rev)) + ' · Bag ' + inr(sum(bag, x => x.rev)), 'var(--orange)') : '') +
+      (MONEY() ? card('diesel', 'Revenue / litre', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') : card('diesel', 'Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' trips', 'var(--orange)')) +
+      drill +
+      kpi('Truck fill', pct(a.cap ? a.mt / a.cap : NaN), 'MT loaded ÷ capacity of trucks that loaded', 'var(--navy)') +
+      kpi('Fleet utilisation', pct(availDays ? a.busy / availDays : NaN), fmt(a.busy, 0) + ' of ' + fmt(availDays, 0) + ' truck-days busy', 'var(--navy)') +
+      kpi('Avg rotation', dd(a.rot), 'loading → next loading', 'var(--blue)') +
+      kpi('Delivery TAT', h1(a.tat), 'on time ' + pct(a.onTime), 'var(--blue)') +
+      kpi('Breakdown downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
+      kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
+      (MONEY() ? kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') : '') +
+      kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
+      '</div>' +
+      sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
+      '<div class="cgrid">' +
+      sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) +
+      (MONEY() ? sec('Revenue per litre', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) : sec('MT by size', '', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT'))) +
+      '</div>';
+  }
+
+  // WhatsApp report — same layout as the daily "vehicles not on road" message
+  function report() {
+    const fl = M.fleet.filter(t => keepTruck(t.no)), T = M.trips.filter(keepT), a = agg(T), st = t => M.status[t.no] || {};
+    const off = fl.filter(t => st(t).st === 'off'), on = fl.filter(t => st(t).st !== 'off');
+    const n = k => fl.filter(t => st(t).st === k).length, tons = arr => sum(arr, t => t.cap);
+    const L = [], short = no => String(no).slice(-4), d2 = d => d ? JNP.dmy(iso(d)).slice(0, 5) : '';
+    L.push('*JNP FLEET REPORT · ' + JNP.dmy(iso(M.asOf)) + '*');
+    if (fSize !== 'All' || fLoad !== 'All') L.push('Filter: ' + [fSize !== 'All' ? fSize : '', fLoad !== 'All' ? fLoad : ''].filter(Boolean).join(' · '));
+    L.push('————————');
+    L.push('🚚 Fleet: ' + fl.length + ' trucks · ' + fmt(tons(fl)) + ' T');
+    L.push('✅ On road: ' + on.length + '  (Loaded ' + n('load') + ' · Returning ' + n('ret') + ' · Waiting ' + n('wait') + ')');
+    const why = {}; off.forEach(t => why[st(t).why] = (why[st(t).why] || 0) + 1);
+    L.push('⚠️ Off road: ' + off.length + (off.length ? '  (' + Object.keys(why).map(k => k + ' ' + why[k]).join(' · ') + ')' : ''));
+    if (off.length) {
+      L.push(''); L.push('⚠️ *VEHICLES NOT ON ROAD*');
+      const grp = {}; off.forEach(t => { const k = (t.cap ? classOf(t.cap) : 'Size not known') + ' ' + (t.cargo || 'BAG'); (grp[k] = grp[k] || []).push(t); });
+      Object.keys(grp).sort((p, q) => (parseInt(p) || 999) - (parseInt(q) || 999)).forEach(k => {
+        L.push(''); L.push('*' + k + ' (' + grp[k].length + ') · ' + fmt(tons(grp[k])) + ' T*');
+        grp[k].forEach(t => { const s0 = st(t); L.push(' ' + short(t.no) + ' – ' + (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.note && s0.note.indexOf('Truck_Master') < 0 ? ' – ' + s0.note : '') + (s0.loc ? ' – ' + s0.loc : '') + (s0.since ? ' – ' + d2(s0.since) : '')); });
+      });
+      const nc = off.filter(t => !t.cap); if (nc.length) L.push('(capacity missing in Truck_Master: ' + nc.map(t => short(t.no)).join(', ') + ')');
+      L.push(''); L.push('Total down: ' + off.length + ' trucks · Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' T · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ' T');
+    }
+    L.push('————————');
+    L.push('📦 Trips ' + JNP.dmy(RAW.from).slice(0, 5) + ' to ' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + a.trips + ' · ' + fmt(a.mt, 0) + ' MT');
+    L.push('  Bulk ' + T.filter(x => x.load === 'BULK').length + ' · Bag ' + T.filter(x => x.load === 'BAG').length);
+    L.push('  ' + CLASSES.map(c => c + 'T').map(c => [c, T.filter(x => x.cls === c).length]).filter(x => x[1]).map(x => x[0] + ' ' + x[1]).join(' · '));
+    L.push('⏱ Avg rotation ' + dd(a.rot) + ' · delivery ' + h1(a.tat));
+    if (MONEY()) L.push('💰 Freight ' + inr(a.rev) + ' · ₹' + fmt(revPerL(a), 0) + ' per litre diesel');
+    L.push('🔧 Breakdown downtime ' + fmt(sum(M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), b => b.inHrs), 0) + ' h');
+    L.push('— ' + JNP.session().user.name);
+    return L.join('\n');
+  }
+
+  function tripsView(T) {
+    const q = (window.__tq || '').toUpperCase();
+    const data = T.filter(x => !q || [x.lr, x.truck, x.driver, x.dest, x.consignee].join(' ').toUpperCase().indexOf(q) >= 0)
+      .map(x => Object.assign({}, x, { date: x.day, tatv: x.tat }));
+    const a = agg(data);
+    const destSum = {}; data.forEach(x => { const d = destSum[x.dest] = destSum[x.dest] || { dest: x.dest, trips: 0, mt: 0, rev: 0, trucks: new Set() }; d.trips++; d.mt += x.mt; d.rev += x.rev; d.trucks.add(x.truck); });
+    const ds = Object.values(destSum).map(d => Object.assign(d, { tcount: d.trucks.size }));
+    const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+    setTimeout(() => { const s = $('tq'); if (s) { s.oninput = () => { window.__tq = s.value; const p = s.selectionStart; render(); const n = $('tq'); n.focus(); n.setSelectionRange(p, p); }; } const c = $('csv'); if (c) c.onclick = () => csv(data); }, 0);
+    return '<div class="card"><div class="frow"><input id="tq" class="input search" style="max-width:none;flex:1" placeholder="Search LR, truck, driver, destination, party" value="' + E(window.__tq || '') + '"><button class="chip sm" id="csv">⬇ CSV</button></div>' +
+      '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1)) + $m(kpi('Revenue', inr(a.rev), '', 'var(--orange)')) + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
+      sec('Loaded for', 'destination-wise · ' + JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to), hbar(ds.map(d => ({ label: d.dest, sub: d.tcount + ' trucks · ' + fmt(d.mt, 0) + ' MT', value: d.trips, text: fmt(d.trips) + ' trips', tip: d.dest + ': ' + d.trips + ' trips, ' + fmt(d.mt, 1) + ' MT, ' + inr(d.rev) })), { top: 12 }) +
+        tv('Table view', table('tDs', [{ k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'tcount', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr }], ds, { sort: 'trips' }))) +
+      $m(sec('Revenue per day', '₹, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
+      sec('Trip log', a.trips + ' trips · tap a heading to sort', '<details class="tv" open><summary>Show trips</summary>' +
+        table('tTrips', [{ k: 'date', t: 'Date', f: v => JNP.dmy(v) }, { k: 'lr', t: 'LR' }, { k: 'truck', t: 'Truck' }, { k: 'dest', t: 'Destination' }, { k: 'driver', t: 'Driver' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'load', t: 'Load', f: v => v === 'BULK' ? 'Bulk' : 'Bag' },
+          { k: 'consignee', t: 'Party' }, { k: 'mt', t: 'MT', num: 1, f: (v, r) => fmt(v, 2) + (r.mtEst ? '<span class="flag est">est</span>' : '') },
+          { k: 'rate', t: 'Rate', num: 1 }, { k: 'rev', t: 'Revenue', num: 1, f: inr }, { k: 'diesel', t: 'Diesel L', num: 1 }, { k: 'tatv', t: 'Delivery TAT', num: 1, f: (v, r) => isNaN(v) ? '<span class="muted2">not delivered</span>' : h1(v) + (r.targetTat && v > r.targetTat ? '<span class="flag bad">late</span>' : '') },
+          { k: 'shortKg', t: 'Short kg', num: 1, f: v => v > 0 ? '<b style="color:var(--red)">' + v + '</b>' : '' }], data, { sort: 'date' }) + '</details>');
+  }
+  function csv(data) {
+    const cols = ['day', 'lr', 'truck', 'cls', 'load', 'driver', 'dest', 'consignee', 'mt', 'rate', 'rev', 'diesel', 'adv', 'tat', 'shortKg'];
+    const body = [cols.join(',')].concat(data.map(x => cols.map(c => { const v = c === 'tat' ? (isNaN(x.tat) ? '' : x.tat.toFixed(1)) : x[c]; return '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"'; }).join(','))).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([body], { type: 'text/csv' })); a.download = 'JNP_trips_' + RAW.from + '_' + RAW.to + '.csv'; a.click();
+  }
+
+  function trucks(T) {
+    const fleet = M.fleet.filter(t => keepTruck(t.no));
+    const data = fleet.map(t => {
+      const tt = T.filter(x => x.truck === t.no), g = agg(tt), b = M.bds.filter(x => x.Truck_No === t.no), last = M.lastTrip['T' + t.no];
+      const spend = sum(M.mnt.filter(m => m.Truck_No === t.no), m => m.Total_Cost) + sum(M.tex.filter(m => m.Truck_No === t.no), m => m.Amount) + sum(M.tyr.filter(m => m.Truck_No === t.no), m => m.Cost);
+      return { truck: t.no, cls: classOf(t.cap), status: t.status, trips: g.trips, mt: g.mt, rev: g.rev, km: g.km, diesel: g.diesel, kmpl: g.kmDiesel ? g.km / g.kmDiesel : NaN, rpl: revPerL(g),
+        rot: g.rot, idleNow: last ? (M.end - last.at) / 864e5 : NaN, waitAfterUnload: avg(tt.map(x => x.truckIdle).filter(v => !isNaN(v) && v >= 0 && v < 15 * 24)),
+        down: sum(b, x => x.inHrs), bds: b.length, spend: spend, rpt: b.filter(x => x.Repeat_Flag === 'Yes').length + M.mnt.filter(m => m.Truck_No === t.no && m.Repeat_Flag === 'Yes').length };
+    });
+    const idle = data.filter(r => isNaN(r.idleNow) || r.idleNow > 1).map(r => { const s0 = M.status[r.truck] || {}, off = s0.st === 'off';
+      return { label: r.truck, sub: r.cls + (off ? ' · ' + (s0.why === 'Driver not available' ? 'no driver' : s0.why.toLowerCase()) : ''), value: isNaN(r.idleNow) ? M.days : r.idleNow, color: off ? '#9AA4B2' : 'var(--red)', text: (isNaN(r.idleNow) ? 'no trip' : fmt(r.idleNow, 1) + ' d') + (off ? ' · off road' : '') }; });
+    return '<div class="cgrid">' +
+      sec('Trips per truck', 'colour = class', hbar(data.map(r => ({ label: r.truck, sub: r.cls, value: r.trips, color: CLASS_COLOR[r.cls], text: fmt(r.trips), tip: r.truck + ': ' + r.trips + ' trips, ' + fmt(r.mt, 1) + ' MT, ' + inr(r.rev) })), { top: 12 })) +
+      sec('Standing idle now', 'days since last loading', hbar(idle, { top: 10 })) +
+      sec('Rotation', 'avg days between loadings', hbar(data.filter(r => !isNaN(r.rot)).map(r => ({ label: r.truck, sub: r.cls, value: r.rot / 24, color: CLASS_COLOR[r.cls], text: fmt(r.rot / 24, 1) + ' d' })), { top: 10 })) +
+      $m(sec('Revenue per truck', '₹', hbar(data.map(r => ({ label: r.truck, sub: r.cls, value: r.rev, color: CLASS_COLOR[r.cls], text: inr(r.rev) })), { top: 10 }))) +
+      '</div>' +
+      sec('All trucks', 'tap a truck for its trips', tv('Table view', table('tTr', [
+      { k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'trips', t: 'Trips', num: 1, bar: 1, color: r => CLASS_COLOR[r.cls] }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) },
+      { k: 'rev', t: 'Revenue', num: 1, f: inr }, { k: 'km', t: 'KM', num: 1 }, { k: 'kmpl', t: 'KM/L', num: 1, f: v => fmt(v, 2) }, { k: 'rpl', t: '₹/L', num: 1, f: v => isNaN(v) ? '—' : fmt(v, 1) },
+      { k: 'rot', t: 'Rotation', num: 1, f: dd }, { k: 'waitAfterUnload', t: 'Wait after unload', num: 1, f: h1 }, { k: 'idleNow', t: 'Since last load', num: 1, f: v => isNaN(v) ? '<span class="flag bad">no trip</span>' : v > 3 ? '<b style="color:var(--red)">' + fmt(v, 1) + ' d</b>' : fmt(v, 1) + ' d' },
+      { k: 'down', t: 'Downtime', num: 1, f: v => v ? fmt(v, 0) + ' h' : '' }, { k: 'spend', t: 'R&M ₹', num: 1, f: v => v ? inr(v) : '' }, { k: 'rpt', t: 'Repeat', num: 1, f: v => v ? '<span class="flag bad">' + v + '</span>' : '' }],
+      data, { sort: 'trips', click: r => detail('Truck ' + r.truck, T.filter(x => x.truck === r.truck)) }))) + '<div id="detail"></div>';
+  }
+
+  function drivers(T) {
+    const names = {}; T.forEach(x => names[x.driver] = 1);
+    const data = Object.keys(names).map(n => {
+      const tt = T.filter(x => x.driver === n), g = agg(tt), last = M.lastTrip['D' + n];
+      const deb = sum(M.hand.filter(h => h.Driver_Name === n && /Approved|Paid/.test(h.Status)), h => h.Proposed_Debit);
+      return { driver: n, trips: g.trips, trucks: [...new Set(tt.map(x => x.truck))].join(', '), mt: g.mt, rev: g.rev, adv: sum(tt, x => x.adv), idleGap: avg(tt.map(x => x.drvIdle).filter(v => !isNaN(v))),
+        idleNow: last ? (M.end - last.at) / 864e5 : NaN, tat: g.tat, onTime: g.onTime, short: g.short, km: g.km, kmpl: g.kmDiesel ? g.km / g.kmDiesel : NaN, debit: deb };
+    });
+    const opts = '<option value="">— all drivers —</option>' + data.map(d => d.driver).sort().map(n => '<option' + (window.__drv === n ? ' selected' : '') + '>' + E(n) + '</option>').join('');
+    setTimeout(() => { const s = $('selDrv'); if (s) s.onchange = () => { window.__drv = s.value; render(); }; }, 0);
+    const sel = window.__drv && data.find(d => d.driver === window.__drv);
+    let head = '<div class="card"><div class="frow"><span class="flabel">Driver</span><select id="selDrv" class="input" style="max-width:320px;flex:1">' + opts + '</select></div>';
+    if (sel) {
+      const tt = T.filter(x => x.driver === sel.driver), dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+      const dst = {}; tt.forEach(x => dst[x.dest] = (dst[x.dest] || 0) + 1);
+      head += '<div class="kpis">' + kpi('Trips', sel.trips, sel.trucks) + kpi('MT', fmt(sel.mt, 1)) + $m(kpi('Revenue', inr(sel.rev), '', 'var(--orange)')) + kpi('Idle between trips', h1(sel.idleGap), 'unload → next load') +
+        kpi('Since last load', isNaN(sel.idleNow) ? '—' : fmt(sel.idleNow, 1) + ' d', '', 'var(--red)') + kpi('Delivery TAT', h1(sel.tat), 'on time ' + pct(sel.onTime)) + kpi('Shortage', fmt(sel.short) + ' kg', '', 'var(--red)') + $m(kpi('Trip advances', inr(sel.adv), sel.debit ? 'debits ' + inr(sel.debit) : '')) + '</div></div>' +
+        '<div class="cgrid">' + sec('Trips per day', sel.driver, columns('cDrv', dates, [{ name: 'Trips', color: 'var(--s1)', values: dates.map(d => tt.filter(x => x.day === d).length) }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+        sec('Destinations', sel.driver, hbar(Object.keys(dst).map(k => ({ label: k, value: dst[k], text: fmt(dst[k]) })), { top: 8 })) + '</div>' + detailHtml('Trips of ' + sel.driver, tt);
+      return head;
+    }
+    return head + '</div><div class="cgrid">' +
+      sec('Trips per driver', '', hbar(data.map(r => ({ label: r.driver, value: r.trips, text: fmt(r.trips), tip: r.driver + ': ' + r.trips + ' trips · ' + r.trucks })), { top: 12 })) +
+      sec('Idle between trips', 'avg hours from unloading to next loading', hbar(data.filter(r => !isNaN(r.idleGap)).map(r => ({ label: r.driver, value: r.idleGap, color: 'var(--s2)', text: fmt(r.idleGap, 0) + ' h' })), { top: 12 })) +
+      sec('Standing idle now', 'days since last loading', hbar(data.filter(r => r.idleNow > 1).map(r => ({ label: r.driver, sub: r.trucks, value: r.idleNow, color: 'var(--red)', text: fmt(r.idleNow, 1) + ' d' })), { top: 10 })) +
+      sec('Shortage', 'kg', hbar(data.filter(r => r.short > 0).map(r => ({ label: r.driver, value: r.short, color: 'var(--red)', text: fmt(r.short) + ' kg' })), { top: 10 })) +
+      '</div>' + sec('All drivers', 'tap a driver to open', tv('Table view', table('tDr', [
+        { k: 'driver', t: 'Driver' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'trucks', t: 'Truck(s)' }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
+        { k: 'idleGap', t: 'Avg idle', num: 1, f: h1 }, { k: 'idleNow', t: 'Since last load', num: 1, f: v => isNaN(v) ? '—' : v > 3 ? '<b style="color:var(--red)">' + fmt(v, 1) + ' d</b>' : fmt(v, 1) + ' d' },
+        { k: 'tat', t: 'Delivery TAT', num: 1, f: h1 }, { k: 'onTime', t: 'On time', num: 1, f: pct }, { k: 'short', t: 'Short kg', num: 1, f: v => v > 0 ? v : '' }, { k: 'kmpl', t: 'KM/L', num: 1, f: v => fmt(v, 2) }, { k: 'adv', t: 'Advances', num: 1, f: inr }],
+        data, { sort: 'trips', click: r => { window.__drv = r.driver; render(); window.scrollTo(0, 0); } })));
+  }
+
+  function dest(T) {
+    const names = {}; T.forEach(x => names[x.dest] = 1);
+    const data = Object.keys(names).map(n => {
+      const tt = T.filter(x => x.dest === n), g = agg(tt), dm = M.destM[JNP.keyOf(n)] || {};
+      return { dest: n, trips: g.trips, trucks: new Set(tt.map(x => x.truck)).size, mt: g.mt, rev: g.rev, rate: g.mt ? g.rev / g.mt : NaN, km: dm.km || '', tat: g.tat, target: dm.tat || '', onTime: g.onTime, rot: g.rot, short: g.short, rpl: revPerL(g) };
+    });
+    return '<div class="cgrid">' +
+      sec('Trips', 'by destination', hbar(data.map(r => ({ label: r.dest, sub: fmt(r.mt, 0) + ' MT', value: r.trips, text: fmt(r.trips) })), { top: 12 })) +
+      $m(sec('Revenue', 'by destination', hbar(data.map(r => ({ label: r.dest, value: r.rev, color: 'var(--s2)', text: inr(r.rev) })), { top: 12 }))) +
+      sec('Delivery TAT', 'avg hours, loading → unloading', hbar(data.filter(r => !isNaN(r.tat)).map(r => ({ label: r.dest, sub: r.target ? 'target ' + r.target + ' h' : '', value: r.tat, color: r.target && r.tat > r.target ? 'var(--red)' : 'var(--s3)', text: fmt(r.tat, 0) + ' h' })), { top: 12 })) +
+      $m(sec('Rate', 'avg ₹ per MT', hbar(data.filter(r => !isNaN(r.rate)).map(r => ({ label: r.dest, value: r.rate, color: 'var(--s4)', text: '₹' + fmt(r.rate) })), { top: 12 }))) +
+      '</div>' + sec('All destinations', 'tap one for its trips', tv('Table view', table('tDe', [
+      { k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'trucks', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
+      { k: 'rate', t: 'Avg ₹/MT', num: 1, f: v => fmt(v) }, { k: 'km', t: 'KM (one way)', num: 1 }, { k: 'tat', t: 'Delivery TAT', num: 1, f: h1 }, { k: 'target', t: 'Target', num: 1, f: v => v ? v + ' h' : '<span class="muted2">set in master</span>' },
+      { k: 'onTime', t: 'On time', num: 1, f: pct }, { k: 'rot', t: 'Rotation', num: 1, f: dd }, { k: 'short', t: 'Short kg', num: 1, f: v => v > 0 ? v : '' }, { k: 'rpl', t: '₹/L', num: 1, f: v => isNaN(v) ? '—' : fmt(v, 1) }],
+      data, { sort: 'trips', click: r => detail(r.dest, T.filter(x => x.dest === r.dest)) }))) + '<div id="detail"></div>';
+  }
+
+  function detailHtml(title, tt) {
+    return sec(title, tt.length + ' trips', table('tDet', [{ k: 'day', t: 'Date', f: v => JNP.dmy(v) }, { k: 'lr', t: 'LR' }, { k: 'truck', t: 'Truck' }, { k: 'driver', t: 'Driver' }, { k: 'dest', t: 'Destination' },
+      { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 2) }, { k: 'rev', t: 'Revenue', num: 1, f: inr }, { k: 'diesel', t: 'Diesel', num: 1 }, { k: 'km', t: 'KM', num: 1, f: v => fmt(v) }, { k: 'tat', t: 'TAT', num: 1, f: h1 }, { k: 'drvIdle', t: 'Idle before', num: 1, f: h1 }], tt, { sort: 'day' }));
+  }
+  function detail(title, tt) { $('detail').innerHTML = detailHtml(title, tt); $('detail').scrollIntoView({ behavior: 'smooth' }); }
+
+  function repeats(bds, mnt) {
+    const rf = {}; bds.concat(mnt).forEach(x => { if (!x.Fault_Code) return; const k = x.Truck_No + '|' + x.Fault_Code; (rf[k] = rf[k] || { truck: x.Truck_No, fault: x.Fault_Code, n: 0, flagged: 0 }).n++; if (x.Repeat_Flag === 'Yes') rf[k].flagged++; });
+    const faults = {}; (JNP.M().faults || []).forEach(f => faults[f.code] = f.name);
+    return Object.values(rf).filter(x => x.n >= 2 || x.flagged).map(x => Object.assign(x, { name: faults[x.fault] || '' }));
+  }
+  function fleet() {
+    const keep = x => keepTruck(x.Truck_No), bdsAll = M.bds.filter(keep), bds = bdsAll.filter(b => b.rm), mnt = M.mnt.filter(keep), tex = M.tex.filter(keep), tyr = M.tyr.filter(keep), fl = M.fleet.filter(t => keepTruck(t.no));
+    const downH = sum(bds, b => b.inHrs), closed = bds.filter(b => !b.open);
+    const pm = mnt.filter(m => /Preventive/.test(m.Record_Type)), checks = sum(pm, m => String(m.PM_Check_Codes || '').split(',').filter(Boolean).length);
+    const overdue = fl.filter(t => t.svcKm && t.odo && t.lastSvc !== '' && t.odo - t.lastSvc >= t.svcKm).map(t => ({ truck: t.no, cls: classOf(t.cap), odo: t.odo, last: t.lastSvc, due: t.lastSvc + t.svcKm, over: t.odo - t.lastSvc - t.svcKm }));
+    // repeat faults: same truck + fault ≥ 2 in range (breakdowns + job cards)
+    const rep = repeats(bds, mnt);
+    const spendRows = fl.map(t => ({ truck: t.no, cls: classOf(t.cap), jobs: sum(mnt.filter(m => m.Truck_No === t.no), m => m.Total_Cost), exp: sum(tex.filter(m => m.Truck_No === t.no), m => m.Amount), tyres: sum(tyr.filter(m => m.Truck_No === t.no), m => m.Cost), budget: t.budget ? t.budget * M.days / 30 : NaN }))
+      .map(r => Object.assign(r, { total: r.jobs + r.exp + r.tyres })).filter(r => r.total);
+    const heads = {}; tex.forEach(x => heads[x.Expense_Head] = (heads[x.Expense_Head] || 0) + n0(x.Amount));
+    const downT = {}; bds.forEach(x => { downT[x.Truck_No] = (downT[x.Truck_No] || 0) + x.inHrs; });
+    const weeks = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 7 * 864e5)) weeks.push(iso(d));
+    const wkOf = v => { const t = D(String(v).slice(0, 10)); const i = Math.floor((t - M.from) / (7 * 864e5)); return i >= 0 && i < weeks.length ? i : -1; };
+    const wk = (list, f) => weeks.map((w, i) => sum(list.filter(x => wkOf(x.Created_At) === i), f));
+    return '<div class="kpis">' +
+      kpi('Breakdowns', bds.length, bds.filter(b => b.open).length + ' still open', 'var(--red)') + kpi('Fleet downtime', fmt(downH, 0) + ' h', 'uptime ' + pct(fl.length ? 1 - downH / (fl.length * M.days * 24) : NaN) + (RAW.settings.Fleet_Uptime_Target ? ' · target ' + pct(RAW.settings.Fleet_Uptime_Target) : ''), 'var(--red)') +
+      kpi('Avg breakdown downtime', h1(avg(closed.map(b => n0(b.Downtime_Hrs))))) + kpi('Repair TAT (job cards)', h1(avg(mnt.map(m => n0(m.Repair_TAT_Hrs)).filter(Boolean)))) +
+      kpi('Repeat faults', rep.length, 'same truck + fault', 'var(--red)') + $m(kpi('Maintenance spend', inr(sum(spendRows, r => r.total)), '', 'var(--orange)')) +
+      kpi('Preventive checks', pm.length, checks + ' check items done', 'var(--ok)') + kpi('PM overdue', overdue.length, 'past service interval', overdue.length ? 'var(--red)' : 'var(--ok)') + '</div>' +
+      sec('Off road by reason', 'all off-road records in this period', (() => { const R = {}; bdsAll.forEach(b => { const k = b.Off_Road_Type || 'Breakdown'; R[k] = R[k] || { n: 0, h: 0, open: 0 }; R[k].n++; R[k].h += b.inHrs; if (b.open) R[k].open++; });
+        const C = { 'Breakdown': 'var(--red)', 'Driver not available': 'var(--s2)', 'Accident': 'var(--s5)', 'Documents / RTO': 'var(--s4)', 'Other': '#9AA4B2' };
+        return split(Object.keys(R).map(k => ({ label: k, value: R[k].h, color: C[k] || '#9AA4B2', text: fmt(R[k].h / 24, 1) + ' truck-days' }))) + '<div style="margin-top:10px">' + hbar(Object.keys(R).map(k => ({ label: k, sub: R[k].open + ' still off road', value: R[k].n, color: C[k] || '#9AA4B2', text: R[k].n + ' trucks' }))) + '</div>'; })()) +
+      $m(sec('Spend per week', 'job cards + expenses + tyres', columns('cSpend', weeks, [{ name: 'Job cards', color: 'var(--s1)', values: wk(mnt, x => x.Total_Cost) }, { name: 'Truck expenses', color: 'var(--s2)', values: wk(tex, x => x.Amount) }, { name: 'Tyres', color: 'var(--s3)', values: wk(tyr, x => x.Cost) }], { unit: '₹', label: d => 'wk ' + d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
+      '<div class="cgrid">' +
+      sec('Downtime by truck', 'hours off road in this period', hbar(Object.keys(downT).map(k => ({ label: k, sub: classOf((M.truckM[k] || {}).cap), value: downT[k], color: 'var(--red)', text: fmt(downT[k], 0) + ' h' })), { top: 10 })) +
+      $m(sec('Spend by truck', '₹', hbar(spendRows.map(r => ({ label: r.truck, sub: r.cls, value: r.total, color: 'var(--s2)', text: inr(r.total), tip: r.truck + ': jobs ' + inr(r.jobs) + ', expenses ' + inr(r.exp) + ', tyres ' + inr(r.tyres) })), { top: 10 }))) +
+      $m(sec('Spend split', '', split([{ label: 'Job cards', value: sum(spendRows, r => r.jobs), color: 'var(--s1)', text: inr(sum(spendRows, r => r.jobs)) }, { label: 'Truck expenses', value: sum(spendRows, r => r.exp), color: 'var(--s2)', text: inr(sum(spendRows, r => r.exp)) }, { label: 'Tyres', value: sum(spendRows, r => r.tyres), color: 'var(--s3)', text: inr(sum(spendRows, r => r.tyres)) }]) +
+        '<div class="muted2" style="margin:14px 0 6px">Truck expenses by head</div>' + hbar(Object.keys(heads).map(h => ({ label: h, value: heads[h], color: 'var(--s2)', text: inr(heads[h]) })), { top: 6 }))) +
+      sec('Repeat faults', 'same truck + fault', hbar(rep.map(r => ({ label: r.truck, sub: r.fault + (r.name ? ' ' + r.name : ''), value: r.n, color: 'var(--red)', text: r.n + '×' })), { top: 10 })) +
+      '</div>' +
+      sec('PM overdue', 'Service_Interval_KM in Truck_Master', hbar(overdue.map(r => ({ label: r.truck, sub: r.cls, value: r.over, color: 'var(--red)', text: fmt(r.over) + ' km over' }))) +
+        tv('Table view', table('tPm', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'odo', t: 'KM now', num: 1, f: v => fmt(v) }, { k: 'due', t: 'Due at', num: 1, f: v => fmt(v) }, { k: 'over', t: 'Over by', num: 1, f: v => '<b style="color:var(--red)">' + fmt(v) + '</b>' }], overdue, { sort: 'over' }))) +
+      sec('Off-road records', 'in this period', tv('Table view', table('tBd', [{ k: 'Created_At', t: 'Reported', f: v => JNP.dmy(String(v).replace('T', ' ')) }, { k: 'Truck_No', t: 'Truck' }, { k: 'Off_Road_Type', t: 'Type', f: v => E(v || 'Breakdown') }, { k: 'Symptom', t: 'Reason' }, { k: 'Fault_Code', t: 'Fault' },
+        { k: 'Breakdown_Status', t: 'Status', f: v => '<span class="pill ' + JNP.statusCls(v) + '">' + E(v) + '</span>' }, { k: 'inHrs', t: 'Down (in period)', num: 1, f: v => fmt(v, 0) + ' h' }, { k: 'Repair_Location', t: 'Repaired at' }, { k: 'Repeat_Flag', t: 'Repeat', f: v => v === 'Yes' ? '<span class="flag bad">Repeat</span>' : '' }], bdsAll, { sort: 'Created_At' }))) +
+      $m(sec('Maintenance spend by truck', 'budget = Monthly_RM_Budget for the period', tv('Table view', table('tSp', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'jobs', t: 'Job cards', num: 1, f: inr }, { k: 'exp', t: 'Expenses', num: 1, f: inr }, { k: 'tyres', t: 'Tyres', num: 1, f: inr },
+        { k: 'total', t: 'Total', num: 1, f: inr, bar: 1, color: () => 'var(--s2)' }, { k: 'budget', t: 'Budget', num: 1, f: (v, r) => isNaN(v) ? '—' : inr(v) + (r.total > v ? '<span class="flag bad">over</span>' : '') }], spendRows, { sort: 'total' }))));
+  }
+
+  function diesel(T) {
+    const a = agg(T);
+    const cls = CLASSES.map(c => c + 'T').concat(['Other']).map(c => { const g = agg(T.filter(x => x.cls === c)); return { cls: c, trips: g.trips, diesel: g.diesel, rev: g.rev, rpl: revPerL(g), cov: g.trips ? g.dieselTrips / g.trips : NaN, kmpl: g.kmDiesel ? g.km / g.kmDiesel : NaN, lpt: g.trips ? g.diesel / g.trips : NaN }; }).filter(r => r.trips);
+    const trk = {}; T.forEach(x => (trk[x.truck] = trk[x.truck] || []).push(x));
+    const tr = Object.keys(trk).map(k => { const g = agg(trk[k]); return { truck: k, cls: trk[k][0].cls, trips: g.trips, diesel: g.diesel, rev: g.rev, rpl: revPerL(g), cov: g.trips ? g.dieselTrips / g.trips : NaN, kmpl: g.kmDiesel ? g.km / g.kmDiesel : NaN }; });
+    const lowCov = cls.filter(r => r.cov < .7), avgR = revPerL(a);
+    const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+    const CL = cls.map(r => r.cls);
+    return '<div class="kpis">' + $m(kpi('Revenue per litre', isNaN(avgR) ? '—' : '₹' + fmt(avgR, 1), 'total freight ÷ total diesel entered', 'var(--orange)')) + kpi('Diesel entered', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips') +
+      $m(kpi('Freight revenue', inr(a.rev))) + kpi('KM per litre', a.kmDiesel ? fmt(a.km / a.kmDiesel, 2) : '—', 'where next loading KM is known') + '</div>' +
+      (lowCov.length ? '<div class="note">⚠️ ' + lowCov.map(r => r.cls).join(', ') + ': diesel is entered on few trips (filled in lumps), so ₹/litre is worked out over the whole period — reliable only when every fill in the period is entered.</div>' : '') +
+      sec('Diesel per day', 'litres entered, by class', columns('cDsl', dates, CL.map(c => ({ name: c, color: CLASS_COLOR[c], values: dates.map(d => sum(T.filter(x => x.day === d && x.cls === c), x => x.diesel)) })), { unit: 'L', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      '<div class="cgrid">' +
+      $m(sec('₹ earned per litre', 'by class', hbar(cls.map(r => ({ label: r.cls, sub: r.cov < .7 ? 'diesel on ' + pct(r.cov) + ' trips' : '', value: r.rpl, color: CLASS_COLOR[r.cls], text: isNaN(r.rpl) ? '—' : '₹' + fmt(r.rpl, 1) })), { ref: avgR, refLabel: 'fleet average ₹' + fmt(avgR, 1) }))) +
+      sec('KM per litre', 'by class', hbar(cls.filter(r => !isNaN(r.kmpl)).map(r => ({ label: r.cls, value: r.kmpl, color: CLASS_COLOR[r.cls], text: fmt(r.kmpl, 2) })))) +
+      $m(sec('₹ per litre — lowest trucks', 'check these first', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls + (r.cov < .7 ? ' · low diesel entry' : ''), value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, asc: true, ref: avgR, refLabel: 'fleet average' }))) +
+      $m(sec('₹ per litre — best trucks', '', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls, value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, ref: avgR, refLabel: 'fleet average' }))) +
+      '</div>' +
+      sec('By class', '', tv('Table view', table('tDc', [{ k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'trips', t: 'Trips', num: 1 }, { k: 'diesel', t: 'Diesel L', num: 1, f: v => fmt(v) }, { k: 'lpt', t: 'L / trip', num: 1, f: v => fmt(v, 0) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
+        { k: 'rpl', t: '₹ per litre', num: 1, f: v => isNaN(v) ? '—' : '₹' + fmt(v, 1) }, { k: 'kmpl', t: 'KM/L', num: 1, f: v => fmt(v, 2) }, { k: 'cov', t: 'Trips with diesel', num: 1, f: v => v < .7 ? '<span class="flag est">' + pct(v) + '</span>' : pct(v) }], cls, { sort: 'cls' }))) +
+      sec('By truck', '', tv('Table view', table('tDt', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'trips', t: 'Trips', num: 1 }, { k: 'diesel', t: 'Diesel L', num: 1, f: v => fmt(v) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
+        { k: 'rpl', t: '₹ per litre', num: 1, f: v => isNaN(v) ? '—' : '₹' + fmt(v, 1) }, { k: 'kmpl', t: 'KM/L', num: 1, f: v => fmt(v, 2) }, { k: 'cov', t: 'Trips with diesel', num: 1, f: v => v < .7 ? '<span class="flag est">' + pct(v) + '</span>' : pct(v) }], tr, { sort: 'rpl' })));
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>
