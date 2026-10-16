@@ -12,6 +12,27 @@
     .wrap { max-width: 1180px; }
     .viz { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --grid: #E6EBF2; }
     .filters { position: sticky; top: 66px; z-index: 15; background: var(--bg); padding: 10px 0 6px; }
+    .fbar { display: flex; gap: 8px; align-items: stretch; }
+    .fbar .input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 14px; }
+    .sel { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: #fff; border: 1.5px solid #CCD5E2; border-radius: 12px; padding: 4px 30px 4px 10px; }
+    .sel::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .sel span { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .sel select { border: 0; background: transparent; font-weight: 800; color: var(--navy); font-size: 14.5px; padding: 0; -webkit-appearance: none; appearance: none; outline: none; width: 100%; }
+    .sel.view { flex: 3; background: var(--navy); border-color: var(--navy); } .sel.view span { color: #9FB6DA; } .sel.view select { color: #fff; font-size: 15.5px; } .sel.view::after { color: #fff; }
+    .sel.view select option { color: var(--ink); }
+    .sharebtn { flex: 1; border: 0; border-radius: 12px; background: linear-gradient(135deg, #1FAF5E, #12804A); color: #fff; font-weight: 800; font-size: 14px; white-space: nowrap; padding: 0 12px; cursor: pointer; }
+    .kpi.tap { cursor: pointer; } .kpi.tap .l::after { content: ' ›'; color: var(--orange); font-weight: 900; } .kpi.sel1 { outline: 2.5px solid var(--orange); }
+    .drill { grid-column: 1 / -1; }
+    .donut { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .donut svg { width: 150px; height: 150px; flex: none; }
+    .stk { display: grid; grid-template-columns: 56px 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+    .stk .bars { display: flex; gap: 2px; height: 16px; } .stk .bars div { border-radius: 3px; min-width: 2px; }
+    .fs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .fs .b { border-radius: 12px; padding: 10px; background: var(--bg); cursor: pointer; border: 2px solid transparent; }
+    .fs .b.on { border-color: var(--orange); background: #fff; }
+    .fs .b b { display: block; font-size: 22px; color: var(--navy); line-height: 1.1; } .fs .b span { font-size: 11.5px; color: var(--muted); font-weight: 700; } .fs .b small { display: block; font-size: 11.5px; color: var(--char); }
+    .fs .b.down b { color: var(--red); } .fs .b.ld b { color: var(--blue); } .fs .b.rt b { color: var(--s3); } .fs .b.wt b { color: var(--orange); }
+    @media (max-width: 820px) { .fs { grid-template-columns: 1fr 1fr; } .filters { position: static; } .donut svg { width: 120px; height: 120px; } }
     .frow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .frow .input { width: auto; padding: 8px 10px; min-height: 0; font-size: 14px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -87,16 +108,21 @@
   <div id="hdr"></div>
   <div class="wrap viz">
     <div class="filters">
-      <div class="frow">
-        <input type="date" id="from" class="input" aria-label="From"> <span class="muted2">to</span> <input type="date" id="to" class="input" aria-label="To">
-        <button class="chip" id="go" style="background:var(--orange);border-color:var(--orange);color:#fff">Load</button>
+      <div class="fbar">
+        <label class="sel"><span>Period</span><select id="period">
+          <option value="0">Today</option><option value="y">Yesterday</option><option value="6">7 days</option><option value="29" selected>30 days</option>
+          <option value="tm">This month</option><option value="lm">Last month</option><option value="89">90 days</option><option value="c">Custom…</option></select></label>
+        <label class="sel"><span>Load</span><select id="fLoadSel"><option value="All">All</option><option value="BULK">Bulk</option><option value="BAG">Bag</option></select></label>
+        <label class="sel"><span>Size</span><select id="fSizeSel"><option value="All">All</option></select></label>
       </div>
-      <div class="frow" style="margin-top:8px"><div class="chips" id="quick"></div></div>
-      <div class="frow" style="margin-top:8px">
-        <span class="flabel">Load</span><div class="chips" id="fLoad"></div>
-        <span class="flabel" style="margin-left:8px">Class</span><div class="chips" id="fClass"></div>
+      <div class="fbar hidden" id="customRow" style="margin-top:8px">
+        <input type="date" id="from" class="input" aria-label="From"><input type="date" id="to" class="input" aria-label="To"><button class="chip" id="go" style="background:var(--orange);border-color:var(--orange);color:#fff">Apply</button>
       </div>
-      <div class="tabs" id="tabs" style="margin-top:10px"></div>
+      <div class="fbar" style="margin-top:8px">
+        <label class="sel view"><span>View</span><select id="viewSel"></select></label>
+        <button class="sharebtn" id="shareRep" type="button" title="Share report on WhatsApp">📲 Report</button>
+      </div>
+      <div class="muted2" id="rangeTxt" style="margin-top:6px"></div>
     </div>
     <div id="status" class="empty">Loading…</div>
     <div id="view"></div>
@@ -127,30 +153,28 @@
   // ---------- filters
   const today = new Date();
   $('to').value = iso(today); $('from').value = iso(new Date(today.getTime() - 29 * 864e5));
-  const QUICK = [['7D', 6], ['30D', 29], ['90D', 89], ['This month', 'tm'], ['Last month', 'lm']];
-  $('quick').innerHTML = QUICK.map(q => '<button class="chip sm" data-q="' + q[1] + '">' + q[0] + '</button>').join('');
-  $('quick').onclick = e => {
-    const b = e.target.closest('button'); if (!b) return; const q = b.dataset.q, t = new Date();
+  $('fSizeSel').innerHTML = '<option value="All">All sizes</option>' + CLASSES.map(c => '<option value="' + c + 'T">' + c + ' T</option>').join('');
+  let fLoad = 'All', fSize = 'All';
+  $('period').onchange = () => {
+    const q = $('period').value, t = new Date();
+    $('customRow').classList.toggle('hidden', q !== 'c'); if (q === 'c') return;
     if (q === 'tm') { $('from').value = iso(new Date(t.getFullYear(), t.getMonth(), 1)); $('to').value = iso(t); }
     else if (q === 'lm') { $('from').value = iso(new Date(t.getFullYear(), t.getMonth() - 1, 1)); $('to').value = iso(new Date(t.getFullYear(), t.getMonth(), 0)); }
+    else if (q === 'y') { const y = new Date(t.getTime() - 864e5); $('from').value = iso(y); $('to').value = iso(y); }
     else { $('to').value = iso(t); $('from').value = iso(new Date(t.getTime() - Number(q) * 864e5)); }
-    $('quick').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); load();
+    load();
   };
-  let fLoad = 'All', fClass = new Set();
-  $('fLoad').innerHTML = ['All', 'BULK', 'BAG'].map(x => '<button class="chip sm' + (x === 'All' ? ' on' : '') + '" data-v="' + x + '">' + (x === 'All' ? 'All' : x === 'BULK' ? 'Bulk' : 'Bag') + '</button>').join('');
-  $('fLoad').onclick = e => { const b = e.target.closest('button'); if (!b) return; fLoad = b.dataset.v; $('fLoad').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); render(); };
-  $('fClass').innerHTML = '<button class="chip sm on" data-v="all">All</button>' + CLASSES.map(c => '<button class="chip sm" data-v="' + c + 'T">' + c + 'T</button>').join('');
-  $('fClass').onclick = e => {
-    const b = e.target.closest('button'); if (!b) return; const v = b.dataset.v;
-    if (v === 'all') fClass.clear(); else fClass.has(v) ? fClass.delete(v) : fClass.add(v);
-    $('fClass').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.v === 'all' ? !fClass.size : fClass.has(x.dataset.v))); render();
-  };
-  $('go').onclick = load; $('from').onchange = () => $('quick').querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+  $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
+  $('fSizeSel').onchange = () => { fSize = $('fSizeSel').value; render(); };
+  $('go').onclick = load;
 
-  const TABS = [{ id: 'overview', label: '📊 Overview' }, { id: 'trips', label: '🚚 Trips' }, { id: 'trucks', label: '🛻 Trucks' }, { id: 'drivers', label: '🧑‍✈️ Drivers' },
-    { id: 'dest', label: '📍 Destinations' }, { id: 'fleet', label: '🔧 Fleet health' }, { id: 'diesel', label: '⛽ Diesel' }];
-  let tab = JNP.param('tab') || 'overview', RAW = null, M = null;
-  JNP.tabs($('tabs'), TABS, t => { tab = t; render(); }, tab);
+  const TABS = [{ id: 'overview', label: '📊 Overview' }, { id: 'trips', label: '🚚 Trips & destinations' }, { id: 'trucks', label: '🛻 Trucks' }, { id: 'drivers', label: '🧑‍✈️ Drivers' },
+    { id: 'dest', label: '📍 Destination performance' }, { id: 'fleet', label: '🔧 Fleet health & off-road' }, { id: 'diesel', label: '⛽ Diesel' }];
+  let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
+  $('viewSel').innerHTML = TABS.map(t => '<option value="' + t.id + '"' + (t.id === tab ? ' selected' : '') + '>' + t.label + '</option>').join('');
+  $('viewSel').onchange = () => { tab = $('viewSel').value; render(); window.scrollTo(0, 0); };
+  $('shareRep').onclick = () => { if (M) JNP.whatsapp(report()); };
+  const MONEY = () => RAW && RAW.access === 'full';
 
   // ---------- data
   async function load() {
@@ -159,6 +183,7 @@
     catch (e) { $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
   }
 
+  const M_DAYS_BACK = 35;
   function model(R) {
     const from = D(R.from), to = new Date(D(R.to).getTime() + 864e5 - 1), now = new Date(), end = to < now ? to : now;
     const days = Math.round((D(R.to) - D(R.from)) / 864e5) + 1;
@@ -184,6 +209,7 @@
       x.rot = p ? hrs(p.at, x.at) : NaN; if (x.rot > 15 * 24) x.rot = NaN;                 // gap > 15 days = parked, not rotation
       x.km = nx && nx.km0 > x.km0 && nx.km0 - x.km0 < 3000 ? nx.km0 - x.km0 : NaN;          // this trip's km = next loading's start KM − this one
       x.busy = nx ? Math.min(hrs(x.at, nx.at), 96) : Math.min(hrs(x.at, end), 96);            // days this load kept the truck busy (max 4)
+      x.rotNext = nx ? hrs(x.at, nx.at) : NaN; if (x.rotNext > 15 * 24) x.rotNext = NaN;      // this trip's full cycle: loading → next loading
       x.truckIdle = p && p.unload ? hrs(p.unload, x.at) : NaN;                                  // waiting after last unload
     }));
     Object.values(byDriver).forEach(a => a.forEach((x, k) => { const p = a[k - 1]; x.drvIdle = p && p.unload ? hrs(p.unload, x.at) : NaN; if (x.drvIdle > 30 * 24 || x.drvIdle < 0) x.drvIdle = NaN; }));
@@ -192,21 +218,42 @@
     // fleet
     const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
     all.forEach(x => { if (!truckM[x.truck]) { truckM[x.truck] = { no: x.truck, cap: '', cargo: x.load, status: 'Not in master' }; R.trucks.push(truckM[x.truck]); } });
-    const fleet = R.trucks.filter(t => loadedNow.has(t.no) || !/Archived|Sold/i.test(t.status + ' ' + t.compliance));
+    const openOff = new Set(rows(R.breakdowns).filter(b => !b.Back_On_Road_At).map(b => b.Truck_No));
+    const fleet = R.trucks.filter(t => loadedNow.has(t.no) || openOff.has(t.no) || !/Archived|Sold/i.test(t.status + ' ' + t.compliance));
     const bds = rows(R.breakdowns).map(b => {
       const s = D(b.Created_At), e = b.Back_On_Road_At ? D(b.Back_On_Road_At) : now;
       const a = s < from ? from : s, z = e > end ? end : e;
-      return Object.assign(b, { start: s, endAt: e, open: !b.Back_On_Road_At, inHrs: Math.max(0, hrs(a, z)), cls: classOf((truckM[b.Truck_No] || {}).cap) });
+      return Object.assign(b, { start: s, endAt: e, open: !b.Back_On_Road_At, inHrs: Math.max(0, hrs(a, z)), cls: classOf((truckM[b.Truck_No] || {}).cap), rm: !b.Off_Road_Type || b.Off_Road_Type === 'Breakdown' || b.Off_Road_Type === 'Accident' });
     });
     const mnt = rows(R.maintenance).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
     const tex = rows(R.truckExp).filter(x => /Approved|Paid/.test(x.Status)).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
     const tyr = rows(R.tyreEv).filter(x => n0(x.Cost)).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
-    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover) };
+    // ---- fleet status at the end of the range (now, if the range ends today)
+    const med = a => { a = a.filter(v => !isNaN(v)).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : NaN; };
+    const rotDest = {}; all.forEach(x => { if (!isNaN(x.rotNext)) (rotDest[x.dest] = rotDest[x.dest] || []).push(x.rotNext); });
+    Object.keys(rotDest).forEach(k => rotDest[k] = rotDest[k].length >= 2 ? med(rotDest[k]) : NaN);
+    const rotAll = med(all.map(x => x.rotNext)) || 36;
+    const asOf = end, isNow = Math.abs(now - end) < 864e5;
+    const OFF_STAT = { 'No Driver': 'Driver not available', 'In Workshop': 'Breakdown', 'Breakdown (On Route)': 'Breakdown', 'Accident / Insurance Hold': 'Accident', 'RTO / Documents Hold': 'Documents / RTO' };
+    const status = {};
+    fleet.forEach(t => {
+      const ob = bds.filter(b => b.Truck_No === t.no && b.start <= asOf && (!b.Back_On_Road_At || b.endAt > asOf)).sort((p, q) => q.start - p.start)[0];
+      if (ob) { status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: ob.Symptom, loc: ob.Location, since: ob.start, rec: ob }; return; }
+      if (isNow && OFF_STAT[t.status]) { status[t.no] = { st: 'off', why: OFF_STAT[t.status], note: t.status + ' (Truck_Master)', loc: '', since: null }; return; }
+      const a = byTruck[t.no] ? byTruck[t.no].filter(x => x.at <= asOf) : [], L = a[a.length - 1];
+      if (!L) { status[t.no] = { st: 'wait', note: 'no loading in the last ' + (M_DAYS_BACK) + ' days' }; return; }
+      const R = rotDest[L.dest] || rotAll, el = hrs(L.at, asOf);
+      const del = L.unload && L.unload <= asOf;
+      if (!del && el <= R / 2) status[t.no] = { st: 'load', last: L, R: R, el: el };
+      else if (el <= R) status[t.no] = { st: 'ret', last: L, R: R, el: el, del: del };
+      else status[t.no] = { st: 'wait', last: L, R: R, el: el };
+    });
+    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, rotDest, rotAll };
   }
 
   // ---------- filtering (load type + class)
-  const keepT = x => (fLoad === 'All' || x.load === fLoad) && (!fClass.size || fClass.has(x.cls));
-  const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (!fClass.size || fClass.has(c)) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
+  const keepT = x => (fLoad === 'All' || x.load === fLoad) && (fSize === 'All' || x.cls === fSize);
+  const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (fSize === 'All' || c === fSize) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
 
   function agg(list) {
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
@@ -220,7 +267,10 @@
 
   // ---------- table component (sortable, optional row click)
   const TBL = {};
+  const MONEY_COLS = ['rev', 'rate', 'rpl', 'spend', 'adv', 'jobs', 'exp', 'tyres', 'total', 'budget', 'debit', 'amt', 'Repair_Cost'];
+  const $m = html => MONEY() ? html : '';
   function table(id, cols, data, opt) {
+    if (!MONEY()) cols = cols.filter(c => MONEY_COLS.indexOf(c.k) < 0);
     opt = opt || {}; const st = TBL[id] || (TBL[id] = { k: opt.sort || cols[1].k, asc: false });
     const sorted = data.slice().sort((a, b) => { const x = a[st.k], y = b[st.k]; const c = (typeof x === 'number' || typeof y === 'number') ? (isNaN(x) ? -1e18 : x) - (isNaN(y) ? -1e18 : y) : String(x || '').localeCompare(String(y || '')); return st.asc ? c : -c; });
     const max = {}; cols.forEach(c => { if (c.bar) max[c.k] = Math.max(1, ...data.map(r => n0(r[c.k]))); });
@@ -304,55 +354,134 @@
   // ---------- RENDER
   function render() {
     if (!M) return; $('status').classList.add('hidden');
+    $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
     const T = M.trips.filter(keepT);
     const fn = { overview, trips: tripsView, trucks, drivers, dest, fleet, diesel }[tab];
     $('view').innerHTML = fn(T);
   }
 
+  // donut (pie) for 2–6 parts
+  function donut(parts, centre) {
+    const t = sum(parts, p => p.value) || 1; let a0 = -Math.PI / 2, paths = '';
+    const R = 60, r = 38, C = 75;
+    parts.filter(p => p.value > 0).forEach(p => {
+      const ang = 2 * Math.PI * p.value / t, a1 = a0 + ang - (parts.filter(q => q.value > 0).length > 1 ? 0.03 : 0);
+      if (ang >= 2 * Math.PI - 0.001) { paths += '<circle cx="' + C + '" cy="' + C + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + p.color + '" stroke-width="' + (R - r) + '"><title>' + E(p.label) + '</title></circle>'; }
+      else {
+        const big = ang > Math.PI ? 1 : 0, P = (rad, ang2) => (C + rad * Math.cos(ang2)).toFixed(2) + ',' + (C + rad * Math.sin(ang2)).toFixed(2);
+        paths += '<path d="M' + P(R, a0) + 'A' + R + ',' + R + ' 0 ' + big + ' 1 ' + P(R, a1) + 'L' + P(r, a1) + 'A' + r + ',' + r + ' 0 ' + big + ' 0 ' + P(r, a0) + 'Z" fill="' + p.color + '"><title>' + E(p.label + ': ' + (p.text || fmt(p.value, 1))) + '</title></path>';
+      }
+      a0 += ang;
+    });
+    return '<div class="donut"><svg viewBox="0 0 150 150">' + paths + '<text x="75" y="72" text-anchor="middle" font-size="17" font-weight="900" fill="#022A5B">' + E(centre[0]) + '</text><text x="75" y="90" text-anchor="middle" font-size="10.5" fill="#5D6877">' + E(centre[1]) + '</text></svg>' +
+      '<div class="splitlg" style="flex-direction:column;gap:6px">' + parts.filter(p => p.value).map(p => '<span><i style="background:' + p.color + '"></i><b>' + E(p.label) + '</b> · ' + (p.text || fmt(p.value, 1)) + ' (' + Math.round(100 * p.value / t) + '%)</span>').join('') + '</div></div>';
+  }
+  // stacked bar per class, Bulk vs Bag segments
+  function stackByClass(T, f, txt) {
+    const CL = CLASSES.map(c => c + 'T').concat(['Other']);
+    const rowsC = CL.map(c => ({ c, bulk: sum(T.filter(x => x.cls === c && x.load === 'BULK'), f), bag: sum(T.filter(x => x.cls === c && x.load === 'BAG'), f) })).filter(r => r.bulk + r.bag);
+    const mx = Math.max(1, ...rowsC.map(r => r.bulk + r.bag));
+    return '<div class="legend"><span><i style="background:var(--s1)"></i>Bulk</span><span><i style="background:var(--s2)"></i>Bag</span></div><div class="stk">' + rowsC.map(r =>
+      '<b>' + r.c + '</b><div class="bars" style="width:' + (100 * (r.bulk + r.bag) / mx) + '%">' + (r.bulk ? '<div style="flex:' + r.bulk + ';background:var(--s1)" title="Bulk ' + E(txt(r.bulk)) + '"></div>' : '') + (r.bag ? '<div style="flex:' + r.bag + ';background:var(--s2)" title="Bag ' + E(txt(r.bag)) + '"></div>' : '') + '</div><span class="vl" style="font-weight:800;font-size:12.5px">' + txt(r.bulk + r.bag) + '</span>').join('') + '</div>';
+  }
+  const STATE = { off: { t: 'Off road', c: 'down' }, load: { t: 'Loaded · on the way', c: 'ld' }, ret: { t: 'Returning empty', c: 'rt' }, wait: { t: 'Waiting for load', c: 'wt' } };
+  function fleetStatus() {
+    const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
+    const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
+    const why = {}; g('off').forEach(t => { const w = M.status[t.no].why; why[w] = (why[w] || 0) + 1; });
+    const box = (k, list, sub) => '<div class="b ' + STATE[k].c + (fsSel === k ? ' on' : '') + '" data-k="' + k + '"><span>' + STATE[k].t + '</span><b>' + list.length + '</b><small>' + fmt(tons(list)) + ' T · ' + pct(totT ? tons(list) / totT : NaN) + '</small>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+    let listHtml = '';
+    if (fsSel) {
+      const L = g(fsSel).map(t => { const s0 = M.status[t.no]; return { t, s0 }; });
+      listHtml = '<div class="grouph">' + STATE[fsSel].t + '</div>' + JNP.rowsHtml(L, ({ t, s0 }) => ({
+        t: E(t.no) + ' ' + clsTag(classOf(t.cap)) + ' <small style="display:inline">' + E((t.cargo || '') + ' ' + (t.cap || '') + 'T') + '</small>',
+        s: s0.st === 'off' ? E(s0.why + ' · ' + (s0.note || '') + (s0.loc ? ' · ' + s0.loc : '') + (s0.since ? ' · since ' + JNP.dmy(iso(s0.since)) : ''))
+          : s0.last ? E(s0.last.dest + ' · loaded ' + JNP.dmy(iso(s0.last.at)) + ' (' + fmt(s0.el, 0) + ' h ago, round trip ~' + fmt(s0.R, 0) + ' h) · ' + s0.last.driver) : E(s0.note || '') }), 'None');
+    }
+    setTimeout(() => { const el = $('fsBoxes'); if (el) el.onclick = e => { const b = e.target.closest('.b'); if (!b) return; fsSel = fsSel === b.dataset.k ? '' : b.dataset.k; render(); }; }, 0);
+    return sec('Fleet status', (M.isNow ? 'right now' : 'on ' + JNP.dmy(RAW.to)) + ' · ' + fl.length + ' trucks · ' + fmt(totT) + ' T',
+      split([{ label: 'Loaded', value: tons(g('load')), color: 'var(--s1)', text: fmt(tons(g('load'))) + ' T' }, { label: 'Returning', value: tons(g('ret')), color: 'var(--s3)', text: fmt(tons(g('ret'))) + ' T' },
+        { label: 'Waiting', value: tons(g('wait')), color: 'var(--s4)', text: fmt(tons(g('wait'))) + ' T' }, { label: 'Off road', value: tons(g('off')), color: 'var(--red)', text: fmt(tons(g('off'))) + ' T' }]) +
+      '<div class="fs" id="fsBoxes" style="margin-top:12px">' + box('load', g('load'), 'capacity loaded now') + box('ret', g('ret'), 'unloaded / coming back') + box('wait', g('wait'), 'past round-trip time') +
+        box('off', g('off'), Object.keys(why).map(k => k.replace('Driver not available', 'no driver').replace('Documents / RTO', 'documents').toLowerCase() + ' ' + why[k]).join(' · ')) + '</div>' +
+      '<div class="muted2" style="margin-top:8px">On road ' + on.length + ' of ' + fl.length + ' trucks (' + pct(fl.length ? on.length / fl.length : NaN) + '). Loaded = loaded within half of that destination\'s usual round trip (loading → next loading) and not yet unloaded; tap a box for the trucks.</div>' + listHtml);
+  }
+
   function overview(T) {
     const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no)), activeTrucks = new Set(T.map(x => x.truck)).size;
-    const capT = sum(fleet, t => t.cap), activeCap = sum(fleet.filter(t => T.some(x => x.truck === t.no)), t => t.cap);
-    const bds = M.bds.filter(b => keepTruck(b.Truck_No)), downH = sum(bds, b => b.inHrs);
+    const bds = M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), downH = sum(bds, b => b.inHrs);
+    const offDrv = M.bds.filter(b => keepTruck(b.Truck_No) && b.Off_Road_Type === 'Driver not available');
     const availDays = fleet.length * M.days - downH / 24;
     const spend = sum(M.mnt.filter(m => keepTruck(m.Truck_No)), m => m.Total_Cost) + sum(M.tex.filter(m => keepTruck(m.Truck_No)), m => m.Amount) + sum(M.tyr.filter(m => keepTruck(m.Truck_No)), m => m.Cost);
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
     const by = (lt) => dates.map(d => T.filter(x => x.day === d && x.load === lt).length);
-    const CL = CLASSES.map(c => c + 'T').concat(['Other']);
-    const cls = CL.map(c => {
-      const tt = T.filter(x => x.cls === c), g = agg(tt), fl = fleet.filter(t => classOf(t.cap) === c);
-      return { cls: c, fleet: fl.length, active: new Set(tt.map(x => x.truck)).size, trips: g.trips, mt: g.mt, rev: g.rev, perTruckWk: fl.length ? g.trips / fl.length / (M.days / 7) : NaN,
-        lf: g.cap ? g.mt / g.cap : NaN, rot: g.rot, rpl: revPerL(g), cov: g.trips ? g.dieselTrips / g.trips : NaN };
-    }).filter(r => r.fleet || r.trips);
     const bulk = T.filter(x => x.load === 'BULK'), bag = T.filter(x => x.load === 'BAG');
-    const dests = {}; T.forEach(x => { const d = dests[x.dest] = dests[x.dest] || { n: 0, mt: 0 }; d.n++; d.mt += x.mt; });
-    return '<div class="kpis">' +
-      kpi('Trips', fmt(a.trips), activeTrucks + ' trucks loaded', 'var(--blue)') +
-      kpi('MT carried', fmt(a.mt, 1), a.est ? a.est + ' trips without builty (capacity used)' : 'from builty', 'var(--blue)') +
-      kpi('Freight revenue', inr(a.rev), 'Rate × MT', 'var(--orange)') +
-      kpi('Revenue / litre', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') +
-      kpi('Load factor', pct(a.cap ? a.mt / a.cap : NaN), 'MT ÷ truck capacity', 'var(--navy)') +
-      kpi('Fleet in use', activeTrucks + ' / ' + fleet.length, fmt(activeCap) + ' of ' + fmt(capT) + ' T loaded', 'var(--navy)') +
+    const DR = {
+      trips: { f: () => 1, txt: v => fmt(v), title: 'Trips', centre: [fmt(a.trips), 'trips'] },
+      mt: { f: x => x.mt, txt: v => fmt(v, 0) + ' MT', title: 'MT carried', centre: [fmt(a.mt, 0), 'MT'] },
+      rev: { f: x => x.rev, txt: v => inr(v), title: 'Freight revenue', centre: [inr(a.rev), 'freight'] },
+      diesel: { f: x => x.diesel, txt: v => fmt(v) + ' L', title: 'Diesel', centre: [fmt(a.diesel), 'litres'] },
+    };
+    const card = (k, l, v, sub, col) => '<div class="kpi tap' + (drillKey === k ? ' sel1' : '') + '" data-d="' + k + '" style="--k:' + col + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + sub + '</div></div>';
+    let drill = '';
+    if (drillKey && DR[drillKey]) {
+      const d = DR[drillKey];
+      drill = '<div class="drill">' + sec(d.title, 'split — tap the card again to close', '<div class="cgrid"><div>' + donut([{ label: 'Bulk', value: sum(bulk, d.f), color: 'var(--s1)', text: d.txt(sum(bulk, d.f)) }, { label: 'Bag', value: sum(bag, d.f), color: 'var(--s2)', text: d.txt(sum(bag, d.f)) }], d.centre) + '</div><div><div class="muted2" style="margin-bottom:6px">By truck size</div>' + stackByClass(T, d.f, d.txt) + '</div></div>') + '</div>';
+    }
+    setTimeout(() => { const k = $('kp'); if (k) k.onclick = e => { const c = e.target.closest('.kpi.tap'); if (!c) return; drillKey = drillKey === c.dataset.d ? '' : c.dataset.d; render(); }; }, 0);
+    return fleetStatus() + '<div class="kpis" id="kp">' +
+      card('trips', 'Trips', fmt(a.trips), activeTrucks + ' trucks · Bulk ' + bulk.length + ' / Bag ' + bag.length, 'var(--blue)') +
+      card('mt', 'MT carried', fmt(a.mt, 0), a.est ? a.est + ' trips without builty' : 'from builty', 'var(--blue)') +
+      (MONEY() ? card('rev', 'Freight revenue', inr(a.rev), 'Bulk ' + inr(sum(bulk, x => x.rev)) + ' · Bag ' + inr(sum(bag, x => x.rev)), 'var(--orange)') : '') +
+      (MONEY() ? card('diesel', 'Revenue / litre', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') : card('diesel', 'Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' trips', 'var(--orange)')) +
+      drill +
+      kpi('Truck fill', pct(a.cap ? a.mt / a.cap : NaN), 'MT loaded ÷ capacity of trucks that loaded', 'var(--navy)') +
       kpi('Fleet utilisation', pct(availDays ? a.busy / availDays : NaN), fmt(a.busy, 0) + ' of ' + fmt(availDays, 0) + ' truck-days busy', 'var(--navy)') +
-      kpi('Avg rotation', dd(a.rot), 'load → next load', 'var(--blue)') +
+      kpi('Avg rotation', dd(a.rot), 'loading → next loading', 'var(--blue)') +
       kpi('Delivery TAT', h1(a.tat), 'on time ' + pct(a.onTime), 'var(--blue)') +
-      kpi('Downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
-      kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') +
+      kpi('Breakdown downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
+      kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
+      (MONEY() ? kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') : '') +
       kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
       '</div>' +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
       '<div class="cgrid">' +
-      sec('Bulk vs Bag', 'share of trips and MT', '<div class="muted2" style="margin-bottom:4px">Trips</div>' + split([{ label: 'Bulk', value: bulk.length, color: 'var(--s1)', text: fmt(bulk.length) }, { label: 'Bag', value: bag.length, color: 'var(--s2)', text: fmt(bag.length) }]) +
-        '<div class="muted2" style="margin:12px 0 4px">MT</div>' + split([{ label: 'Bulk', value: sum(bulk, x => x.mt), color: 'var(--s1)' }, { label: 'Bag', value: sum(bag, x => x.mt), color: 'var(--s2)' }]) +
-        '<div class="muted2" style="margin:12px 0 4px">Revenue</div>' + split([{ label: 'Bulk', value: sum(bulk, x => x.rev), color: 'var(--s1)', text: inr(sum(bulk, x => x.rev)) }, { label: 'Bag', value: sum(bag, x => x.rev), color: 'var(--s2)', text: inr(sum(bag, x => x.rev)) }])) +
-      sec('Trips by class', 'share of trips', split(cls.map(r => ({ label: r.cls, value: r.trips, color: CLASS_COLOR[r.cls], text: fmt(r.trips) }))) +
-        '<div class="muted2" style="margin:14px 0 6px">Trips per truck per week</div>' + hbar(cls.map(r => ({ label: r.cls, sub: r.fleet + ' trucks', value: r.perTruckWk, color: CLASS_COLOR[r.cls], text: fmt(r.perTruckWk, 1) })))) +
-      sec('Revenue per litre', 'by class — total freight ÷ diesel entered', hbar(cls.map(r => ({ label: r.cls, sub: r.cov < .7 ? 'diesel on ' + pct(r.cov) + ' trips' : '', value: r.rpl, color: CLASS_COLOR[r.cls], text: isNaN(r.rpl) ? '—' : '₹' + fmt(r.rpl, 1) })), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) +
-      sec('Top destinations', 'trips', hbar(Object.keys(dests).map(k => ({ label: k, sub: fmt(dests[k].mt, 0) + ' MT', value: dests[k].n, text: fmt(dests[k].n) })), { top: 8 })) +
-      '</div>' +
-      sec('By truck class', 'capacity vs utilisation', tv('Table view', table('tCls', [
-        { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'fleet', t: 'Fleet', num: 1 }, { k: 'active', t: 'Active', num: 1 }, { k: 'trips', t: 'Trips', num: 1, bar: 1 },
-        { k: 'perTruckWk', t: 'Trips/truck/wk', num: 1, f: v => fmt(v, 1) }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'lf', t: 'Load factor', num: 1, f: pct },
-        { k: 'rev', t: 'Revenue', num: 1, f: inr }, { k: 'rot', t: 'Rotation', num: 1, f: dd }, { k: 'rpl', t: '₹ / litre', num: 1, f: (v, r) => isNaN(v) ? '—' : '₹' + fmt(v, 1) + (r.cov < .7 ? '<span class="flag est">diesel on ' + pct(r.cov) + ' trips</span>' : '') }], cls, { sort: 'cls' })));
+      sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) +
+      (MONEY() ? sec('Revenue per litre', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) : sec('MT by size', '', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT'))) +
+      '</div>';
+  }
+
+  // WhatsApp report — same layout as the daily "vehicles not on road" message
+  function report() {
+    const fl = M.fleet.filter(t => keepTruck(t.no)), T = M.trips.filter(keepT), a = agg(T), st = t => M.status[t.no] || {};
+    const off = fl.filter(t => st(t).st === 'off'), on = fl.filter(t => st(t).st !== 'off');
+    const n = k => fl.filter(t => st(t).st === k).length, tons = arr => sum(arr, t => t.cap);
+    const L = [], short = no => String(no).slice(-4), d2 = d => d ? JNP.dmy(iso(d)).slice(0, 5) : '';
+    L.push('*JNP FLEET REPORT · ' + JNP.dmy(iso(M.asOf)) + '*');
+    if (fSize !== 'All' || fLoad !== 'All') L.push('Filter: ' + [fSize !== 'All' ? fSize : '', fLoad !== 'All' ? fLoad : ''].filter(Boolean).join(' · '));
+    L.push('————————');
+    L.push('🚚 Fleet: ' + fl.length + ' trucks · ' + fmt(tons(fl)) + ' T');
+    L.push('✅ On road: ' + on.length + '  (Loaded ' + n('load') + ' · Returning ' + n('ret') + ' · Waiting ' + n('wait') + ')');
+    const why = {}; off.forEach(t => why[st(t).why] = (why[st(t).why] || 0) + 1);
+    L.push('⚠️ Off road: ' + off.length + (off.length ? '  (' + Object.keys(why).map(k => k + ' ' + why[k]).join(' · ') + ')' : ''));
+    if (off.length) {
+      L.push(''); L.push('⚠️ *VEHICLES NOT ON ROAD*');
+      const grp = {}; off.forEach(t => { const k = (classOf(t.cap)) + ' ' + (t.cargo || 'BAG'); (grp[k] = grp[k] || []).push(t); });
+      Object.keys(grp).sort((p, q) => parseInt(p) - parseInt(q)).forEach(k => {
+        L.push(''); L.push('*' + k + ' (' + grp[k].length + ') · ' + fmt(tons(grp[k])) + ' T*');
+        grp[k].forEach(t => { const s0 = st(t); L.push(' ' + short(t.no) + ' – ' + (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.note && s0.note.indexOf('Truck_Master') < 0 ? ' – ' + s0.note : '') + (s0.loc ? ' – ' + s0.loc : '') + (s0.since ? ' – ' + d2(s0.since) : '')); });
+      });
+      L.push(''); L.push('Total down: ' + off.length + ' trucks · Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' T · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ' T');
+    }
+    L.push('————————');
+    L.push('📦 Trips ' + JNP.dmy(RAW.from).slice(0, 5) + ' to ' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + a.trips + ' · ' + fmt(a.mt, 0) + ' MT');
+    L.push('  Bulk ' + T.filter(x => x.load === 'BULK').length + ' · Bag ' + T.filter(x => x.load === 'BAG').length);
+    L.push('  ' + CLASSES.map(c => c + 'T').map(c => [c, T.filter(x => x.cls === c).length]).filter(x => x[1]).map(x => x[0] + ' ' + x[1]).join(' · '));
+    L.push('⏱ Avg rotation ' + dd(a.rot) + ' · delivery ' + h1(a.tat));
+    if (MONEY()) L.push('💰 Freight ' + inr(a.rev) + ' · ₹' + fmt(revPerL(a), 0) + ' per litre diesel');
+    L.push('🔧 Breakdown downtime ' + fmt(sum(M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), b => b.inHrs), 0) + ' h');
+    L.push('— ' + JNP.session().user.name);
+    return L.join('\n');
   }
 
   function tripsView(T) {
@@ -365,10 +494,10 @@
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
     setTimeout(() => { const s = $('tq'); if (s) { s.oninput = () => { window.__tq = s.value; const p = s.selectionStart; render(); const n = $('tq'); n.focus(); n.setSelectionRange(p, p); }; } const c = $('csv'); if (c) c.onclick = () => csv(data); }, 0);
     return '<div class="card"><div class="frow"><input id="tq" class="input search" style="max-width:none;flex:1" placeholder="Search LR, truck, driver, destination, party" value="' + E(window.__tq || '') + '"><button class="chip sm" id="csv">⬇ CSV</button></div>' +
-      '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1)) + kpi('Revenue', inr(a.rev), '', 'var(--orange)') + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
+      '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1)) + $m(kpi('Revenue', inr(a.rev), '', 'var(--orange)')) + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
       sec('Loaded for', 'destination-wise · ' + JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to), hbar(ds.map(d => ({ label: d.dest, sub: d.tcount + ' trucks · ' + fmt(d.mt, 0) + ' MT', value: d.trips, text: fmt(d.trips) + ' trips', tip: d.dest + ': ' + d.trips + ' trips, ' + fmt(d.mt, 1) + ' MT, ' + inr(d.rev) })), { top: 12 }) +
         tv('Table view', table('tDs', [{ k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'tcount', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr }], ds, { sort: 'trips' }))) +
-      sec('Revenue per day', '₹, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      $m(sec('Revenue per day', '₹, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
       sec('Trip log', a.trips + ' trips · tap a heading to sort', '<details class="tv" open><summary>Show trips</summary>' +
         table('tTrips', [{ k: 'date', t: 'Date', f: v => JNP.dmy(v) }, { k: 'lr', t: 'LR' }, { k: 'truck', t: 'Truck' }, { k: 'dest', t: 'Destination' }, { k: 'driver', t: 'Driver' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'load', t: 'Load', f: v => v === 'BULK' ? 'Bulk' : 'Bag' },
           { k: 'consignee', t: 'Party' }, { k: 'mt', t: 'MT', num: 1, f: (v, r) => fmt(v, 2) + (r.mtEst ? '<span class="flag est">est</span>' : '') },
@@ -390,12 +519,13 @@
         rot: g.rot, idleNow: last ? (M.end - last.at) / 864e5 : NaN, waitAfterUnload: avg(tt.map(x => x.truckIdle).filter(v => !isNaN(v) && v >= 0 && v < 15 * 24)),
         down: sum(b, x => x.inHrs), bds: b.length, spend: spend, rpt: b.filter(x => x.Repeat_Flag === 'Yes').length + M.mnt.filter(m => m.Truck_No === t.no && m.Repeat_Flag === 'Yes').length };
     });
-    const idle = data.filter(r => isNaN(r.idleNow) || r.idleNow > 1).map(r => ({ label: r.truck, sub: r.cls + (r.status && r.status !== 'On Road' ? ' · ' + r.status : ''), value: isNaN(r.idleNow) ? M.days : r.idleNow, color: 'var(--red)', text: isNaN(r.idleNow) ? 'no trip' : fmt(r.idleNow, 1) + ' d' }));
+    const idle = data.filter(r => isNaN(r.idleNow) || r.idleNow > 1).map(r => { const s0 = M.status[r.truck] || {}, off = s0.st === 'off';
+      return { label: r.truck, sub: r.cls + (off ? ' · ' + (s0.why === 'Driver not available' ? 'no driver' : s0.why.toLowerCase()) : ''), value: isNaN(r.idleNow) ? M.days : r.idleNow, color: off ? '#9AA4B2' : 'var(--red)', text: (isNaN(r.idleNow) ? 'no trip' : fmt(r.idleNow, 1) + ' d') + (off ? ' · off road' : '') }; });
     return '<div class="cgrid">' +
       sec('Trips per truck', 'colour = class', hbar(data.map(r => ({ label: r.truck, sub: r.cls, value: r.trips, color: CLASS_COLOR[r.cls], text: fmt(r.trips), tip: r.truck + ': ' + r.trips + ' trips, ' + fmt(r.mt, 1) + ' MT, ' + inr(r.rev) })), { top: 12 })) +
       sec('Standing idle now', 'days since last loading', hbar(idle, { top: 10 })) +
       sec('Rotation', 'avg days between loadings', hbar(data.filter(r => !isNaN(r.rot)).map(r => ({ label: r.truck, sub: r.cls, value: r.rot / 24, color: CLASS_COLOR[r.cls], text: fmt(r.rot / 24, 1) + ' d' })), { top: 10 })) +
-      sec('Revenue per truck', '₹', hbar(data.map(r => ({ label: r.truck, sub: r.cls, value: r.rev, color: CLASS_COLOR[r.cls], text: inr(r.rev) })), { top: 10 })) +
+      $m(sec('Revenue per truck', '₹', hbar(data.map(r => ({ label: r.truck, sub: r.cls, value: r.rev, color: CLASS_COLOR[r.cls], text: inr(r.rev) })), { top: 10 }))) +
       '</div>' +
       sec('All trucks', 'tap a truck for its trips', tv('Table view', table('tTr', [
       { k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'trips', t: 'Trips', num: 1, bar: 1, color: r => CLASS_COLOR[r.cls] }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) },
@@ -420,8 +550,8 @@
     if (sel) {
       const tt = T.filter(x => x.driver === sel.driver), dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
       const dst = {}; tt.forEach(x => dst[x.dest] = (dst[x.dest] || 0) + 1);
-      head += '<div class="kpis">' + kpi('Trips', sel.trips, sel.trucks) + kpi('MT', fmt(sel.mt, 1)) + kpi('Revenue', inr(sel.rev), '', 'var(--orange)') + kpi('Idle between trips', h1(sel.idleGap), 'unload → next load') +
-        kpi('Since last load', isNaN(sel.idleNow) ? '—' : fmt(sel.idleNow, 1) + ' d', '', 'var(--red)') + kpi('Delivery TAT', h1(sel.tat), 'on time ' + pct(sel.onTime)) + kpi('Shortage', fmt(sel.short) + ' kg', '', 'var(--red)') + kpi('Trip advances', inr(sel.adv), sel.debit ? 'debits ' + inr(sel.debit) : '') + '</div></div>' +
+      head += '<div class="kpis">' + kpi('Trips', sel.trips, sel.trucks) + kpi('MT', fmt(sel.mt, 1)) + $m(kpi('Revenue', inr(sel.rev), '', 'var(--orange)')) + kpi('Idle between trips', h1(sel.idleGap), 'unload → next load') +
+        kpi('Since last load', isNaN(sel.idleNow) ? '—' : fmt(sel.idleNow, 1) + ' d', '', 'var(--red)') + kpi('Delivery TAT', h1(sel.tat), 'on time ' + pct(sel.onTime)) + kpi('Shortage', fmt(sel.short) + ' kg', '', 'var(--red)') + $m(kpi('Trip advances', inr(sel.adv), sel.debit ? 'debits ' + inr(sel.debit) : '')) + '</div></div>' +
         '<div class="cgrid">' + sec('Trips per day', sel.driver, columns('cDrv', dates, [{ name: 'Trips', color: 'var(--s1)', values: dates.map(d => tt.filter(x => x.day === d).length) }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
         sec('Destinations', sel.driver, hbar(Object.keys(dst).map(k => ({ label: k, value: dst[k], text: fmt(dst[k]) })), { top: 8 })) + '</div>' + detailHtml('Trips of ' + sel.driver, tt);
       return head;
@@ -446,9 +576,9 @@
     });
     return '<div class="cgrid">' +
       sec('Trips', 'by destination', hbar(data.map(r => ({ label: r.dest, sub: fmt(r.mt, 0) + ' MT', value: r.trips, text: fmt(r.trips) })), { top: 12 })) +
-      sec('Revenue', 'by destination', hbar(data.map(r => ({ label: r.dest, value: r.rev, color: 'var(--s2)', text: inr(r.rev) })), { top: 12 })) +
+      $m(sec('Revenue', 'by destination', hbar(data.map(r => ({ label: r.dest, value: r.rev, color: 'var(--s2)', text: inr(r.rev) })), { top: 12 }))) +
       sec('Delivery TAT', 'avg hours, loading → unloading', hbar(data.filter(r => !isNaN(r.tat)).map(r => ({ label: r.dest, sub: r.target ? 'target ' + r.target + ' h' : '', value: r.tat, color: r.target && r.tat > r.target ? 'var(--red)' : 'var(--s3)', text: fmt(r.tat, 0) + ' h' })), { top: 12 })) +
-      sec('Rate', 'avg ₹ per MT', hbar(data.filter(r => !isNaN(r.rate)).map(r => ({ label: r.dest, value: r.rate, color: 'var(--s4)', text: '₹' + fmt(r.rate) })), { top: 12 })) +
+      $m(sec('Rate', 'avg ₹ per MT', hbar(data.filter(r => !isNaN(r.rate)).map(r => ({ label: r.dest, value: r.rate, color: 'var(--s4)', text: '₹' + fmt(r.rate) })), { top: 12 }))) +
       '</div>' + sec('All destinations', 'tap one for its trips', tv('Table view', table('tDe', [
       { k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'trucks', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
       { k: 'rate', t: 'Avg ₹/MT', num: 1, f: v => fmt(v) }, { k: 'km', t: 'KM (one way)', num: 1 }, { k: 'tat', t: 'Delivery TAT', num: 1, f: h1 }, { k: 'target', t: 'Target', num: 1, f: v => v ? v + ' h' : '<span class="muted2">set in master</span>' },
@@ -468,7 +598,7 @@
     return Object.values(rf).filter(x => x.n >= 2 || x.flagged).map(x => Object.assign(x, { name: faults[x.fault] || '' }));
   }
   function fleet() {
-    const keep = x => keepTruck(x.Truck_No), bds = M.bds.filter(keep), mnt = M.mnt.filter(keep), tex = M.tex.filter(keep), tyr = M.tyr.filter(keep), fl = M.fleet.filter(t => keepTruck(t.no));
+    const keep = x => keepTruck(x.Truck_No), bdsAll = M.bds.filter(keep), bds = bdsAll.filter(b => b.rm), mnt = M.mnt.filter(keep), tex = M.tex.filter(keep), tyr = M.tyr.filter(keep), fl = M.fleet.filter(t => keepTruck(t.no));
     const downH = sum(bds, b => b.inHrs), closed = bds.filter(b => !b.open);
     const pm = mnt.filter(m => /Preventive/.test(m.Record_Type)), checks = sum(pm, m => String(m.PM_Check_Codes || '').split(',').filter(Boolean).length);
     const overdue = fl.filter(t => t.svcKm && t.odo && t.lastSvc !== '' && t.odo - t.lastSvc >= t.svcKm).map(t => ({ truck: t.no, cls: classOf(t.cap), odo: t.odo, last: t.lastSvc, due: t.lastSvc + t.svcKm, over: t.odo - t.lastSvc - t.svcKm }));
@@ -484,22 +614,25 @@
     return '<div class="kpis">' +
       kpi('Breakdowns', bds.length, bds.filter(b => b.open).length + ' still open', 'var(--red)') + kpi('Fleet downtime', fmt(downH, 0) + ' h', 'uptime ' + pct(fl.length ? 1 - downH / (fl.length * M.days * 24) : NaN) + (RAW.settings.Fleet_Uptime_Target ? ' · target ' + pct(RAW.settings.Fleet_Uptime_Target) : ''), 'var(--red)') +
       kpi('Avg breakdown downtime', h1(avg(closed.map(b => n0(b.Downtime_Hrs))))) + kpi('Repair TAT (job cards)', h1(avg(mnt.map(m => n0(m.Repair_TAT_Hrs)).filter(Boolean)))) +
-      kpi('Repeat faults', rep.length, 'same truck + fault', 'var(--red)') + kpi('Maintenance spend', inr(sum(spendRows, r => r.total)), '', 'var(--orange)') +
+      kpi('Repeat faults', rep.length, 'same truck + fault', 'var(--red)') + $m(kpi('Maintenance spend', inr(sum(spendRows, r => r.total)), '', 'var(--orange)')) +
       kpi('Preventive checks', pm.length, checks + ' check items done', 'var(--ok)') + kpi('PM overdue', overdue.length, 'past service interval', overdue.length ? 'var(--red)' : 'var(--ok)') + '</div>' +
-      sec('Spend per week', 'job cards + expenses + tyres', columns('cSpend', weeks, [{ name: 'Job cards', color: 'var(--s1)', values: wk(mnt, x => x.Total_Cost) }, { name: 'Truck expenses', color: 'var(--s2)', values: wk(tex, x => x.Amount) }, { name: 'Tyres', color: 'var(--s3)', values: wk(tyr, x => x.Cost) }], { unit: '₹', label: d => 'wk ' + d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      sec('Off road by reason', 'all off-road records in this period', (() => { const R = {}; bdsAll.forEach(b => { const k = b.Off_Road_Type || 'Breakdown'; R[k] = R[k] || { n: 0, h: 0, open: 0 }; R[k].n++; R[k].h += b.inHrs; if (b.open) R[k].open++; });
+        const C = { 'Breakdown': 'var(--red)', 'Driver not available': 'var(--s2)', 'Accident': 'var(--s5)', 'Documents / RTO': 'var(--s4)', 'Other': '#9AA4B2' };
+        return split(Object.keys(R).map(k => ({ label: k, value: R[k].h, color: C[k] || '#9AA4B2', text: fmt(R[k].h / 24, 1) + ' truck-days' }))) + '<div style="margin-top:10px">' + hbar(Object.keys(R).map(k => ({ label: k, sub: R[k].open + ' still off road', value: R[k].n, color: C[k] || '#9AA4B2', text: R[k].n + ' trucks' }))) + '</div>'; })()) +
+      $m(sec('Spend per week', 'job cards + expenses + tyres', columns('cSpend', weeks, [{ name: 'Job cards', color: 'var(--s1)', values: wk(mnt, x => x.Total_Cost) }, { name: 'Truck expenses', color: 'var(--s2)', values: wk(tex, x => x.Amount) }, { name: 'Tyres', color: 'var(--s3)', values: wk(tyr, x => x.Cost) }], { unit: '₹', label: d => 'wk ' + d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
       '<div class="cgrid">' +
       sec('Downtime by truck', 'hours off road in this period', hbar(Object.keys(downT).map(k => ({ label: k, sub: classOf((M.truckM[k] || {}).cap), value: downT[k], color: 'var(--red)', text: fmt(downT[k], 0) + ' h' })), { top: 10 })) +
-      sec('Spend by truck', '₹', hbar(spendRows.map(r => ({ label: r.truck, sub: r.cls, value: r.total, color: 'var(--s2)', text: inr(r.total), tip: r.truck + ': jobs ' + inr(r.jobs) + ', expenses ' + inr(r.exp) + ', tyres ' + inr(r.tyres) })), { top: 10 })) +
-      sec('Spend split', '', split([{ label: 'Job cards', value: sum(spendRows, r => r.jobs), color: 'var(--s1)', text: inr(sum(spendRows, r => r.jobs)) }, { label: 'Truck expenses', value: sum(spendRows, r => r.exp), color: 'var(--s2)', text: inr(sum(spendRows, r => r.exp)) }, { label: 'Tyres', value: sum(spendRows, r => r.tyres), color: 'var(--s3)', text: inr(sum(spendRows, r => r.tyres)) }]) +
-        '<div class="muted2" style="margin:14px 0 6px">Truck expenses by head</div>' + hbar(Object.keys(heads).map(h => ({ label: h, value: heads[h], color: 'var(--s2)', text: inr(heads[h]) })), { top: 6 })) +
+      $m(sec('Spend by truck', '₹', hbar(spendRows.map(r => ({ label: r.truck, sub: r.cls, value: r.total, color: 'var(--s2)', text: inr(r.total), tip: r.truck + ': jobs ' + inr(r.jobs) + ', expenses ' + inr(r.exp) + ', tyres ' + inr(r.tyres) })), { top: 10 }))) +
+      $m(sec('Spend split', '', split([{ label: 'Job cards', value: sum(spendRows, r => r.jobs), color: 'var(--s1)', text: inr(sum(spendRows, r => r.jobs)) }, { label: 'Truck expenses', value: sum(spendRows, r => r.exp), color: 'var(--s2)', text: inr(sum(spendRows, r => r.exp)) }, { label: 'Tyres', value: sum(spendRows, r => r.tyres), color: 'var(--s3)', text: inr(sum(spendRows, r => r.tyres)) }]) +
+        '<div class="muted2" style="margin:14px 0 6px">Truck expenses by head</div>' + hbar(Object.keys(heads).map(h => ({ label: h, value: heads[h], color: 'var(--s2)', text: inr(heads[h]) })), { top: 6 }))) +
       sec('Repeat faults', 'same truck + fault', hbar(rep.map(r => ({ label: r.truck, sub: r.fault + (r.name ? ' ' + r.name : ''), value: r.n, color: 'var(--red)', text: r.n + '×' })), { top: 10 })) +
       '</div>' +
       sec('PM overdue', 'Service_Interval_KM in Truck_Master', hbar(overdue.map(r => ({ label: r.truck, sub: r.cls, value: r.over, color: 'var(--red)', text: fmt(r.over) + ' km over' }))) +
         tv('Table view', table('tPm', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'odo', t: 'KM now', num: 1, f: v => fmt(v) }, { k: 'due', t: 'Due at', num: 1, f: v => fmt(v) }, { k: 'over', t: 'Over by', num: 1, f: v => '<b style="color:var(--red)">' + fmt(v) + '</b>' }], overdue, { sort: 'over' }))) +
-      sec('Breakdowns', 'in this period', tv('Table view', table('tBd', [{ k: 'Created_At', t: 'Reported', f: v => JNP.dmy(String(v).replace('T', ' ')) }, { k: 'Truck_No', t: 'Truck' }, { k: 'Symptom', t: 'Problem' }, { k: 'Fault_Code', t: 'Fault' },
-        { k: 'Breakdown_Status', t: 'Status', f: v => '<span class="pill ' + JNP.statusCls(v) + '">' + E(v) + '</span>' }, { k: 'inHrs', t: 'Down (in period)', num: 1, f: v => fmt(v, 0) + ' h' }, { k: 'Repair_Location', t: 'Repaired at' }, { k: 'Repeat_Flag', t: 'Repeat', f: v => v === 'Yes' ? '<span class="flag bad">Repeat</span>' : '' }], bds, { sort: 'Created_At' }))) +
-      sec('Maintenance spend by truck', 'budget = Monthly_RM_Budget for the period', tv('Table view', table('tSp', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'jobs', t: 'Job cards', num: 1, f: inr }, { k: 'exp', t: 'Expenses', num: 1, f: inr }, { k: 'tyres', t: 'Tyres', num: 1, f: inr },
-        { k: 'total', t: 'Total', num: 1, f: inr, bar: 1, color: () => 'var(--s2)' }, { k: 'budget', t: 'Budget', num: 1, f: (v, r) => isNaN(v) ? '—' : inr(v) + (r.total > v ? '<span class="flag bad">over</span>' : '') }], spendRows, { sort: 'total' })));
+      sec('Off-road records', 'in this period', tv('Table view', table('tBd', [{ k: 'Created_At', t: 'Reported', f: v => JNP.dmy(String(v).replace('T', ' ')) }, { k: 'Truck_No', t: 'Truck' }, { k: 'Off_Road_Type', t: 'Type', f: v => E(v || 'Breakdown') }, { k: 'Symptom', t: 'Reason' }, { k: 'Fault_Code', t: 'Fault' },
+        { k: 'Breakdown_Status', t: 'Status', f: v => '<span class="pill ' + JNP.statusCls(v) + '">' + E(v) + '</span>' }, { k: 'inHrs', t: 'Down (in period)', num: 1, f: v => fmt(v, 0) + ' h' }, { k: 'Repair_Location', t: 'Repaired at' }, { k: 'Repeat_Flag', t: 'Repeat', f: v => v === 'Yes' ? '<span class="flag bad">Repeat</span>' : '' }], bdsAll, { sort: 'Created_At' }))) +
+      $m(sec('Maintenance spend by truck', 'budget = Monthly_RM_Budget for the period', tv('Table view', table('tSp', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'jobs', t: 'Job cards', num: 1, f: inr }, { k: 'exp', t: 'Expenses', num: 1, f: inr }, { k: 'tyres', t: 'Tyres', num: 1, f: inr },
+        { k: 'total', t: 'Total', num: 1, f: inr, bar: 1, color: () => 'var(--s2)' }, { k: 'budget', t: 'Budget', num: 1, f: (v, r) => isNaN(v) ? '—' : inr(v) + (r.total > v ? '<span class="flag bad">over</span>' : '') }], spendRows, { sort: 'total' }))));
   }
 
   function diesel(T) {
@@ -510,15 +643,15 @@
     const lowCov = cls.filter(r => r.cov < .7), avgR = revPerL(a);
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
     const CL = cls.map(r => r.cls);
-    return '<div class="kpis">' + kpi('Revenue per litre', isNaN(avgR) ? '—' : '₹' + fmt(avgR, 1), 'total freight ÷ total diesel entered', 'var(--orange)') + kpi('Diesel entered', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips') +
-      kpi('Freight revenue', inr(a.rev)) + kpi('KM per litre', a.kmDiesel ? fmt(a.km / a.kmDiesel, 2) : '—', 'where next loading KM is known') + '</div>' +
+    return '<div class="kpis">' + $m(kpi('Revenue per litre', isNaN(avgR) ? '—' : '₹' + fmt(avgR, 1), 'total freight ÷ total diesel entered', 'var(--orange)')) + kpi('Diesel entered', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips') +
+      $m(kpi('Freight revenue', inr(a.rev))) + kpi('KM per litre', a.kmDiesel ? fmt(a.km / a.kmDiesel, 2) : '—', 'where next loading KM is known') + '</div>' +
       (lowCov.length ? '<div class="note">⚠️ ' + lowCov.map(r => r.cls).join(', ') + ': diesel is entered on few trips (filled in lumps), so ₹/litre is worked out over the whole period — reliable only when every fill in the period is entered.</div>' : '') +
       sec('Diesel per day', 'litres entered, by class', columns('cDsl', dates, CL.map(c => ({ name: c, color: CLASS_COLOR[c], values: dates.map(d => sum(T.filter(x => x.day === d && x.cls === c), x => x.diesel)) })), { unit: 'L', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
       '<div class="cgrid">' +
-      sec('₹ earned per litre', 'by class', hbar(cls.map(r => ({ label: r.cls, sub: r.cov < .7 ? 'diesel on ' + pct(r.cov) + ' trips' : '', value: r.rpl, color: CLASS_COLOR[r.cls], text: isNaN(r.rpl) ? '—' : '₹' + fmt(r.rpl, 1) })), { ref: avgR, refLabel: 'fleet average ₹' + fmt(avgR, 1) })) +
+      $m(sec('₹ earned per litre', 'by class', hbar(cls.map(r => ({ label: r.cls, sub: r.cov < .7 ? 'diesel on ' + pct(r.cov) + ' trips' : '', value: r.rpl, color: CLASS_COLOR[r.cls], text: isNaN(r.rpl) ? '—' : '₹' + fmt(r.rpl, 1) })), { ref: avgR, refLabel: 'fleet average ₹' + fmt(avgR, 1) }))) +
       sec('KM per litre', 'by class', hbar(cls.filter(r => !isNaN(r.kmpl)).map(r => ({ label: r.cls, value: r.kmpl, color: CLASS_COLOR[r.cls], text: fmt(r.kmpl, 2) })))) +
-      sec('₹ per litre — lowest trucks', 'check these first', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls + (r.cov < .7 ? ' · low diesel entry' : ''), value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, asc: true, ref: avgR, refLabel: 'fleet average' })) +
-      sec('₹ per litre — best trucks', '', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls, value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, ref: avgR, refLabel: 'fleet average' })) +
+      $m(sec('₹ per litre — lowest trucks', 'check these first', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls + (r.cov < .7 ? ' · low diesel entry' : ''), value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, asc: true, ref: avgR, refLabel: 'fleet average' }))) +
+      $m(sec('₹ per litre — best trucks', '', hbar(tr.filter(r => !isNaN(r.rpl)).map(r => ({ label: r.truck, sub: r.cls, value: r.rpl, color: CLASS_COLOR[r.cls], text: '₹' + fmt(r.rpl, 1) })), { top: 10, ref: avgR, refLabel: 'fleet average' }))) +
       '</div>' +
       sec('By class', '', tv('Table view', table('tDc', [{ k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'trips', t: 'Trips', num: 1 }, { k: 'diesel', t: 'Diesel L', num: 1, f: v => fmt(v) }, { k: 'lpt', t: 'L / trip', num: 1, f: v => fmt(v, 0) }, { k: 'rev', t: 'Revenue', num: 1, f: inr },
         { k: 'rpl', t: '₹ per litre', num: 1, f: v => isNaN(v) ? '—' : '₹' + fmt(v, 1) }, { k: 'kmpl', t: 'KM/L', num: 1, f: v => fmt(v, 2) }, { k: 'cov', t: 'Trips with diesel', num: 1, f: v => v < .7 ? '<span class="flag est">' + pct(v) + '</span>' : pct(v) }], cls, { sort: 'cls' }))) +

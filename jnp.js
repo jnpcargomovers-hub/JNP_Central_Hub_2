@@ -44,7 +44,7 @@
     'OPS-02': { icon: '📦', path: 'delivery/' },
     'OPS-04': { icon: '🔄', path: 'handover/' },
     'OPS-05': { icon: '💸', path: 'ops-expense/' },
-    'OPS-06': { icon: '🚨', path: 'breakdown/' },
+    'OPS-06': { icon: '🚧', path: 'breakdown/' },
     'RM-01':  { icon: '🛠️', path: 'breakdown/?tab=resolve' },
     'RM-02':  { icon: '🔧', path: 'maintenance/' },
     'RM-03':  { icon: '🧰', path: 'truck-expense/' },

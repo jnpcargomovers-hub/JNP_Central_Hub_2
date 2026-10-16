@@ -118,10 +118,12 @@
         codes.map(cd => tileHtml(cd, dept.color)).join('') + '</div></div>';
     });
     const gen = ['APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
-    if (gen.length || u.level !== 'Level 3') {
+    const cfg = JNP.M().settings || {}, lst = k => String(cfg[k] || '').split(',').map(x => x.trim()).filter(Boolean);
+    const dashOk = (lst('Dashboard_Roles').length ? lst('Dashboard_Roles') : ['CEO', 'Dir_1', 'Dir_2']).concat(lst('Dashboard_Ops_Roles')).indexOf(u.role) >= 0;
+    if (gen.length || dashOk) {
       html += '<div class="section"><h2 style="color:var(--navy)"><span class="dot" style="background:var(--navy)"></span>General <small>सामान्य</small></h2><div class="tiles">' +
         gen.map(cd => tileHtml(cd, 'var(--gen)', cd === 'APR-01' ? (c.toApprove || 0) + (c.toPay || 0) : 0)).join('') +
-        (u.level !== 'Level 3' ? '<a class="tile" style="--accent:var(--orange)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span><span class="en">Dashboard</span><span class="hi">डैशबोर्ड</span></a>' : '') +
+        (dashOk ? '<a class="tile" style="--accent:var(--orange)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span><span class="en">Dashboard</span><span class="hi">डैशबोर्ड</span></a>' : '') +
         '</div></div>';
     }
     $('sections').innerHTML = html || '<div class="card center muted">No modules assigned to you yet. Ask HO.</div>';
@@ -132,7 +134,7 @@
     JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
     render();
     try { await JNP.refreshMe(); render(); } catch (e) { JNP.toast(e.message, 'warn'); }
-    JNP.masters().catch(() => { });
+    JNP.masters().then(render).catch(() => { });
   }
   $('logoutBtn').onclick = () => { if (confirm('Logout from this phone?')) JNP.logout(); };
   const s = JNP.session();
