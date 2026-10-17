@@ -103,8 +103,9 @@
     $('stats').classList.toggle('hidden', !st.length);
 
     if (JNP.rights('ATT-01').length) {
-      $('punch').classList.remove('hidden'); $('punch').classList.toggle('in', !!c.punchedIn);
-      $('pT').textContent = c.punchedIn ? 'On duty · ड्यूटी पर' : 'Not punched in · हाज़िरी लगाएँ';
+      const lp = c.lastPunch ? new Date(String(c.lastPunch).replace(' ', 'T')) : null, marked = !!lp && !isNaN(lp) && Date.now() - lp < 24 * 36e5;
+      $('punch').classList.remove('hidden'); $('punch').classList.toggle('in', !!c.punchedIn || marked);
+      $('pT').textContent = c.punchedIn ? 'On duty · ड्यूटी पर' : marked ? 'Attendance marked · हाज़िरी लग गई ✓' : 'Not punched in · हाज़िरी लगाएँ';
       $('pS').textContent = c.lastPunch ? 'Last punch ' + JNP.dmy(c.lastPunch) : 'Selfie + location';
       $('pGo').textContent = c.punchedIn ? 'Punch OUT' : 'Punch IN';
     }

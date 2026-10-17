@@ -102,7 +102,7 @@
     JNP.done($('doneCard'), { title: existing ? 'BUILTY ALREADY MADE' : 'BUILTY SAVED', big: r.LR_No, sub: r.Truck_No + ' · ' + r.Consignee + ' · ' + r.Qty_MT + ' MT',
       buttons: [
         { label: '🧾 Share Builty PDF', cls: 'orange', onClick: async () => { JNP.busy(true, 'Making PDF…'); try { await JNPBuilty.share(r, st); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } },
-        { label: '📲 Share details on WhatsApp', onClick: () => JNP.whatsapp(msg, r.Driver_Mobile) },
+        { label: '📲 Share details on WhatsApp', onClick: () => JNP.whatsapp(msg) },
         { label: '👁 View PDF', cls: 'light', onClick: async () => { const b = await JNPBuilty.make(r, st); window.open(URL.createObjectURL(b), '_blank'); } },
       ],
       onNew: () => { $('doneCard').classList.add('hidden'); $('lr').value = ''; $('lr').focus(); window.scrollTo(0, 0); } });

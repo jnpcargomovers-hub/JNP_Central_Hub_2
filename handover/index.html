@@ -97,7 +97,7 @@
       const k = keyOf(c); state[k] = state[k] || { Status: opts(c)[0], Photo_URL: '' };
       h += '<div class="chk" id="ck' + i + '"><div class="nm"><span>' + JNP.esc(c.item) + '</span><small>' + JNP.esc(c.hindi || '') + '</small></div><div class="was" id="was' + i + '"></div>' +
         '<div class="seg small" data-i="' + i + '">' + opts(c).map(o => '<button type="button" class="' + o.replace(/\W/g, '') + '" data-v="' + JNP.esc(o) + '">' + JNP.esc(o) + '</button>').join('') + '</div>' +
-        '<div class="hidden" id="cp' + i + '" style="margin-top:6px"><label class="photo-add" style="padding:6px 10px;font-size:13px"><input type="file" accept="image/*" capture="environment" hidden data-i="' + i + '">📷 Photo</label> <span id="cpi' + i + '" class="hint"></span></div></div>';
+        '<div class="hidden" id="cp' + i + '" style="margin-top:6px"><label class="photo-add" style="padding:6px 10px;font-size:13px"><input type="file" accept="image/*" capture="environment" hidden data-i="' + i + '">📷 Camera</label> <label class="photo-add" style="padding:6px 10px;font-size:13px"><input type="file" accept="image/*" hidden data-i="' + i + '">🖼️ Upload</label> <span id="cpi' + i + '" class="hint"></span></div></div>';
     });
     $('chk').innerHTML = h || '<div class="muted">Checklist is empty — HO adds items in DB_Master › Handover_Checklist.</div>';
     paint();
@@ -193,7 +193,7 @@
       ['Driver photo', r.Driver_Photo_URL]]);
     $('f').classList.add('hidden');
     JNP.done($('doneCard'), { title: r.Handover_Type + ' SAVED', big: r.Truck_No, sub: r.Driver_Name + ' · ' + r.Record_ID,
-      buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }].concat(JNP.approvalButtons(out, msg)),
+      buttons: JNP.approvalButtons(out, msg),
       onNew: () => location.reload() });
     loadRecent();
   }

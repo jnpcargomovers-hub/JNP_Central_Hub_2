@@ -101,7 +101,7 @@
       $('f').classList.add('hidden');
       const d = JNP.findDriver(r.Driver_Name);
       JNP.done($('doneCard'), { title: 'SENT FOR APPROVAL', big: JNP.inr(r.Net_Payable), sub: r.Driver_Name + ' · ' + r.Month,
-        buttons: JNP.approvalButtons(out, msg).concat([{ label: '📲 Send statement to driver', cls: 'light', onClick: () => JNP.whatsapp(msg, d && d.mobile) }]),
+        buttons: JNP.approvalButtons(out, msg),
         onNew: () => { F.reset(); F.F.calc.set(''); clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
       loadStl();
     });

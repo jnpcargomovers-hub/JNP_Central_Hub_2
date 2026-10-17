@@ -77,7 +77,7 @@
         ['Location', r.Location], ['Breakdown', r.Breakdown_ID], ['Urgency', r.Urgency], ['Approval by', r.Approver_Requested], ['Quote photo', r.Quote1_Photo_URL], ['Ref', r.Record_ID]]);
       $('f').classList.add('hidden');
       JNP.done($('doneCard'), { title: 'SENT FOR APPROVAL', big: JNP.inr(r.Amount), sub: r.Truck_No + ' · ' + r.Expense_Head + ' · waiting for ' + r.Approver_Requested,
-        buttons: JNP.approvalButtons(out, msg).concat([{ label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }]),
+        buttons: JNP.approvalButtons(out, msg),
         onNew: () => { F.reset(); openBd = []; lastT = ''; clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
     });
   });

@@ -208,7 +208,8 @@
         (c.critical ? '<div class="hint"><b style="color:var(--red)">Critical · गंभीर</b> — safety item, truck should not run until fixed. · ठीक होने तक गाड़ी नहीं चलेगी।</div>' :
           '<div class="seg small sev">' + SEV.slice(0, 2).map(s => '<button type="button" class="' + s + (x.severity === s ? ' on' : '') + '" data-s="' + s + '">' + (s === 'Minor' ? 'Minor · छोटा – चल सकती है' : 'Major · बड़ा – जल्दी ठीक करें') + '</button>').join('') + '<button type="button" class="Critical' + (x.severity === 'Critical' ? ' on' : '') + '" data-s="Critical">Critical · गंभीर – रोकें</button></div>') +
         '<div class="phrow">' + (x.photo ? '<img src="' + E(x.preview || thumb(x.photo)) + '" alt="">' : '') +
-        '<label class="photo-add' + (!x.photo && CFG.photoOnIssue ? ' need' : '') + '"><input type="file" accept="image/*" capture="environment" hidden data-p="1">' + '📷 ' + (x.photo ? 'Retake · दोबारा' : 'Photo · फोटो' + (CFG.photoOnIssue ? ' (ज़रूरी)' : '')) + '</label><span class="hint" data-pi="1"></span></div>' +
+        '<label class="photo-add' + (!x.photo && CFG.photoOnIssue ? ' need' : '') + '"><input type="file" accept="image/*" capture="environment" hidden data-p="1">' + '📷 ' + (x.photo ? 'Retake · दोबारा' : 'Camera · कैमरा' + (CFG.photoOnIssue ? ' (ज़रूरी)' : '')) + '</label>' +
+        '<label class="photo-add' + (!x.photo && CFG.photoOnIssue ? ' need' : '') + '"><input type="file" accept="image/*" hidden data-p="1">🖼️ Upload · गैलरी</label><span class="hint" data-pi="1"></span></div>' +
         '</div>' : '') + '</div>';
   }
   function secCounts(s) { let d = 0, iss = 0; s.items.forEach(c => { const x = st(c); if (x.status) d++; if (x.status === 'Issue') iss++; }); return { d, iss, n: s.items.length }; }
@@ -384,7 +385,7 @@
       const box = card.querySelector('.fixbox'); box.classList.toggle('hidden');
       if (!box.dataset.made) {
         box.dataset.made = 1;
-        box.innerHTML = '<input class="input" data-fn placeholder="What was done? / क्या काम किया? e.g. लाइनर बदला"><div class="phrow"><label class="photo-add"><input type="file" accept="image/*" capture="environment" hidden data-fp>📷 Photo after fix · ठीक होने के बाद फोटो</label><span class="hint" data-fpi></span></div><div class="err hidden" data-fe></div><button class="btn green" type="button" data-fs>Save · ठीक हो गया</button>';
+        box.innerHTML = '<input class="input" data-fn placeholder="What was done? / क्या काम किया? e.g. लाइनर बदला"><div class="phrow"><label class="photo-add"><input type="file" accept="image/*" capture="environment" hidden data-fp>📷 Photo after fix · फोटो</label><label class="photo-add"><input type="file" accept="image/*" hidden data-fp>🖼️ Upload · गैलरी</label><span class="hint" data-fpi></span></div><div class="err hidden" data-fe></div><button class="btn green" type="button" data-fs>Save · ठीक हो गया</button>';
       }
       return;
     }

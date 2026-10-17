@@ -202,9 +202,10 @@
   }
 
   // ---- 8. WHATSAPP + FILE SHARE -----------------------------------------------
-  function whatsapp(text, phone) {
+  // Always opens WhatsApp's own chat picker, so the user sends to whichever person or GROUP they want.
+  function whatsapp(text) {
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const p = phone ? String(phone).replace(/\D/g, '').slice(-10) : '';
+    const p = '';
     if (mobile) { location.href = 'whatsapp://send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text); return; }
     // Laptop: WhatsApp Web opens in ONE separate tab that is reused for every message, so the portal stays open
     // and the 2nd / 3rd message buttons are still there when the user comes back.
@@ -232,10 +233,10 @@
     lines.push('— ' + (u ? u.name : '') + ' · ' + nowText());
     return lines.join('\n');
   }
-  /** Buttons to send an approval request to the chosen approver (after save) */
+  /** One share button after save — user picks the chat / group in WhatsApp. Approval requests carry the approver's name + link. */
   function approvalButtons(out, text) {
-    if (!out.approver) return [];
-    return [{ label: '📲 Ask ' + esc(out.approver.name) + ' to approve', onClick: () => w.JNP.whatsapp(text + '\n\nApprove here: ' + CONFIG.HUB + 'approvals/', out.approver.mobile) }];
+    const t = out && out.approver ? text + '\n\n⏳ Approval needed from *' + out.approver.name + '*\nApprove here: ' + CONFIG.HUB + 'approvals/' : text;
+    return [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => w.JNP.whatsapp(t) }];
   }
 
   // ---- 9. PHOTOS (compressed on the phone → Google Drive via DB_Master script) --
@@ -351,7 +352,8 @@
         case 'textarea': inp = '<textarea id="in_' + f.k + '" class="input" rows="3"' + ph + '></textarea>'; break;
         case 'select': case 'symptom': case 'approver': inp = '<select id="in_' + f.k + '" class="input"><option value="">— select —</option></select>'; break;
         case 'seg': inp = '<div class="seg" id="in_' + f.k + '"></div>'; break;
-        case 'photo': inp = '<div class="photos" id="ph_' + f.k + '"></div><label class="photo-add"><input type="file" accept="image/*" ' + (f.camera !== false ? 'capture="' + (f.selfie ? 'user' : 'environment') + '"' : '') + (f.multiple ? ' multiple' : '') + ' id="in_' + f.k + '" hidden>📷 ' + (f.multiple ? 'Add photos' : 'Take photo') + '</label>'; break;
+        case 'photo': inp = '<div class="photos" id="ph_' + f.k + '"></div><div class="photo-btns"><label class="photo-add"><input type="file" accept="image/*" capture="' + (f.selfie ? 'user' : 'environment') + '"' + (f.multiple ? ' multiple' : '') + ' id="in_' + f.k + '" hidden>📷 Camera · कैमरा</label>' +
+            (f.selfie ? '' : '<label class="photo-add"><input type="file" accept="image/*"' + (f.multiple ? ' multiple' : '') + ' id="in_' + f.k + '_g" hidden>🖼️ Upload · गैलरी</label>') + '</div>'; break;
         default: inp = '<input id="in_' + f.k + '" class="input' + (f.upper || f.type === 'upper' || f.type === 'truck' ? ' upper' : '') + '"' + ph + '>';
       }
       return '<div class="field" id="' + id + '">' + lab + inp + '<div class="sub-info" id="si_' + f.k + '">' + (f.hint ? '<span class="hint">' + esc(f.hint) + '</span>' : '') + '</div></div>';
@@ -382,8 +384,9 @@
         const box = el.querySelector('#ph_' + f.k);
         const draw = () => { box.innerHTML = urls.map((u, j) => '<span class="ph"><img src="' + esc(u.preview || u.thumb) + '"><button type="button" data-j="' + j + '">✕</button></span>').join(''); };
         box.onclick = e => { const b = e.target.closest('button'); if (!b) return; urls.splice(Number(b.dataset.j), 1); draw(); fire(f.k); };
-        s.onchange = async () => {
-          const files = [...s.files]; s.value = '';
+        const g = el.querySelector('#in_' + f.k + '_g');
+        s.onchange = async function () {
+          const src = this && this.files ? this : s, files = [...src.files]; src.value = '';
           for (const file of files) {
             photosBusy[f.k] = (photosBusy[f.k] || 0) + 1; info(f.k, '<span class="warnline">Uploading photo…</span>');
             try { const up = await uploadPhoto(file, opts.module || 'GEN', f.k); if (f.multiple) urls.push(up); else urls = [up]; draw(); info(f.k, ''); fire(f.k); }
@@ -391,6 +394,7 @@
             finally { photosBusy[f.k]--; }
           }
         };
+        if (g) g.onchange = s.onchange;
         F[f.k] = { f, get: () => urls.map(u => u.url).join(' '), set: v => { urls = String(v || '').split(/\s+/).filter(Boolean).map(u => ({ url: u, thumb: driveThumb(u) })); draw(); }, urls: () => urls };
       } else F[f.k] = { f, get: () => s.value.trim(), set: v => { s.value = v === undefined || v === null ? '' : v; } };
       if (f.type === 'select' || f.type === 'seg' || f.type === 'symptom') fill(f);

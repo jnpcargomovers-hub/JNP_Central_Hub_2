@@ -76,7 +76,7 @@
   function showAfter(title, msg, req) {
     JNP.toast(title, 'ok');
     JNP.done($('act'), { title: title.toUpperCase(), big: JNP.inr(cur.Amount), sub: cur.Module_Name + ' · ' + cur.Requested_By,
-      buttons: [{ label: '📲 Tell ' + JNP.esc(req ? req.name : 'requester') + ' on WhatsApp', onClick: () => JNP.whatsapp(msg, req && req.mobile) }, { label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }] });
+      buttons: [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }] });
     JNP.refreshMe().catch(() => { });
     loadList();
   }

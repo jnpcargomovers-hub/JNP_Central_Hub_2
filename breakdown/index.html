@@ -95,7 +95,7 @@
         ['Driver', r.Driver_Name ? r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '') : ''], ['Loaded', r.Loaded === 'Yes' ? 'Yes' + (r.LR_No ? ' · LR ' + r.LR_No : '') : r.Loaded],
         ['Photo', (r.Report_Photo_URLs || '').split(' ')[0]], ['Ref', r.Record_ID]], isRm(r.Off_Road_Type) ? 'R&M please acknowledge: ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID : 'Operations: arrange ' + (r.Off_Road_Type === 'Driver not available' ? 'a driver' : 'clearance') + ' — ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID);
       $('f').classList.add('hidden');
-      const btns = isRm(r.Off_Road_Type) ? [{ label: '📲 Send to R&M on WhatsApp', onClick: () => JNP.whatsapp(msg, rmMobile) }, { label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }] : [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }];
+      const btns = [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }];
       JNP.done($('doneCard'), { title: 'OFF ROAD REPORTED', big: r.Truck_No, sub: r.Off_Road_Type + ' · ' + r.Symptom + ' · ' + r.Location, buttons: btns,
         onNew: () => { F.reset(); pos = null; $('gpsInfo').textContent = ''; clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
     });

@@ -56,7 +56,7 @@
         ['Vendor', r.Vendor], ['Urgency', r.Urgency], ['Approval by', r.Approver_Requested], ['Photo', r.Quote_Photo_URL || r.Bill_Photo_URL], ['Ref', r.Record_ID]]);
       $('f').classList.add('hidden');
       JNP.done($('doneCard'), { title: 'SENT FOR APPROVAL', big: JNP.inr(r.Amount), sub: r.Expense_Head + ' · waiting for ' + r.Approver_Requested,
-        buttons: JNP.approvalButtons(out, msg).concat([{ label: '📲 Share to group', cls: 'light', onClick: () => JNP.whatsapp(msg) }]),
+        buttons: JNP.approvalButtons(out, msg),
         onNew: () => { F.reset(); clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
     });
   });
