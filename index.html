@@ -80,6 +80,14 @@
     if (r.indexOf('E') >= 0) return '';
     return '<span class="pill">View only</span>';
   }
+  // several modules that live on one screen → one tile (Indent / Receipt / Issue are tabs of the Depot screen)
+  const MERGE = { 'RM-04': 'DEPOT', 'RM-07': 'DEPOT', 'RM-05': 'DEPOT' };
+  const MERGED = { DEPOT: { codes: ['RM-04', 'RM-07', 'RM-05'], icon: '🏬', path: 'depot/', name: 'Depot Store', hindi: 'डिपो स्टोर · इंडेंट / रसीद / इश्यू' } };
+  function mergedHtml(key, color) {
+    const g = MERGED[key], mine = g.codes.filter(c => JNP.rights(c).length), tags = mine.map(c => tag(JNP.rights(c), c));
+    const t = tags.find(x => /Pay/.test(x)) || tags.find(x => /Approve/.test(x)) || (tags.every(x => /View only/.test(x)) ? tags[0] : '');
+    return '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + g.path + '"><span class="ic">' + g.icon + '</span><span class="en">' + g.name + '</span><span class="hi">' + g.hindi + '</span><span class="tag">' + (t || '') + '</span></a>';
+  }
   function tileHtml(code, color, badge) {
     const s = JNP.session(), a = s.access[code], m = JNP.MODULES[code] || { icon: '▪️', path: '' };
     return '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + m.path + '">' + (badge ? '<span class="badge">' + badge + '</span>' : '') +
@@ -112,11 +120,12 @@
 
     let html = '';
     const order = Object.keys(JNP.MODULES);
+    const seen = {};
     JNP.TILES.forEach(dept => {
       const codes = order.filter(cd => cd.indexOf(dept.prefix) === 0 && s.access[cd] && JNP.rights(cd).length);
       if (!codes.length) return;
       html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' + JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">' +
-        codes.map(cd => tileHtml(cd, dept.color)).join('') + '</div></div>';
+        codes.map(cd => { const m = MERGE[cd]; if (!m) return tileHtml(cd, dept.color); if (seen[m]) return ''; seen[m] = 1; return mergedHtml(m, dept.color); }).join('') + '</div></div>';
     });
     const gen = ['APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
     const cfg = JNP.M().settings || {}, lst = k => String(cfg[k] || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
