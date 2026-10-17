@@ -205,8 +205,13 @@
   function whatsapp(text, phone) {
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const p = phone ? String(phone).replace(/\D/g, '').slice(-10) : '';
-    location.href = mobile ? 'whatsapp://send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text)
-      : 'https://wa.me/' + (p ? '91' + p : '') + '?text=' + encodeURIComponent(text);
+    if (mobile) { location.href = 'whatsapp://send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text); return; }
+    // Laptop: WhatsApp Web opens in ONE separate tab that is reused for every message, so the portal stays open
+    // and the 2nd / 3rd message buttons are still there when the user comes back.
+    const url = 'https://web.whatsapp.com/send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text);
+    const win = window.open(url, 'jnp_whatsapp');
+    if (win) { try { win.focus(); } catch (e) { } toast('Opened in the WhatsApp tab — come back to this tab for the next message', 'ok', 5000); }
+    else location.href = url;   // pop-up blocked → old behaviour
   }
   async function shareFile(blob, filename, text) {
     const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
