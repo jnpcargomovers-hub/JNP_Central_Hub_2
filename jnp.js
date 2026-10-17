@@ -27,6 +27,7 @@
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
     nextLR: 'ops', lookupLR: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
+    inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
   };
   function moduleDb(code) {
@@ -46,6 +47,7 @@
     'OPS-05': { icon: '💸', path: 'ops-expense/' },
     'OPS-06': { icon: '🚧', path: 'breakdown/' },
     'RM-01':  { icon: '🛠️', path: 'breakdown/?tab=resolve' },
+    'RM-08':  { icon: '🔍', path: 'inspection/' },
     'RM-02':  { icon: '🔧', path: 'maintenance/' },
     'RM-03':  { icon: '🧰', path: 'truck-expense/' },
     'RM-04':  { icon: '📝', path: 'depot/?tab=indent' },
