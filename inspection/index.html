@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Vehicle Inspection · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .prog { position: sticky; top: 66px; z-index: 15; background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 10px 14px; margin: 14px 0 0; }
+    .prog .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--navy); }
+    .prog .bar { height: 8px; border-radius: 6px; background: #E8EDF5; overflow: hidden; display: flex; margin-top: 7px; }
+    .prog .bar i { display: block; height: 100%; }
+    .prog .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sec2 { padding: 0; overflow: hidden; }
+    .sec2 > .sh { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; user-select: none; }
+    .sec2 > .sh .ic { font-size: 20px; width: 28px; text-align: center; }
+    .sec2 > .sh .tt { flex: 1; min-width: 0; }
+    .sec2 > .sh .tt b { display: block; font-size: 15px; color: var(--navy); }
+    .sec2 > .sh .tt small { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+    .sec2 > .sh .chev { color: var(--muted); font-size: 18px; transition: transform .15s; }
+    .sec2.open > .sh .chev { transform: rotate(90deg); }
+    .sec2 > .sb { display: none; padding: 0 16px 12px; }
+    .sec2.open > .sb { display: block; }
+    .sec2.done > .sh { background: var(--ok-bg); }
+    .sec2.bad > .sh { background: var(--bad-bg); }
+    .ir { border-top: 1px solid #EEF1F5; padding: 10px 0; }
+    .ir .top { display: flex; align-items: center; gap: 10px; }
+    .ir .nm { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; line-height: 1.3; }
+    .ir .nm small { display: block; color: var(--muted); font-weight: 600; font-size: 12px; }
+    .ir .nm .crit { color: var(--red); font-size: 11px; font-weight: 800; margin-left: 4px; }
+    .tri { display: flex; gap: 5px; flex: 0 0 auto; }
+    .tri button { width: 44px; height: 40px; border-radius: 10px; border: 1.5px solid #CCD5E2; background: #fff; font-size: 16px; font-weight: 800; color: var(--char); cursor: pointer; padding: 0; }
+    .tri button.na { font-size: 11.5px; }
+    .tri button.on.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+    .tri button.on.is { background: var(--red); border-color: var(--red); color: #fff; }
+    .tri button.on.na { background: #8B96A5; border-color: #8B96A5; color: #fff; }
+    .ir.issue { background: var(--bad-bg); margin: 0 -16px; padding: 10px 16px; border-top-color: transparent; }
+    .ir .was { margin-top: 6px; }
+    .ir .more { margin-top: 10px; display: grid; gap: 8px; }
+    .qchips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .qchips button { border: 1.5px solid #E7B4BC; background: #fff; color: var(--red); border-radius: 999px; padding: 6px 11px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .qchips button.on { background: var(--red); color: #fff; border-color: var(--red); }
+    .sev button { padding: 7px 8px !important; font-size: 13px !important; }
+    .sev button.on.Minor { background: #D48A00; border-color: #D48A00; }
+    .sev button.on.Major { background: var(--orange); border-color: var(--orange); }
+    .sev button.on.Critical { background: var(--red); border-color: var(--red); }
+    .ir .more .input { font-size: 15px; padding: 9px 11px; }
+    .phrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .phrow img { width: 58px; height: 58px; object-fit: cover; border-radius: 9px; border: 1px solid var(--line); }
+    .phrow .photo-add { padding: 8px 12px; font-size: 13.5px; }
+    .phrow .photo-add.need { border-color: var(--red); color: var(--red); background: #fff; }
+    .res { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .res button { border: 1.5px solid #CCD5E2; background: #fff; border-radius: 12px; padding: 10px 6px; font-weight: 800; font-size: 13px; cursor: pointer; color: var(--char); line-height: 1.25; }
+    .res button[disabled] { opacity: .35; cursor: not-allowed; }
+    .res button.on.r0 { background: var(--ok); border-color: var(--ok); color: #fff; }
+    .res button.on.r1 { background: var(--orange); border-color: var(--orange); color: #fff; }
+    .res button.on.r2 { background: var(--red); border-color: var(--red); color: #fff; }
+    .tbox { border-radius: 12px; background: var(--bg); padding: 10px 12px; font-size: 13.5px; margin-top: 4px; }
+    .tbox b { color: var(--navy); }
+    .chkline { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; font-size: 14px; margin-top: 12px; cursor: pointer; }
+    .chkline input { width: 22px; height: 22px; margin: 0; flex: 0 0 auto; accent-color: var(--red); }
+    .draft { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .trk { margin-top: 12px; }
+    .trk > .th { display: flex; justify-content: space-between; align-items: center; font-weight: 800; color: var(--navy); margin-bottom: 4px; }
+    .oi { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px; background: #fff; }
+    .oi .itop { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .oi .itop b { font-size: 14px; }
+    .oi small { display: block; color: var(--muted); margin-top: 3px; }
+    .oi .fixbox { margin-top: 10px; display: grid; gap: 8px; }
+    .oi img.th { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); margin-top: 6px; }
+    .sevp { display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; color: #fff; }
+    .sevp.Minor { background: #D48A00; } .sevp.Major { background: var(--orange); } .sevp.Critical { background: var(--red); }
+    .stats4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+    .stats4 div { background: var(--bg); border-radius: 11px; padding: 8px; text-align: center; }
+    .stats4 b { display: block; font-size: 19px; color: var(--navy); line-height: 1.1; }
+    .stats4 span { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+    .filt { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .filt button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 13px; color: var(--char); cursor: pointer; }
+    .filt button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    details.due summary { cursor: pointer; font-weight: 800; color: var(--navy); }
+    .dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 13.5px; margin-top: 8px; }
+    .dl span:nth-child(even) { color: var(--muted); text-align: right; }
+    .ditem { border-top: 1px solid #EEF1F5; padding: 9px 0; }
+    .ditem .itop { display: flex; justify-content: space-between; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+
+    <!-- NEW INSPECTION -->
+    <div id="vNew">
+      <div class="card hidden" id="draftCard"><div class="draft"><span id="draftTxt"></span><button class="mini" type="button" id="draftDel">Discard</button></div></div>
+      <form id="f" autocomplete="off" novalidate>
+        <div class="card">
+          <h3 class="cardh"><span>Vehicle Inspection · गाड़ी जांच</span></h3>
+          <div id="top"></div>
+          <div id="truckInfo"></div>
+        </div>
+        <div class="prog hidden" id="prog"></div>
+        <div id="secs"></div>
+        <div class="card hidden" id="endCard">
+          <h3 class="cardh"><span>Photos & result · फोटो और नतीजा</span></h3>
+          <div id="photos"></div>
+          <div class="field"><label>Result · नतीजा</label><div class="res" id="res"></div><div class="sub-info" id="resInfo"></div></div>
+          <label class="chkline hidden" id="offWrap"><input type="checkbox" id="offRoad"><span>Mark truck <b>off road</b> now (creates an Off-Road record for R&amp;M)<br><small class="hint" id="offHint"></small></span></label>
+          <div id="err" class="err hidden" style="margin-top:12px"></div>
+          <button id="saveBtn" class="btn orange" type="submit" style="margin-top:12px">Save inspection · सेव करें</button>
+        </div>
+      </form>
+      <div id="doneCard" class="card hidden"></div>
+    </div>
+
+    <!-- OPEN ISSUES -->
+    <div id="vOpen" class="hidden">
+      <div class="card list">
+        <h3 class="cardh"><span>Open issues · बाकी काम</span><button class="mini" id="reloadOpen" type="button">↻</button></h3>
+        <div class="stats4" id="openStats"></div>
+        <div class="filt" id="openFilt"></div>
+        <div id="openList" class="muted">Loading…</div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <div id="vHist" class="hidden">
+      <div class="card" id="dueCard"></div>
+      <div class="card list">
+        <h3 class="cardh"><span>Inspections · जांच</span><button class="mini" id="reloadHist" type="button">↻</button></h3>
+        <div class="filt" id="histFilt"></div>
+        <div id="histList" class="muted">Loading…</div>
+      </div>
+      <div class="card hidden" id="detail"></div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Vehicle Inspection', 'गाड़ी जांच · R&M');
+  const ctx = await JNP.requireModule('RM-08');
+  await JNP.masters().catch(e => JNP.toast(e.message, 'bad'));
+  const canE = ctx.can('E');
+  const ICON = { 'Oil & Fluids': '🛢️', 'Engine': '⚙️', 'Mechanical': '🔩', 'Brakes': '🛑', 'Electrical': '⚡', 'Tyres & Wheels': '🛞', 'Body & Cabin': '🚛', 'Load Body': '📦', 'Safety & Documents': '🧯' };
+  const RESULTS = ['Fit to run', 'Run with caution', 'Not fit - off road'], RES_HI = ['चलने लायक', 'सावधानी से', 'नहीं चलेगी'];
+  const SEV = ['Minor', 'Major', 'Critical'];
+  const DKEY = 'jnp2_insp_draft', CKEY = 'jnp2_insp_cl';
+  const daysAgo = s => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? NaN : (Date.now() - d) / 864e5; };
+  const ago = s => { const d = daysAgo(s); return isNaN(d) ? '' : d < 1 ? 'today' : Math.floor(d) + ' d ago'; };
+  const thumb = u => JNP.driveThumb(u);
+
+  // ---------------- checklist (cached on the phone, refreshed every visit)
+  let CL = (JNP.store.get(CKEY) || {}).items || [], CFG = (JNP.store.get(CKEY) || {}).cfg || { photoOnIssue: true, dueDays: 30, types: ['Routine', 'Pre-trip', 'After repair', 'Monthly', 'Handover'] };
+  async function loadChecklist() {
+    try { const o = await JNP.call('inspChecklist'); CL = o.items; CFG = { photoOnIssue: o.photoOnIssue, dueDays: o.dueDays, types: o.types }; JNP.store.set(CKEY, { items: CL, cfg: CFG, at: Date.now() }); }
+    catch (e) { if (!CL.length) throw e; JNP.toast('Offline — using saved checklist', 'warn'); }
+  }
+
+  // ---------------- tabs
+  let openLoaded = false, histLoaded = false;
+  const startTab = JNP.param('tab') || (canE ? 'new' : 'open');
+  JNP.tabs($('tabs'), (canE ? [{ id: 'new', label: '＋ New inspection' }] : []).concat([{ id: 'open', label: 'Open issues' }, { id: 'hist', label: 'History & due' }]), id => {
+    $('vNew').classList.toggle('hidden', id !== 'new'); $('vOpen').classList.toggle('hidden', id !== 'open'); $('vHist').classList.toggle('hidden', id !== 'hist');
+    if (id === 'open' && !openLoaded) loadOpen();
+    if (id === 'hist' && !histLoaded) loadHist();
+  }, startTab);
+
+  try { await loadChecklist(); } catch (e) { $('secs').innerHTML = '<div class="card err">' + E(e.message) + '</div>'; }
+
+  // =====================================================================
+  // NEW INSPECTION
+  // =====================================================================
+  let S = {}, truckOpen = {}, cargo = '', clientReqId = JNP.uid(), resultPick = -1, openSec = {}, offTouched = false;
+  const T = JNP.form($('top'), [
+    { k: 'Truck_No', label: 'Truck Number', hi: 'गाड़ी नंबर', type: 'truck', req: true, ph: 'e.g. MH40CQ8307' },
+    { k: 'Inspection_Type', label: 'Type', hi: 'प्रकार', type: 'seg', options: CFG.types, req: true, value: 'Routine' },
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver', half: true },
+    { k: 'Odometer_KM', label: 'Odometer KM', type: 'num', half: true },
+    { k: 'Location', label: 'Location', hi: 'जगह', ph: 'e.g. Dhule yard' },
+  ], { module: 'RM-08' });
+  const P = JNP.form($('photos'), [
+    { k: 'Truck_Photo_URLs', label: 'Truck photos (front, back, both sides)', hi: 'गाड़ी फोटो', type: 'photo', multiple: true, req: true },
+    { k: 'Odometer_Photo_URL', label: 'Odometer photo', type: 'photo' },
+    { k: 'Remark', label: 'Remark', type: 'textarea', ph: 'Anything else the mechanic should know' },
+  ], { module: 'RM-08' });
+
+  const applies = c => c.applies === 'ALL' || !cargo || c.applies === cargo;
+  const items = () => CL.filter(applies);
+  const sections = () => { const o = []; items().forEach(c => { let s = o.find(x => x.name === c.section); if (!s) o.push(s = { name: c.section, items: [] }); s.items.push(c); }); return o; };
+  const st = c => S[c.code] = S[c.code] || { status: '', issue: '', severity: '', note: '', photo: '', preview: '' };
+
+  function itemHtml(c) {
+    const x = st(c), op = truckOpen[c.code];
+    const q = (c.quick || '').split(',').map(s => s.trim()).filter(Boolean), chosen = x.issue.split(', ').filter(Boolean);
+    return '<div class="ir' + (x.status === 'Issue' ? ' issue' : '') + '" data-c="' + E(c.code) + '"><div class="top"><div class="nm">' + E(c.item) + (c.critical ? '<span class="crit">● SAFETY</span>' : '') + '<small>' + E(c.hindi) + '</small></div>' +
+      '<div class="tri"><button type="button" class="ok' + (x.status === 'OK' ? ' on' : '') + '" data-v="OK" aria-label="OK">✓</button><button type="button" class="is' + (x.status === 'Issue' ? ' on' : '') + '" data-v="Issue" aria-label="Issue">✗</button><button type="button" class="na' + (x.status === 'N.A.' ? ' on' : '') + '" data-v="N.A.">N.A.</button></div></div>' +
+      (op ? '<div class="was"><span class="warnline">Open since ' + E(ago(op.Inspected_At)) + ': ' + E([op.Issue, op.Note].filter(Boolean).join(' – ') || 'issue') + '</span></div>' : '') +
+      (x.status === 'Issue' ? '<div class="more">' +
+        (q.length ? '<div class="qchips">' + q.map(s => '<button type="button" data-q="' + E(s) + '" class="' + (chosen.indexOf(s) >= 0 ? 'on' : '') + '">' + E(s) + '</button>').join('') + '</div>' : '') +
+        '<input class="input" data-n="1" placeholder="What is wrong? (details)" value="' + E(x.note) + '">' +
+        (c.critical ? '<div class="hint"><b style="color:var(--red)">Critical</b> — safety item, truck should not run until fixed.</div>' :
+          '<div class="seg small sev">' + SEV.slice(0, 2).map(s => '<button type="button" class="' + s + (x.severity === s ? ' on' : '') + '" data-s="' + s + '">' + (s === 'Minor' ? 'Minor · can run' : 'Major · fix soon') + '</button>').join('') + '<button type="button" class="Critical' + (x.severity === 'Critical' ? ' on' : '') + '" data-s="Critical">Critical · stop</button></div>') +
+        '<div class="phrow">' + (x.photo ? '<img src="' + E(x.preview || thumb(x.photo)) + '" alt="">' : '') +
+        '<label class="photo-add' + (!x.photo && CFG.photoOnIssue ? ' need' : '') + '"><input type="file" accept="image/*" capture="environment" hidden data-p="1">📷 ' + (x.photo ? 'Retake' : 'Photo' + (CFG.photoOnIssue ? ' (required)' : '')) + '</label><span class="hint" data-pi="1"></span></div>' +
+        '</div>' : '') + '</div>';
+  }
+  function secCounts(s) { let d = 0, iss = 0; s.items.forEach(c => { const x = st(c); if (x.status) d++; if (x.status === 'Issue') iss++; }); return { d, iss, n: s.items.length }; }
+  function secHeadHtml(s) {
+    const k = secCounts(s);
+    return '<span class="ic">' + (ICON[s.name] || '🔧') + '</span><span class="tt"><b>' + E(s.name) + '</b><small>' + k.d + ' / ' + k.n + ' checked' + (k.iss ? ' · <span style="color:var(--red)">' + k.iss + ' issue' + (k.iss > 1 ? 's' : '') + '</span>' : k.d === k.n ? ' · all OK ✓' : '') + '</small></span>' +
+      (k.d < k.n ? '<button class="mini" type="button" data-all="1">All OK</button>' : '') + '<span class="chev">›</span>';
+  }
+  function drawSections() {
+    const ss = sections();
+    $('secs').innerHTML = ss.map((s, i) => { const k = secCounts(s);
+      return '<div class="card sec2' + (openSec[s.name] ? ' open' : '') + (k.iss ? ' bad' : k.d === k.n ? ' done' : '') + '" data-s="' + i + '"><div class="sh">' + secHeadHtml(s) + '</div><div class="sb">' + s.items.map(itemHtml).join('') + '</div></div>'; }).join('');
+    paint();
+  }
+  function redrawItem(code) {
+    const c = CL.find(x => x.code === code), el = document.querySelector('.ir[data-c="' + code + '"]'); if (!el) return;
+    const tmp = document.createElement('div'); tmp.innerHTML = itemHtml(c); el.replaceWith(tmp.firstChild);
+    const ss = sections(), i = ss.findIndex(s => s.name === c.section), card = document.querySelector('.sec2[data-s="' + i + '"]');
+    if (card) { const k = secCounts(ss[i]); card.querySelector('.sh').innerHTML = secHeadHtml(ss[i]); card.classList.toggle('bad', !!k.iss); card.classList.toggle('done', !k.iss && k.d === k.n); }
+    paint();
+  }
+  function tally() {
+    const it = items(), t = { n: it.length, ok: 0, is: 0, na: 0, Critical: 0, Major: 0, Minor: 0, needPhoto: 0, needWhat: 0 };
+    it.forEach(c => { const x = st(c); if (x.status === 'OK') t.ok++; else if (x.status === 'N.A.') t.na++; else if (x.status === 'Issue') { t.is++; t[c.critical ? 'Critical' : (x.severity || 'Minor')]++; if (CFG.photoOnIssue && !x.photo) t.needPhoto++; if (!x.issue && !x.note) t.needWhat++; } });
+    t.done = t.ok + t.is + t.na; t.auto = t.Critical ? 2 : t.Major ? 1 : 0; return t;
+  }
+  function paint() {
+    const truck = T.val('Truck_No'), on = !!truck && CL.length > 0;
+    $('prog').classList.toggle('hidden', !on); $('endCard').classList.toggle('hidden', !on); $('secs').classList.toggle('hidden', !on);
+    if (!on) return;
+    const t = tally(), w = v => (100 * v / t.n).toFixed(1) + '%';
+    $('prog').innerHTML = '<div class="row"><span>' + t.done + ' / ' + t.n + ' checked</span><span class="chips">' +
+      (t.is ? '<span class="pill bad">' + t.is + ' issue' + (t.is > 1 ? 's' : '') + '</span>' : '') + (t.Critical ? '<span class="pill bad">‼ ' + t.Critical + ' critical</span>' : '') +
+      (t.done === t.n && !t.is ? '<span class="pill ok">All OK</span>' : '') + '</span></div>' +
+      '<div class="bar"><i style="width:' + w(t.ok) + ';background:var(--ok)"></i><i style="width:' + w(t.is) + ';background:var(--red)"></i><i style="width:' + w(t.na) + ';background:#A7B1BE"></i></div>';
+    const pick = Math.max(t.auto, resultPick);
+    $('res').innerHTML = RESULTS.map((r, i) => '<button type="button" class="r' + i + (i === pick ? ' on' : '') + '" data-r="' + i + '"' + (i < t.auto ? ' disabled' : '') + '>' + E(r.replace(' - off road', '')) + '<br><small style="font-weight:600">' + RES_HI[i] + '</small></button>').join('');
+    $('resInfo').innerHTML = t.auto ? '<span class="hint">Set by the checklist: ' + (t.Critical ? t.Critical + ' critical' : t.Major + ' major') + ' issue(s). You can make it stricter, not softer.</span>' : '';
+    $('offWrap').classList.toggle('hidden', !t.is);
+    if (!offTouched) $('offRoad').checked = pick === 2;
+    $('offHint').textContent = pick === 2 ? 'Recommended — result is Not fit.' : '';
+    saveDraft();
+  }
+  // ---- clicks inside the checklist
+  $('secs').addEventListener('click', e => {
+    const card = e.target.closest('.sec2'); if (!card) return;
+    const s = sections()[Number(card.dataset.s)];
+    if (e.target.closest('[data-all]')) { s.items.forEach(c => { if (!st(c).status) st(c).status = 'OK'; }); openSec[s.name] = false; drawSections(); return; }
+    if (e.target.closest('.sh')) { openSec[s.name] = !card.classList.contains('open'); card.classList.toggle('open'); return; }
+    const row = e.target.closest('.ir'); if (!row) return;
+    const c = CL.find(x => x.code === row.dataset.c), x = st(c), b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.v) { x.status = x.status === b.dataset.v ? '' : b.dataset.v; if (x.status === 'Issue' && !x.severity) x.severity = c.critical ? 'Critical' : 'Minor'; redrawItem(c.code); if (x.status === 'Issue') { const n = document.querySelector('.ir[data-c="' + c.code + '"] [data-n]'); if (n && !(c.quick || '').trim()) n.focus(); } return; }
+    if (b.dataset.q) { const arr = x.issue.split(', ').filter(Boolean), i = arr.indexOf(b.dataset.q); if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.q); x.issue = arr.join(', '); b.classList.toggle('on'); paint(); return; }
+    if (b.dataset.s) { x.severity = b.dataset.s; row.querySelectorAll('.sev button').forEach(y => y.classList.toggle('on', y === b)); paint(); }
+  });
+  $('secs').addEventListener('input', e => { const n = e.target.closest('[data-n]'); if (!n) return; st(CL.find(x => x.code === n.closest('.ir').dataset.c)).note = n.value; saveDraft(); });
+  $('secs').addEventListener('change', async e => {
+    const inp = e.target; if (!inp.dataset.p || !inp.files[0]) return;
+    const row = inp.closest('.ir'), c = CL.find(x => x.code === row.dataset.c), info = row.querySelector('[data-pi]');
+    info.innerHTML = '<span class="warnline">Uploading…</span>';
+    try { const up = await JNP.uploadPhoto(inp.files[0], 'RM-08', T.val('Truck_No') + '_' + c.code); Object.assign(st(c), { photo: up.url, preview: up.preview }); redrawItem(c.code); }
+    catch (ex) { info.innerHTML = '<span class="err">' + E(ex.message) + '</span>'; }
+  });
+  $('res').onclick = e => { const b = e.target.closest('button'); if (!b || b.disabled) return; resultPick = Number(b.dataset.r); paint(); };
+  $('offRoad').onchange = () => { offTouched = true; };
+
+  // ---- truck picked → cargo type (which items apply), last inspection, open issues
+  let lastTruck = '';
+  T.on(async k => {
+    if (k === 'Driver_Name') return saveDraft();
+    if (k !== 'Truck_No') return saveDraft();
+    const t = T.val('Truck_No'); if (t === lastTruck) return; lastTruck = t;
+    truckOpen = {}; $('truckInfo').innerHTML = '';
+    if (!t) { paint(); return; }
+    const tm = JNP.findTruck(t); cargo = tm && tm.cargo ? tm.cargo.toUpperCase() : '';
+    if (tm && tm.driver && !T.val('Driver_Name')) T.set('Driver_Name', tm.driver);
+    if (tm && tm.odo && !T.val('Odometer_KM')) T.info('Odometer_KM', '<span class="hint">Last known ' + Number(tm.odo).toLocaleString('en-IN') + '</span>');
+    drawSections();
+    $('truckInfo').innerHTML = '<div class="tbox">Checking last inspection…</div>';
+    try {
+      const o = await JNP.call('inspTruck', { truck: t });
+      if (T.val('Truck_No') !== t) return;
+      if (o.cargo && o.cargo !== cargo) { cargo = o.cargo; drawSections(); }
+      o.open.forEach(x => truckOpen[x.Item_Code] = x);
+      const L = o.last;
+      $('truckInfo').innerHTML = '<div class="tbox">' + (tm ? E((tm.capacity ? tm.capacity + 'T ' : '') + (cargo || '')) + ' · ' : '<span class="warnline">Not in Truck_Master</span> ') +
+        (L ? 'Last inspected <b>' + E(ago(L.Created_At)) + '</b> — ' + resPill(L.Result) : '<b>First inspection</b> for this truck') +
+        (o.open.length ? '<br><span style="color:var(--red);font-weight:700">' + o.open.length + ' open issue' + (o.open.length > 1 ? 's' : '') + ' from earlier</span> — marked in the list below. Mark ✓ if now fixed.' : '') + '</div>';
+      if (o.open.length) drawSections();
+    } catch (e) { $('truckInfo').innerHTML = '<div class="tbox">' + E(e.message) + '</div>'; }
+  });
+  const resPill = r => '<span class="pill ' + (/Not fit/.test(r) ? 'bad' : /caution/.test(r) ? 'warn' : 'ok') + '">' + E(r || '') + '</span>';
+
+  // ---- draft kept on the phone so a long inspection is never lost
+  let draftTimer;
+  function saveDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => { if (!T.val('Truck_No')) return; const s = {}; Object.keys(S).forEach(k => { if (S[k].status) s[k] = Object.assign({}, S[k], { preview: '' }); });
+      JNP.store.set(DKEY, { top: T.all(), photos: P.all(), S: s, resultPick, at: Date.now(), id: clientReqId }); }, 400);
+  }
+  function restoreDraft() {
+    const d = JNP.store.get(DKEY); if (!d || !d.top || !d.top.Truck_No || Date.now() - d.at > 3 * 864e5) return;
+    const n = Object.keys(d.S || {}).length;
+    $('draftTxt').innerHTML = '↩︎ Continuing unsaved inspection of <b>' + E(d.top.Truck_No) + '</b> (' + n + ' items done)';
+    $('draftCard').classList.remove('hidden');
+    S = d.S || {}; resultPick = d.resultPick === undefined ? -1 : d.resultPick; clientReqId = d.id || clientReqId;
+    Object.keys(d.top).forEach(k => T.set(k, d.top[k])); Object.keys(d.photos || {}).forEach(k => P.set(k, d.photos[k]));
+    T.setFire('Truck_No', d.top.Truck_No);
+  }
+  $('draftDel').onclick = () => { if (!confirm('Discard this unsaved inspection?')) return; JNP.store.del(DKEY); location.href = location.pathname; };
+
+  // ---- save
+  $('f').addEventListener('submit', async e => {
+    e.preventDefault();
+    await JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad0 = T.check(); if (bad0) throw new Error(bad0);
+      const t = tally();
+      if (t.done < t.n) { const s = sections().find(s => secCounts(s).d < s.items.length); openSec[s.name] = true; drawSections(); document.querySelector('.sec2.open').scrollIntoView({ block: 'start' }); throw new Error((t.n - t.done) + ' item(s) not checked yet — see ' + s.name); }
+      if (t.needWhat) throw new Error(t.needWhat + ' issue(s) need a reason — tap a chip or write what is wrong');
+      if (t.needPhoto) throw new Error(t.needPhoto + ' issue(s) still need a photo');
+      const bad = P.check(); if (bad) throw new Error(bad);
+      const data = Object.assign(T.values(), P.values(), { Result: RESULTS[Math.max(t.auto, resultPick)], offRoad: !$('offWrap').classList.contains('hidden') && $('offRoad').checked,
+        items: items().map(c => { const x = st(c); return { code: c.code, status: x.status, issue: x.issue, severity: x.severity, note: x.note, photo: x.photo }; }) });
+      JNP.busy(true, 'Saving inspection…');
+      try {
+        const out = await JNP.call('save', { module: 'RM-08', data: data, clientReqId: clientReqId });
+        JNP.store.del(DKEY); $('f').classList.add('hidden'); $('draftCard').classList.add('hidden');
+        const r = out.record, text = reportText(r);
+        JNP.done($('doneCard'), { title: 'INSPECTION SAVED', big: r.Truck_No, sub: r.Result + ' · ' + r.Items_Issue + ' issue(s) · score ' + r.Score_Pct + '%',
+          lines: [['Checked', r.Items_Total + ' items'], ['OK / Issue / N.A.', r.Items_OK + ' / ' + r.Items_Issue + ' / ' + r.Items_NA], ['Critical / Major / Minor', r.Critical_Issues + ' / ' + r.Major_Issues + ' / ' + r.Minor_Issues],
+            r.Repeat_Issues ? ['Repeat issues', r.Repeat_Issues] : null, out.breakdownId ? ['Off-road record', out.breakdownNew ? out.breakdownId + ' (new)' : out.breakdownId + ' (already open)'] : null, ['ID', out.id]].filter(Boolean),
+          buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(text) }], onNew: () => { location.href = location.pathname; } });
+        openLoaded = histLoaded = false;
+      } finally { JNP.busy(false); }
+    });
+  });
+  function reportText(r, list) {
+    return JNP.waText('🔍 Vehicle Inspection · ' + r.Truck_No, [['Result', r.Result], ['Type', r.Inspection_Type], ['Driver', r.Driver_Name], ['Odometer', r.Odometer_KM], ['Location', r.Location],
+      ['Checked', r.Items_Total + ' items · ' + r.Items_OK + ' OK · ' + r.Items_Issue + ' issue(s) · score ' + r.Score_Pct + '%'], r.Repeat_Issues ? ['Repeat', r.Repeat_Issues + ' issue(s) seen again'] : null,
+      r.Issues_Summary ? ['', '\n*Issues*\n' + r.Issues_Summary] : ['', '✅ No issues found'],
+      list ? ['', '\nPhotos: ' + list] : null, r.Breakdown_ID ? ['Off-road record', r.Breakdown_ID] : null].filter(Boolean));
+  }
+
+  // =====================================================================
+  // OPEN ISSUES
+  // =====================================================================
+  let OPEN = [], openF = 'All';
+  async function loadOpen() {
+    openLoaded = true; $('openList').innerHTML = 'Loading…';
+    try { OPEN = (await JNP.call('inspOpen')).rows; drawOpen(); } catch (e) { $('openList').innerHTML = '<span class="err">' + E(e.message) + '</span>'; openLoaded = false; }
+  }
+  function drawOpen() {
+    const n = s => OPEN.filter(x => x.Severity === s).length, trucks = new Set(OPEN.map(x => x.Truck_No)).size, old = OPEN.filter(x => x.Days_Open > 7).length;
+    $('openStats').innerHTML = '<div><b style="color:var(--red)">' + n('Critical') + '</b><span>Critical</span></div><div><b style="color:var(--orange)">' + n('Major') + '</b><span>Major</span></div><div><b>' + n('Minor') + '</b><span>Minor</span></div><div><b>' + trucks + '</b><span>Trucks</span></div>';
+    const secs = [...new Set(OPEN.map(x => x.Section))];
+    $('openFilt').innerHTML = ['All', 'Critical', 'Major', '> 7 days'].concat(secs).map(f => '<button type="button" class="' + (f === openF ? 'on' : '') + '" data-f="' + E(f) + '">' + E(f) + (f === '> 7 days' ? ' (' + old + ')' : '') + '</button>').join('');
+    const rows = OPEN.filter(x => openF === 'All' || x.Severity === openF || x.Section === openF || (openF === '> 7 days' && x.Days_Open > 7));
+    if (!rows.length) { $('openList').innerHTML = '<div class="muted">' + (OPEN.length ? 'Nothing in this filter.' : 'No open issues. 🎉') + '</div>'; return; }
+    const by = {}; rows.forEach(x => (by[x.Truck_No] = by[x.Truck_No] || []).push(x));
+    const order = Object.keys(by).sort((a, b) => Math.max(...by[b].map(x => SEV.indexOf(x.Severity))) - Math.max(...by[a].map(x => SEV.indexOf(x.Severity))) || by[b].length - by[a].length);
+    $('openList').innerHTML = order.map(t => '<div class="trk"><div class="th"><span>' + E(t) + '</span><span class="pill">' + by[t].length + ' open</span></div>' + by[t].map(x =>
+      '<div class="oi" data-id="' + E(x.Record_ID) + '"><div class="itop"><b>' + E(x.Item) + '</b><span class="sevp ' + E(x.Severity) + '">' + E(x.Severity) + '</span></div>' +
+      '<small>' + E([x.Issue, x.Note].filter(Boolean).join(' – ')) + '</small><small>' + E(x.Section) + ' · open ' + (x.Days_Open !== '' ? x.Days_Open + ' d' : '') + (x.Repeat_Flag === 'Yes' ? ' · <b style="color:var(--red)">repeat</b>' : '') + ' · ' + E(x.Inspection_ID) + '</small>' +
+      (x.Photo_URL ? '<a href="' + E(x.Photo_URL) + '" target="_blank" rel="noopener"><img class="th" src="' + E(thumb(x.Photo_URL)) + '" alt=""></a>' : '') +
+      (canE ? '<div><button class="mini" type="button" data-fix="1" style="margin-top:8px">✓ Mark fixed</button></div><div class="fixbox hidden"></div>' : '') + '</div>').join('') + '</div>').join('');
+  }
+  $('openFilt').onclick = e => { const b = e.target.closest('button'); if (b) { openF = b.dataset.f; drawOpen(); } };
+  $('reloadOpen').onclick = loadOpen;
+  $('openList').addEventListener('click', async e => {
+    const card = e.target.closest('.oi'); if (!card) return;
+    if (e.target.closest('[data-fix]')) {
+      const box = card.querySelector('.fixbox'); box.classList.toggle('hidden');
+      if (!box.dataset.made) {
+        box.dataset.made = 1;
+        box.innerHTML = '<input class="input" data-fn placeholder="What was done? e.g. liner replaced"><div class="phrow"><label class="photo-add"><input type="file" accept="image/*" capture="environment" hidden data-fp>📷 Photo after fix</label><span class="hint" data-fpi></span></div><div class="err hidden" data-fe></div><button class="btn green" type="button" data-fs>Save · ठीक हो गया</button>';
+      }
+      return;
+    }
+    if (e.target.closest('[data-fs]')) {
+      const btn = e.target.closest('[data-fs]'), errEl = card.querySelector('[data-fe]');
+      await JNP.submit(btn, errEl, async () => {
+        const out = await JNP.call('inspFix', { id: card.dataset.id, data: { Fix_Note: card.querySelector('[data-fn]').value, Fix_Photo_URL: card.dataset.photo || '' } });
+        OPEN = OPEN.filter(x => x.Record_ID !== card.dataset.id); JNP.toast(out.record.Item + ' marked fixed', 'ok'); drawOpen(); histLoaded = false;
+      });
+    }
+  });
+  $('openList').addEventListener('change', async e => {
+    const inp = e.target; if (!inp.dataset || inp.dataset.fp === undefined || !inp.files[0]) return;
+    const card = inp.closest('.oi'), info = card.querySelector('[data-fpi]'); info.textContent = 'Uploading…';
+    try { const up = await JNP.uploadPhoto(inp.files[0], 'RM-08', 'fix'); card.dataset.photo = up.url; info.innerHTML = '<span class="okline">Photo added ✓</span>'; }
+    catch (ex) { info.innerHTML = '<span class="err">' + E(ex.message) + '</span>'; }
+  });
+
+  // =====================================================================
+  // HISTORY + DUE
+  // =====================================================================
+  let HIST = [], LAST = {}, histF = 'All';
+  async function loadHist() {
+    histLoaded = true; $('histList').innerHTML = 'Loading…';
+    try { const o = await JNP.call('inspList', { days: 90 }); HIST = o.rows; LAST = o.last; drawHist(); drawDue(); }
+    catch (e) { $('histList').innerHTML = '<span class="err">' + E(e.message) + '</span>'; histLoaded = false; }
+  }
+  function drawDue() {
+    const fleet = JNP.M().trucks.filter(t => !/sold|inactive/i.test(t.opStatus || ''));
+    const never = fleet.filter(t => !LAST[t.no]), over = fleet.filter(t => LAST[t.no] && daysAgo(LAST[t.no].at) > CFG.dueDays).sort((a, b) => daysAgo(LAST[b.no].at) - daysAgo(LAST[a.no].at));
+    const okN = fleet.length - never.length - over.length;
+    $('dueCard').innerHTML = '<h3 class="cardh"><span>Due for inspection · बाकी जांच</span></h3>' +
+      '<div class="stats4"><div><b style="color:var(--ok)">' + okN + '</b><span>Up to date</span></div><div><b style="color:var(--orange)">' + over.length + '</b><span>Over ' + CFG.dueDays + ' d</span></div><div><b style="color:var(--red)">' + never.length + '</b><span>Never</span></div><div><b>' + fleet.length + '</b><span>Fleet</span></div></div>' +
+      (over.length + never.length ? '<details class="due"><summary>Show ' + (over.length + never.length) + ' trucks</summary><div class="dl">' +
+        over.map(t => '<span>' + E(t.no) + '</span><span>' + Math.floor(daysAgo(LAST[t.no].at)) + ' d ago</span>').join('') +
+        never.map(t => '<span>' + E(t.no) + '</span><span>never</span>').join('') + '</div></details>' : '<div class="okline">Every truck inspected in the last ' + CFG.dueDays + ' days</div>');
+  }
+  function drawHist() {
+    $('histFilt').innerHTML = ['All', 'Not fit', 'Caution', 'With open issues'].map(f => '<button type="button" class="' + (f === histF ? 'on' : '') + '" data-f="' + f + '">' + f + '</button>').join('');
+    const rows = HIST.filter(r => histF === 'All' || (histF === 'Not fit' && /Not fit/.test(r.Result)) || (histF === 'Caution' && /caution/.test(r.Result)) || (histF === 'With open issues' && Number(r.Open_Issues) > 0));
+    $('histList').innerHTML = JNP.rowsHtml(rows, r => ({ t: E(r.Truck_No) + ' <small style="display:inline;font-weight:600">· ' + E(JNP.dmy(r.Created_At)) + '</small>', tag: r.Result, cls: /Not fit/.test(r.Result) ? 'bad' : /caution/.test(r.Result) ? 'warn' : 'ok',
+      s: E(r.Inspection_Type + ' · ' + r.Items_Issue + ' issue(s) · score ' + r.Score_Pct + '% · by ' + r.Created_By) + (Number(r.Open_Issues) ? ' · <b style="color:var(--red)">' + r.Open_Issues + ' open</b>' : Number(r.Items_Issue) ? ' · all fixed ✓' : ''), click: true }), 'No inspections in the last 90 days.');
+  }
+  $('histFilt').onclick = e => { const b = e.target.closest('button'); if (b) { histF = b.dataset.f; drawHist(); } };
+  $('reloadHist').onclick = loadHist;
+  $('histList').addEventListener('click', async e => {
+    const it = e.target.closest('.item'); if (!it) return;
+    const r = HIST.filter(r => histF === 'All' || (histF === 'Not fit' && /Not fit/.test(r.Result)) || (histF === 'Caution' && /caution/.test(r.Result)) || (histF === 'With open issues' && Number(r.Open_Issues) > 0))[Number(it.dataset.i)];
+    const d = $('detail'); d.classList.remove('hidden'); d.innerHTML = '<div class="muted">Loading ' + E(r.Record_ID) + '…</div>'; d.scrollIntoView({ block: 'start' });
+    try {
+      const o = await JNP.call('inspDetail', { id: r.Record_ID }), R = o.record, iss = o.items.filter(x => x.Status === 'Issue');
+      const photos = (R.Truck_Photo_URLs || '').split(/\s+/).filter(Boolean).concat(R.Odometer_Photo_URL ? [R.Odometer_Photo_URL] : []);
+      d.innerHTML = '<h3 class="cardh"><span>' + E(R.Truck_No) + ' · ' + E(JNP.dmy(R.Created_At)) + '</span><button class="mini" type="button" id="dClose">✕</button></h3>' +
+        '<div style="margin-bottom:8px">' + resPill(R.Result) + ' <span class="pill">' + E(R.Inspection_Type) + '</span> <span class="pill">score ' + E(R.Score_Pct) + '%</span></div>' +
+        '<div class="kv"><span>By</span><b>' + E(R.Created_By) + '</b><span>Driver</span><b>' + E(R.Driver_Name || '—') + '</b><span>Odometer</span><b>' + E(R.Odometer_KM || '—') + '</b><span>Location</span><b>' + E(R.Location || '—') + '</b><span>Checked</span><b>' + E(R.Items_OK + ' OK · ' + R.Items_Issue + ' issue · ' + R.Items_NA + ' N.A.') + '</b>' + (R.Breakdown_ID ? '<span>Off-road</span><b>' + E(R.Breakdown_ID) + '</b>' : '') + (R.Remark ? '<span>Remark</span><b>' + E(R.Remark) + '</b>' : '') + '</div>' +
+        (photos.length ? '<div class="photos" style="margin-top:10px">' + photos.map(u => '<a class="ph" href="' + E(u) + '" target="_blank" rel="noopener"><img src="' + E(thumb(u)) + '" alt=""></a>').join('') + '</div>' : '') +
+        '<div class="grouph">Issues (' + iss.length + ')</div>' + (iss.length ? iss.map(x => '<div class="ditem"><div class="itop"><b>' + E(x.Item) + '</b><span class="sevp ' + E(x.Severity) + '">' + E(x.Severity) + '</span></div><small class="hint">' + E([x.Section, [x.Issue, x.Note].filter(Boolean).join(' – ')].join(' · ')) + '</small>' +
+          '<div><span class="pill ' + (x.Action_Status === 'Fixed' ? 'ok' : 'bad') + '">' + E(x.Action_Status === 'Fixed' ? 'Fixed' + (x.Fixed_By ? ' by ' + x.Fixed_By : '') : 'Open ' + (x.Days_Open !== '' ? x.Days_Open + ' d' : '')) + '</span>' + (x.Repeat_Flag === 'Yes' ? ' <span class="pill bad">repeat</span>' : '') + '</div>' +
+          (x.Fix_Note ? '<small class="hint">Fix: ' + E(x.Fix_Note) + '</small>' : '') + (x.Photo_URL ? '<a href="' + E(x.Photo_URL) + '" target="_blank" rel="noopener"><img class="th" style="width:54px;height:54px;object-fit:cover;border-radius:8px;margin-top:6px" src="' + E(thumb(x.Photo_URL)) + '" alt=""></a>' : '') + '</div>').join('') : '<div class="okline">No issues found ✓</div>') +
+        '<button class="btn green" type="button" id="dShare" style="margin-top:12px">📲 Share on WhatsApp</button>';
+      $('dClose').onclick = () => d.classList.add('hidden');
+      $('dShare').onclick = () => JNP.whatsapp(reportText(R, iss.filter(x => x.Photo_URL).map(x => x.Item + ': ' + x.Photo_URL).join('\n')));
+    } catch (ex) { d.innerHTML = '<span class="err">' + E(ex.message) + '</span>'; }
+  });
+
+  if (!canE) return;
+  restoreDraft();
+  paint();
+})();
+</script>
+</body>
+</html>
