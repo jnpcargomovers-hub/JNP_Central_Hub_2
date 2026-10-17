@@ -130,11 +130,17 @@
   }
 
   // ---- 6. MASTERS (dropdown data cached on the phone) --------------------------
-  let MEM = null;
+  let MEM = null, BG = null, FORCED = false;
+  /** Name typed is not in the list → fetch the latest lists from the sheet once (someone may have just added it). */
+  async function mastersRetry() { if (FORCED) return false; FORCED = true; try { await masters(true); return true; } catch (e) { return false; } }
   async function masters(force) {
     const c = store.get(M_KEY);
     const fresh = c && (Date.now() - c.at) < CONFIG.MASTERS_MAX_AGE_HRS * 36e5;
-    if (c && fresh && !force) return (MEM = c.data);
+    if (c && fresh && !force) {
+      // older than 5 min → use it now, fetch a fresh copy in the background (new drivers / trucks show up without logging out)
+      if (Date.now() - c.at > 5 * 6e4 && !BG) { BG = call('masters').then(o => { store.set(M_KEY, { at: Date.now(), data: o.masters }); MEM = o.masters; }).catch(() => { }).finally(() => { BG = null; }); }
+      return (MEM = c.data);
+    }
     try {
       const out = await call('masters');
       store.set(M_KEY, { at: Date.now(), data: out.masters }); return (MEM = out.masters);
@@ -275,6 +281,7 @@
       }
       box.innerHTML = html || '<div class="ac-item"><small>No match</small></div>';
       box.classList.remove('hidden');
+      if (q.length >= 3 && !list.length && !FORCED) mastersRetry().then(ok => { if (ok && document.activeElement === input) render(); });
     };
     box.addEventListener('mousedown', e => e.preventDefault());
     box.addEventListener('click', e => {
