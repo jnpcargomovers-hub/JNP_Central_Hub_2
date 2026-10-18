@@ -358,25 +358,32 @@
     const tyr = rows(R.tyreEv).filter(x => n0(x.Cost)).map(m => Object.assign(m, { cls: classOf((truckM[m.Truck_No] || {}).cap) }));
     // ---- fleet status at the end of the range (now, if the range ends today)
     const med = a => { a = a.filter(v => !isNaN(v)).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : NaN; };
-    const rotDest = {}; all.forEach(x => { if (!isNaN(x.rotNext)) (rotDest[x.dest] = rotDest[x.dest] || []).push(x.rotNext); });
-    Object.keys(rotDest).forEach(k => rotDest[k] = rotDest[k].length >= 2 ? med(rotDest[k]) : NaN);
-    const rotAll = med(all.map(x => x.rotNext)) || 36;
+    // AVERAGE round trip (loading → next loading) per destination; fewer than 2 trips there → that truck size's average → whole fleet's
+    const mean = a => { a = a.filter(v => !isNaN(v)); return a.length ? a.reduce((p, q) => p + q, 0) / a.length : NaN; };
+    const rotDest = {}, rotDestCls = {}, rotCls = {};
+    all.forEach(x => { if (isNaN(x.rotNext)) return; (rotDest[x.dest] = rotDest[x.dest] || []).push(x.rotNext); (rotDestCls[x.dest + '|' + x.cls] = rotDestCls[x.dest + '|' + x.cls] || []).push(x.rotNext); (rotCls[x.cls] = rotCls[x.cls] || []).push(x.rotNext); });
+    Object.keys(rotDestCls).forEach(k => rotDestCls[k] = rotDestCls[k].length >= 2 ? mean(rotDestCls[k]) : NaN);
+    Object.keys(rotCls).forEach(k => rotCls[k] = rotCls[k].length >= 2 ? mean(rotCls[k]) : NaN);
+    Object.keys(rotDest).forEach(k => rotDest[k] = rotDest[k].length >= 2 ? mean(rotDest[k]) : NaN);
+    const rotAll = mean(all.map(x => x.rotNext)) || 36;
+    const rotFor = L => rotDestCls[L.dest + '|' + L.cls] || rotDest[L.dest] || rotCls[L.cls] || rotAll;
     const asOf = now, isNow = true, liveEst = Math.abs(now - end) < 864e5;   // off-road board is ALWAYS today, whatever dates are picked
     const OFF_STAT = { 'No Driver': 'Driver not available', 'In Workshop': 'Breakdown', 'Breakdown (On Route)': 'Breakdown', 'Accident / Insurance Hold': 'Accident', 'RTO / Documents Hold': 'Documents / RTO' };
     const status = {};
     fleet.forEach(t => {
-      const ob = bds.filter(b => b.Truck_No === t.no && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];
+      const lastL = (byTruck[t.no] || []).filter(x => x.at <= asOf).slice(-1)[0];
+      const ob = bds.filter(b => b.Truck_No === t.no && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf) && !(lastL && b.start && lastL.at > b.start)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];   // loaded after it went off road → it is on road
       if (ob) { status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: ob.Symptom, loc: ob.Location, since: ob.start, daysDown: ob.start ? (now - ob.start) / 864e5 : NaN, rec: ob }; return; }
-      if (isNow && OFF_STAT[t.status]) { status[t.no] = { st: 'off', why: OFF_STAT[t.status], note: t.status + ' (Truck_Master)', loc: '', since: null }; return; }
+      if (isNow && OFF_STAT[t.status] && !(lastL && now - lastL.at < 3 * 864e5)) { status[t.no] = { st: 'off', why: OFF_STAT[t.status], note: t.status + ' (Truck_Master)', loc: '', since: null }; return; }
       const a = byTruck[t.no] ? byTruck[t.no].filter(x => x.at <= asOf) : [], L = a[a.length - 1];
       if (!L) { status[t.no] = { st: 'wait', note: 'no loading in the last ' + (M_DAYS_BACK) + ' days' }; return; }
-      const R = rotDest[L.dest] || rotAll, el = hrs(L.at, asOf);
+      const R = rotFor(L), el = hrs(L.at, asOf);
       const del = L.unload && L.unload <= asOf;
       if (!del && el <= R / 2) status[t.no] = { st: 'load', last: L, R: R, el: el };
       else if (el <= R) status[t.no] = { st: 'ret', last: L, R: R, el: el, del: del };
       else status[t.no] = { st: 'wait', last: L, R: R, el: el };
     });
-    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll };
+    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
   }
 
   // ---------- filtering (load type + class)
@@ -569,7 +576,7 @@
       '<div class="capbar" title="Capacity by state">' + LANES.map(([k, l, c]) => tons(g(k)) ? '<div style="flex:' + tons(g(k)) + ';background:' + c + '" title="' + l + ': ' + fmt(tons(g(k))) + ' T"></div>' : '').join('') + '</div>' +
       '<div class="lanes" id="lanes">' + LANES.map(lane).join('') + '</div>' + info +
       (miss.length ? '<div class="note">No capacity in Truck_Master for ' + miss.map(t => E(t.no)).join(', ') + ' — shown as “?” and counted as 0 T.</div>' : '') +
-      '<div class="muted2" style="margin-top:10px">Loaded means loaded within half of that destination’s usual round trip (loading to next loading) and not yet unloaded.</div></div>';
+      '<div class="muted2" style="margin-top:10px">How it is worked out: from each truck’s last loading, using the <b>average round trip</b> (loading → next loading) for that destination and truck size. First half = <b>Loaded</b> (or Returning once unloading is entered), second half = <b>Returning empty</b>, after a full round trip = <b>Waiting for load</b>. A truck loaded after an off-road report is on road — the report closes itself.</div></div>';
   }
 
 
