@@ -423,26 +423,30 @@
   // ---------- column chart with hover tooltip (stacked, 2px gap, rounded top)
   function columns(id, cats, series, opt) {
     opt = opt || {};
-    const W = innerWidth < 600 ? 440 : 900, H = 220, P = { l: 36, r: 8, t: 10, b: 26 }, iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const W = innerWidth < 600 ? 440 : 900, H = 230, P = { l: 36, r: 8, t: 20, b: 26 }, iw = W - P.l - P.r, ih = H - P.t - P.b;
     const tot = cats.map((c, i) => sum(series, s => s.values[i]));
     const mx = Math.max(1, ...tot), step = opt.unit === 'trips' ? Math.max(1, niceStep(mx)) : niceStep(mx), top = Math.ceil(mx / step) * step;
     const bw = Math.max(2, Math.min(28, iw / cats.length - 3)), gap = iw / cats.length;
     let g = '';
     for (let v = 0; v <= top; v += step) { const y = P.t + ih - ih * v / top; g += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--grid)"/><text x="' + (P.l - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="#5D6877">' + (top >= 1e5 ? fmtShort(v) : fmt(v)) + '</text>'; }
-    let bars = '';
+    let bars = '', segTxt = '', totTxt = '';
+    // numbers on the bars: each part inside its segment (when it fits), the total above the bar
+    const lab = v => top >= 1e5 ? (v / 1e5 < 10 ? (v / 1e5).toFixed(1) : String(Math.round(v / 1e5))) : fmt(v);   // ₹ charts: numbers in lakh
     cats.forEach((c, i) => {
       let y0 = P.t + ih; const x = P.l + gap * i + (gap - bw) / 2;
       series.forEach((s, k) => {
         const v = n0(s.values[i]); if (!v) return; const h = ih * v / top, y = y0 - h;
         const isTop = series.slice(k + 1).every(s2 => !n0(s2.values[i]));
         bars += isTop ? '<path d="' + roundTop(x, y + (k ? 2 : 0) * 0, bw, Math.max(1, h - (k ? 2 : 0)), Math.min(4, bw / 2)) + '" fill="' + s.color + '"/>' : '<rect x="' + x + '" y="' + (y + 2) + '" width="' + bw + '" height="' + Math.max(0, h - 2) + '" fill="' + s.color + '"/>';
+        if (series.length > 1 && h >= 14 && bw >= 12) { const t = lab(v); if (t.length * (bw >= 20 ? 6.2 : 5.3) <= bw + 4) segTxt += '<text x="' + (x + bw / 2) + '" y="' + (y + h / 2 + 4) + '" text-anchor="middle" font-size="' + (bw >= 20 ? 11 : 9.5) + '" font-weight="700" fill="#fff">' + t + '</text>'; }
         y0 = y;
       });
+      if (tot[i] && gap >= 10) { const t = lab(tot[i]); if (t.length * (gap >= 22 ? 6.4 : 5.2) <= gap + 3) totTxt += '<text x="' + (x + bw / 2) + '" y="' + (y0 - 4) + '" text-anchor="middle" font-size="' + (gap >= 22 ? 11.5 : 9.5) + '" font-weight="800" fill="#022A5B">' + t + '</text>'; }
       bars += '<rect class="hit" data-i="' + i + '" x="' + (P.l + gap * i) + '" y="' + P.t + '" width="' + gap + '" height="' + ih + '" fill="transparent"/>';
     });
     const every = Math.ceil(cats.length / 12);
     const xl = cats.map((c, i) => i % every ? '' : '<text x="' + (P.l + gap * i + gap / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="#5D6877">' + E(opt.label ? opt.label(c) : c) + '</text>').join('');
-    const html = '<div class="legend">' + (series.length > 1 ? series.map(s => '<span><i style="background:' + s.color + '"></i>' + E(s.name) + '</span>').join('') : '') + '</div><div class="chart" id="' + id + '"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + E(opt.title || '') + '">' + g + bars + xl + '</svg><div class="tip hidden"></div></div>';
+    const html = '<div class="legend">' + (series.length > 1 ? series.map(s => '<span><i style="background:' + s.color + '"></i>' + E(s.name) + '</span>').join('') : '') + '</div><div class="chart" id="' + id + '"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + E(opt.title || '') + '">' + g + bars + segTxt + totTxt + xl + '</svg><div class="tip hidden"></div></div>';
     setTimeout(() => {
       const el = $(id); if (!el) return; const tip = el.querySelector('.tip'), svg = el.querySelector('svg');
       el.addEventListener('mousemove', e => {
@@ -680,28 +684,33 @@
 
 
   // ---------- Utilisation = trips done ÷ trips expected. Expected trips per month by size (Settings › Trip_Targets can override, e.g. "12:28, 25:18, 31:18, 35:18, 42:12")
+  // Expected trips per truck per month, by size and Bulk/Bag. Settings › Trip_Targets can override,
+  // e.g. "42 BULK:18, 42 BAG:16, 35 BULK:18, 35 BAG:16, 31:18, 25:18, 12:28" (no BULK/BAG = both).
   function tripTargets() {
-    const t = { 12: 28, 25: 18, 31: 18, 35: 18, 42: 12 };
-    String((RAW.settings || {}).Trip_Targets || '').split(',').forEach(x => { const m = x.match(/(\d+)\s*[:=]\s*(\d+(?:\.\d+)?)/); if (m) t[m[1]] = Number(m[2]); });
+    const t = { '42 BULK': 18, '42 BAG': 16, '35 BULK': 18, '35 BAG': 16, '31': 18, '25': 18, '12': 28 };
+    String((RAW.settings || {}).Trip_Targets || '').split(',').forEach(x => { const m = x.toUpperCase().match(/(\d+)\s*T?\s*(BULK|BAG)?\s*[:=]\s*(\d+(?:\.\d+)?)/); if (m) t[m[1] + (m[2] ? ' ' + m[2] : '')] = Number(m[3]); });
     return t;
   }
+  const kindOf = t => String(t.cargo || 'BAG').toUpperCase() === 'BULK' ? 'BULK' : 'BAG';
+  const targetFor = (tg, cls, kind) => { const n = parseInt(cls); return tg[n + ' ' + kind] || tg[String(n)] || NaN; };
   function utilRows(T) {
     const tg = tripTargets(), down = {};
     M.bds.filter(b => b.rm).forEach(b => down[b.Truck_No] = (down[b.Truck_No] || 0) + b.inHrs / 24);
     const n = {}; T.forEach(x => n[x.truck] = (n[x.truck] || 0) + 1);
     return M.fleet.filter(t => keepTruck(t.no)).map(t => {
-      const c = classOf(t.cap), per = tg[parseInt(c)] || NaN, avail = Math.max(0, M.days - (down[t.no] || 0));
-      return { no: t.no, cls: c, trips: n[t.no] || 0, avail: avail, target: per * avail / 30, per: per };
+      const c = classOf(t.cap), kind = kindOf(t), per = targetFor(tg, c, kind), avail = Math.max(0, M.days - (down[t.no] || 0));
+      return { no: t.no, cls: c, kind: kind, grp: c === '12T' ? '12T' : c + ' ' + (kind === 'BULK' ? 'Bulk' : 'Bag'), trips: n[t.no] || 0, avail: avail, target: per * avail / 30, per: per };
     }).filter(r => !isNaN(r.target));
   }
   function utilSum(rows) { const tr = sum(rows, r => r.trips), tg = sum(rows, r => r.target); return { trips: tr, target: tg, u: tg ? tr / tg : NaN }; }
   function utilSection(T) {
     const rows = utilRows(T); if (!rows.length) return '';
     const tg = tripTargets(), all = utilSum(rows), col = u => u >= 1 ? 'var(--ok)' : u >= .8 ? 'var(--st-wait)' : 'var(--red)';
-    const bySize = CLASSES.map(c => c + 'T').map(c => { const g = utilSum(rows.filter(r => r.cls === c)); return { label: c, sub: tg[parseInt(c)] + ' trips/month · ' + rows.filter(r => r.cls === c).length + ' trucks', value: g.u * 100, color: col(g.u), text: isNaN(g.u) ? '—' : pct(g.u) + ' · ' + g.trips + '/' + fmt(g.target, 0) }; }).filter(x => !isNaN(x.value));
-    const low = rows.slice().map(r => ({ label: r.no, sub: r.cls + (r.avail < M.days ? ' · ' + fmt(M.days - r.avail, 1) + ' d breakdown' : ''), value: r.target ? 100 * r.trips / r.target : 0, color: col(r.target ? r.trips / r.target : 0), text: r.trips + ' / ' + fmt(r.target, 1) + ' (' + pct(r.target ? r.trips / r.target : 0) + ')' }));
+    const grps = [...new Set(rows.map(r => r.grp))].sort((p, q) => parseInt(q) - parseInt(p) || (p < q ? -1 : 1));
+    const bySize = grps.map(c => { const rr = rows.filter(r => r.grp === c), g = utilSum(rr); return { label: c, sub: rr[0].per + ' trips/month · ' + rr.length + ' trucks', value: g.u * 100, color: col(g.u), text: isNaN(g.u) ? '—' : pct(g.u) + ' · ' + g.trips + '/' + fmt(g.target, 0) }; }).filter(x => !isNaN(x.value));
+    const low = rows.slice().map(r => ({ label: r.no, sub: r.grp + (r.avail < M.days ? ' · ' + fmt(M.days - r.avail, 1) + ' d breakdown' : ''), value: r.target ? 100 * r.trips / r.target : 0, color: col(r.target ? r.trips / r.target : 0), text: r.trips + ' / ' + fmt(r.target, 1) + ' (' + pct(r.target ? r.trips / r.target : 0) + ')' }));
     return sec('Utilisation · trips vs target', 'overall ' + pct(all.u) + ' · ' + all.trips + ' of ' + fmt(all.target, 0) + ' expected trips',
-      hbar(bySize, { asc: false, ref: 100, refLabel: '100% = target (12T 28 · 25–35T 18 · 42T 12 trips a month, less breakdown days)' }) +
+      hbar(bySize, { asc: false, ref: 100, refLabel: '100% = target trips a month (42T & 35T: Bulk 18 · Bag 16 · 31T & 25T: 18 · 12T: 28), less breakdown days' }) +
       '<div class="muted2" style="margin:14px 0 6px;font-weight:700">Trucks furthest behind target</div>' + hbar(low, { top: 10, asc: true, ref: 100, refLabel: '' }));
   }
 
@@ -750,7 +759,7 @@
       document.querySelectorAll('#view .qs').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { tab = 'explore'; prof = { dim: el.dataset.d, key: r.dataset.k }; profBack = null; drawNav(); render(); window.scrollTo(0, 0); } });
       const rb = $('opsRep'); if (rb) rb.onclick = () => shareOpsReport(T); }, 0);
     SHARE.kp0 = { title: 'Headline numbers', fn: 'kpis' };
-    return '<div class="card repbar"><div><b>📋 Operations report</b><small>One image for the team group — trips, tons, rotation, utilisation, off-road. No ₹ figures.</small></div><button type="button" id="opsRep">📷 Share report</button></div>' +
+    return '<div class="card repbar"><div><b>📋 Operations report</b><small>Trips · tons · rotation · utilisation · off-road</small></div><button type="button" id="opsRep">📷 Share report</button></div>' +
       '<div class="cgrid">' +
       sec('Trips', 'Bulk vs Bag · Own vs Market', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
       sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + (a.est ? '<div class="muted2" style="margin-top:6px">' + a.est + ' trips without builty — truck capacity used</div>' : ''), () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
@@ -764,7 +773,7 @@
       kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
       kpi('Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips', 'var(--orange)') +
       kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
-      '</div></div>' + utilSection(T) + rotationSection(T) + perf +
+      '</div></div>' + fleetStatus() + utilSection(T) + rotationSection(T) + perf +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
       '<div class="cgrid">' + sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) + sec('MT by size', 'Bulk vs Bag in each size', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT')) + '</div>' +
       (MONEY() ? revenueBlock(T, dates) : '');
@@ -788,7 +797,7 @@
       sec('₹ per litre diesel', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) +
       sec('Revenue by size', '₹', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips + ' trips', value: g.trips ? g.rev : NaN, color: CLASS_COLOR[c], text: inr(g.rev) }; }))) +
       '</div>' +
-      sec('Revenue per day', '₹, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      sec('Revenue per day', '₹ lakh, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
       '<div class="muted2" style="margin:4px 2px 0">Explore tab → Measure: Freight revenue / ₹ per litre → split by truck, driver, destination, party, own/market…</div>';
   }
 
@@ -900,7 +909,7 @@
       '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1)) + $m(kpi('Revenue', inr(a.rev), '', 'var(--orange)')) + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
       sec('Loaded for', 'destination-wise · ' + JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to), hbar(ds.map(d => ({ label: d.dest, sub: d.tcount + ' trucks · ' + fmt(d.mt, 0) + ' MT', value: d.trips, text: fmt(d.trips) + ' trips', tip: d.dest + ': ' + d.trips + ' trips, ' + fmt(d.mt, 1) + ' MT, ' + inr(d.rev) })), { top: 12 }) +
         tv('Table view', table('tDs', [{ k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'tcount', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr }], ds, { sort: 'trips' }))) +
-      $m(sec('Revenue per day', '₹, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
+      $m(sec('Revenue per day', '₹ lakh, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
       sec('Trip log', a.trips + ' trips · tap a heading to sort', '<details class="tv" open><summary>Show trips</summary>' +
         table('tTrips', [{ k: 'date', t: 'Date', f: v => JNP.dmy(v) }, { k: 'lr', t: 'LR' }, { k: 'truck', t: 'Truck' }, { k: 'dest', t: 'Destination' }, { k: 'driver', t: 'Driver' }, { k: 'cls', t: 'Class', f: v => clsTag(v) }, { k: 'load', t: 'Load', f: v => v === 'BULK' ? 'Bulk' : 'Bag' },
           { k: 'consignee', t: 'Party' }, { k: 'mt', t: 'MT', num: 1, f: (v, r) => fmt(v, 2) + (r.mtEst ? '<span class="flag est">est</span>' : '') },
