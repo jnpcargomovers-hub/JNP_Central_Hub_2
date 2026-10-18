@@ -183,6 +183,30 @@
     .seg2 button.on { background: #022A5B; color: #fff; }
     .hb .lb.tap, .hb .tr.tap { cursor: pointer; } .hb .lb.tap:hover { color: #1565D8; text-decoration: underline; }
     .prof-h { display: flex; align-items: center; gap: 10px; }
+    .repbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; background: linear-gradient(135deg, #022A5B, #0A3E86); color: #fff; }
+    .repbar b { display: block; font-size: 16px; } .repbar small { display: block; opacity: .85; font-size: 12.5px; margin-top: 2px; }
+    .repbar button { flex: none; border: 0; background: #F7821A; color: #fff; border-radius: 11px; padding: 11px 14px; font: 800 14px Barlow, sans-serif; cursor: pointer; }
+    .dm2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .dm { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+    .dm-t { font-size: 12.5px; font-weight: 700; color: #5D6877; margin-bottom: 4px; }
+    .dm svg { width: 118px; height: 118px; }
+    .dm-l { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; margin-top: 4px; align-items: flex-start; }
+    .dm-l i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; } .dm-l small { color: #7A8596; }
+    .money-h { margin: 22px 2px 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: .4px; color: #B9061E; text-transform: uppercase; } .money-h small { font: 600 12.5px Barlow, sans-serif; color: #7A8596; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+    .opsrep { position: fixed; left: -10000px; top: 0; width: 440px; background: #fff; padding: 18px; font-family: Barlow, sans-serif; color: #1B2430; }
+    .or-h { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+    .or-stripe { display: flex; height: 4px; } .or-stripe i { flex: 1; }
+    .or-h img { height: 38px; } .or-h b { display: block; font: 800 20px 'Barlow Condensed', sans-serif; color: #022A5B; letter-spacing: .3px; } .or-h span { font-size: 13px; color: #5D6877; }
+    .or-band { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+    .or-band div { background: #F3F6FB; border-radius: 10px; padding: 8px 6px; text-align: center; } .or-band small { display: block; font-size: 11px; color: #5D6877; font-weight: 700; }
+    .or-band b { display: block; font: 800 20px 'Barlow Condensed', sans-serif; color: #022A5B; } .or-band span { font-size: 10.5px; color: #5D6877; }
+    .or-sec { margin: 14px 0 6px; font-size: 12px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #1565D8; }
+    .or-split { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 2px; margin-top: 6px; } .or-split div { color: #fff; font-size: 11.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .or-lg { display: flex; gap: 12px; font-size: 12px; margin-top: 3px; } .or-lg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+    .or-t { width: 100%; border-collapse: collapse; font-size: 13px; } .or-t th { text-align: left; font-size: 11px; color: #5D6877; padding: 4px; border-bottom: 1px solid #DCE3EE; } .or-t td { padding: 5px 4px; border-bottom: 1px solid #EEF1F5; }
+    .or-t td.ok { color: #12804A; font-weight: 800; } .or-t td.mid { color: #A55A00; font-weight: 800; } .or-t td.bad { color: #B9061E; font-weight: 800; } .or-t.sm td { font-size: 12.5px; }
+    .or-off { background: #FDE8EB; border-radius: 10px; padding: 8px 10px; font-size: 13px; color: #8A0516; } .or-off div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-weight: 700; }
+    .or-more { font-size: 12px; color: #5D6877; margin-top: 4px; } .or-f { margin-top: 12px; font-size: 11px; color: #7A8596; text-align: right; }
     .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; } .kv span { color: var(--muted); } .kv b { font-weight: 600; }
     .kwrap .khead { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 8px; } .kwrap .khead b { font: 700 15px 'Barlow Condensed', sans-serif; letter-spacing: .3px; color: var(--navy); text-transform: uppercase; }
     .kwrap .shr { border: 1px solid var(--rule); background: #fff; border-radius: 9px; padding: 5px 9px; font: 700 12.5px Barlow, sans-serif; color: #12804A; cursor: pointer; }
@@ -300,7 +324,7 @@
       const lt = b && b.Load_Type ? String(b.Load_Type).toUpperCase() : (t.cargo || '');
       const at = D(r.Created_At), un = i && (i.Unloaded_At || i.Created_At) ? D(i.Unloaded_At || i.Created_At) : null;
       return { lr: r.LR_No, at: at, day: String(r.Trip_Date || r.Created_At).slice(0, 10), truck: r.Truck_No, driver: r.Driver_Name, dest: r.Destination, km0: n0(r.Start_KM),
-        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', mt: mt, mtEst: !(b && n0(b.Qty_MT)),
+        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(b && n0(b.Qty_MT)),
         rev: n0(r.Rate) * mt, consignee: b ? b.Consignee : '', unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By };
     }).sort((a, b) => a.at - b.at);
@@ -456,11 +480,14 @@
   const sec = (title, sub, body, share) => { let btn = ''; if (!share && /class="(hb|split)"/.test(body)) share = 'auto'; if (share) { const id = 'sh' + (++SHN); SHARE[id] = share && share.fn ? Object.assign({ title: title.replace(/<[^>]+>/g, '') }, share) : { title: title.replace(/<[^>]+>/g, ''), fn: share }; btn = '<button type="button" class="shr" data-s="' + id + '">📲 Share</button>'; }
     return '<div class="sec card"><h2><span>' + title + (sub ? ' <small>' + sub + '</small>' : '') + '</span>' + btn + '</h2>' + body + '</div>'; };
   const filtTxt = () => [fSize.size ? sizeLabel() : '', fLoad !== 'All' ? (fLoad === 'BULK' ? 'Bulk' : 'Bag') : ''].filter(Boolean).join(', ');
-  function shareSection(id) {
+  async function shareSection(id) {
     const x = SHARE[id]; if (!x) return; let body = typeof x.fn === 'function' ? x.fn() : x.fn;
+    const btn = document.querySelector('.shr[data-s="' + id + '"]'), el = btn && (btn.closest('.kwrap') || btn.closest('.sec') || btn.closest('.card'));
     if (x.fn === 'auto' || x.fn === 'kpis') body = domText(document.querySelector('.shr[data-s="' + id + '"]').closest(x.fn === 'kpis' ? '.kwrap' : '.sec'));
     if (!body) { JNP.toast('Nothing to share yet', 'warn'); return; }
-    JNP.whatsapp('*JNP · ' + x.title + '*\n' + (x.asOn ? 'As on ' + JNP.dmy(iso(new Date())) : JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to)) + (filtTxt() ? ' · ' + filtTxt() : '') + '\n————————\n' + body + '\n— ' + JNP.session().user.name);
+    const text = '*JNP · ' + x.title + '*\n' + (x.asOn ? 'As on ' + JNP.dmy(iso(new Date())) : JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to)) + (filtTxt() ? ' · ' + filtTxt() : '') + '\n————————\n' + body + '\n— ' + JNP.session().user.name;
+    if (el) { JNP.busy(true, 'Making image…'); try { const b = await snap(el); JNP.busy(false); await sendImage(b, 'JNP_' + x.title.replace(/[^\w]+/g, '_') + '.png', text.split('\n————————')[0]); return; } catch (e) { JNP.busy(false); JNP.toast('Image failed — sending text instead', 'warn'); } }
+    JNP.whatsapp(text);
   }
   // read the numbers straight off a rendered section (ranked bars, split bars, KPI cards)
   function domText(el) {
@@ -572,6 +599,7 @@
     party: { l: 'Party', k: x => x.consignee || '(no builty yet)', prof: 1 },
     cls: { l: 'Truck size', k: x => x.cls, prof: 1 },
     load: { l: 'Bulk / Bag', k: x => x.load === 'BULK' ? 'Bulk' : 'Bag', prof: 1 },
+    own: { l: 'Own / Market', k: x => x.own === 'MARKET' ? 'Market' : 'Own', prof: 1 },
     day: { l: 'Day', k: x => x.day, time: 1, lab: k => k.slice(8, 10) + '/' + k.slice(5, 7) },
     week: { l: 'Week', k: x => wkOf(x.day), time: 1, lab: k => 'wk ' + k.slice(8, 10) + '/' + k.slice(5, 7) },
     month: { l: 'Month', k: x => x.day.slice(0, 7), time: 1, lab: k => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(k.slice(5, 7)) - 1] + ' ' + k.slice(2, 4) },
@@ -623,7 +651,7 @@
     const vs = (met) => { const v = MET[met].f(a), o = MET[met].f(all); if (isNaN(v) || isNaN(o) || !o || MET[met].add) return ''; const better = MET[met].low ? v < o : v > o; return '<span style="color:' + (better ? 'var(--ok)' : 'var(--red)') + '">' + (better ? '▲' : '▼') + ' vs ' + MET[met].t(o) + ' overall</span>'; };
     const k = (met, l) => (MET[met].money && !MONEY()) ? '' : kpi(l || MET[met].l, isNaN(MET[met].f(a)) ? '—' : MET[met].t(MET[met].f(a)), vs(met));
     const dates = []; for (let x = new Date(M.from); x <= M.to; x = new Date(x.getTime() + 864e5)) dates.push(iso(x));
-    const other = { truck: ['dest', 'driver'], driver: ['dest', 'truck'], dest: ['truck', 'driver'], party: ['dest', 'truck'], cls: ['truck', 'dest'], load: ['dest', 'truck'] }[dim];
+    const other = { own: ['truck', 'dest'], truck: ['dest', 'driver'], driver: ['dest', 'truck'], dest: ['truck', 'driver'], party: ['dest', 'truck'], cls: ['truck', 'dest'], load: ['dest', 'truck'] }[dim];
     setTimeout(() => {
       const bk = $('profBack'); if (bk) bk.onclick = () => { prof = profBack; profBack = null; render(); window.scrollTo(0, 0); };
       document.querySelectorAll('.pq').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { profBack = prof; prof = { dim: el.dataset.d, key: r.dataset.k }; render(); window.scrollTo(0, 0); } });
@@ -643,54 +671,177 @@
       detailHtml('Trips', tt);
   }
 
+
+  // ---------- Utilisation = trips done ÷ trips expected. Expected trips per month by size (Settings › Trip_Targets can override, e.g. "12:28, 25:18, 31:18, 35:18, 42:12")
+  function tripTargets() {
+    const t = { 12: 28, 25: 18, 31: 18, 35: 18, 42: 12 };
+    String((RAW.settings || {}).Trip_Targets || '').split(',').forEach(x => { const m = x.match(/(\d+)\s*[:=]\s*(\d+(?:\.\d+)?)/); if (m) t[m[1]] = Number(m[2]); });
+    return t;
+  }
+  function utilRows(T) {
+    const tg = tripTargets(), down = {};
+    M.bds.filter(b => b.rm).forEach(b => down[b.Truck_No] = (down[b.Truck_No] || 0) + b.inHrs / 24);
+    const n = {}; T.forEach(x => n[x.truck] = (n[x.truck] || 0) + 1);
+    return M.fleet.filter(t => keepTruck(t.no)).map(t => {
+      const c = classOf(t.cap), per = tg[parseInt(c)] || NaN, avail = Math.max(0, M.days - (down[t.no] || 0));
+      return { no: t.no, cls: c, trips: n[t.no] || 0, avail: avail, target: per * avail / 30, per: per };
+    }).filter(r => !isNaN(r.target));
+  }
+  function utilSum(rows) { const tr = sum(rows, r => r.trips), tg = sum(rows, r => r.target); return { trips: tr, target: tg, u: tg ? tr / tg : NaN }; }
+  function utilSection(T) {
+    const rows = utilRows(T); if (!rows.length) return '';
+    const tg = tripTargets(), all = utilSum(rows), col = u => u >= 1 ? 'var(--ok)' : u >= .8 ? 'var(--st-wait)' : 'var(--red)';
+    const bySize = CLASSES.map(c => c + 'T').map(c => { const g = utilSum(rows.filter(r => r.cls === c)); return { label: c, sub: tg[parseInt(c)] + ' trips/month · ' + rows.filter(r => r.cls === c).length + ' trucks', value: g.u * 100, color: col(g.u), text: isNaN(g.u) ? '—' : pct(g.u) + ' · ' + g.trips + '/' + fmt(g.target, 0) }; }).filter(x => !isNaN(x.value));
+    const low = rows.slice().map(r => ({ label: r.no, sub: r.cls + (r.avail < M.days ? ' · ' + fmt(M.days - r.avail, 1) + ' d breakdown' : ''), value: r.target ? 100 * r.trips / r.target : 0, color: col(r.target ? r.trips / r.target : 0), text: r.trips + ' / ' + fmt(r.target, 1) + ' (' + pct(r.target ? r.trips / r.target : 0) + ')' }));
+    return sec('Utilisation · trips vs target', 'overall ' + pct(all.u) + ' · ' + all.trips + ' of ' + fmt(all.target, 0) + ' expected trips',
+      hbar(bySize, { asc: false, ref: 100, refLabel: '100% = target (12T 28 · 25–35T 18 · 42T 12 trips a month, less breakdown days)' }) +
+      '<div class="muted2" style="margin:14px 0 6px;font-weight:700">Trucks furthest behind target</div>' + hbar(low, { top: 10, asc: true, ref: 100, refLabel: '' }));
+  }
+
   function overview(T) { return overview0(T) + (T.length ? '<details class="dsl card"><summary>⛽ Diesel & ₹ per litre</summary>' + diesel(T) + '</details>' : ''); }
+  // small donut with the total in the middle and a legend underneath
+  function donutMini(title, parts, centre) {
+    const t = sum(parts, p => p.value) || 1; let a0 = -Math.PI / 2, paths = '';
+    const R = 58, r = 40, C = 64, live = parts.filter(p => p.value > 0);
+    live.forEach(p => {
+      const ang = 2 * Math.PI * p.value / t, a1 = a0 + ang - (live.length > 1 ? 0.035 : 0);
+      if (ang >= 2 * Math.PI - 0.001) paths += '<circle cx="' + C + '" cy="' + C + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + p.color + '" stroke-width="' + (R - r) + '"></circle>';
+      else { const big = ang > Math.PI ? 1 : 0, P = (rad, g) => (C + rad * Math.cos(g)).toFixed(2) + ',' + (C + rad * Math.sin(g)).toFixed(2);
+        paths += '<path d="M' + P(R, a0) + 'A' + R + ',' + R + ' 0 ' + big + ' 1 ' + P(R, a1) + 'L' + P(r, a1) + 'A' + r + ',' + r + ' 0 ' + big + ' 0 ' + P(r, a0) + 'Z" fill="' + p.color + '"></path>'; }
+      a0 += ang;
+    });
+    if (!live.length) paths = '<circle cx="' + C + '" cy="' + C + '" r="' + ((R + r) / 2) + '" fill="none" stroke="#E6EBF2" stroke-width="' + (R - r) + '"></circle>';
+    return '<div class="dm"><div class="dm-t">' + E(title) + '</div><svg viewBox="0 0 128 128" width="128" height="128">' + paths +
+      '<text x="64" y="66" text-anchor="middle" font-size="20" font-weight="800" fill="#022A5B" font-family="Barlow, sans-serif">' + E(centre[0]) + '</text><text x="64" y="82" text-anchor="middle" font-size="10.5" fill="#5D6877" font-family="Barlow, sans-serif">' + E(centre[1]) + '</text></svg>' +
+      '<div class="dm-l">' + parts.map(p => '<span><i style="background:' + p.color + '"></i>' + E(p.label) + ' <b>' + (p.text || fmt(p.value)) + '</b> <small>' + (t ? Math.round(100 * p.value / t) : 0) + '%</small></span>').join('') + '</div></div>';
+  }
+  const OWNC = 'var(--s3)', MKTC = '#8B96A5';
+  function splitCharts(T, f, txt, centreLabel) {
+    const tot = sum(T, f), g = (k, v) => sum(T.filter(x => x[k] === v), f);
+    return '<div class="dm2">' +
+      donutMini('Bulk vs Bag', [{ label: 'Bulk', value: g('load', 'BULK'), color: 'var(--s1)', text: txt(g('load', 'BULK')) }, { label: 'Bag', value: g('load', 'BAG'), color: 'var(--s2)', text: txt(g('load', 'BAG')) }], [txt(tot), centreLabel]) +
+      donutMini('Own vs Market', [{ label: 'Own', value: g('own', 'OWN'), color: OWNC, text: txt(g('own', 'OWN')) }, { label: 'Market', value: g('own', 'MARKET'), color: MKTC, text: txt(g('own', 'MARKET')) }], [txt(tot), centreLabel]) + '</div>';
+  }
+  function splitText(T, f, txt) { const g = (k, v) => sum(T.filter(x => x[k] === v), f), tot = sum(T, f), p = v => tot ? ' (' + Math.round(100 * v / tot) + '%)' : '';
+    return 'Total ' + txt(tot) + '\nBulk ' + txt(g('load', 'BULK')) + p(g('load', 'BULK')) + ' · Bag ' + txt(g('load', 'BAG')) + p(g('load', 'BAG')) + '\nOwn ' + txt(g('own', 'OWN')) + p(g('own', 'OWN')) + ' · Market ' + txt(g('own', 'MARKET')) + p(g('own', 'MARKET')); }
+  function liveOff() { const rows = offRows(); return { n: rows.length, days: sum(rows.filter(r => !isNaN(r.days)), r => r.days), rows: rows }; }
+  function rotationSection(T) {
+    const items = CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips + ' trips', value: g.rot / 24, color: CLASS_COLOR[c], text: isNaN(g.rot) ? '—' : fmt(g.rot / 24, 1) + ' d' }; }).filter(x => !isNaN(x.value));
+    return items.length ? sec('Avg rotation by size', 'days from loading to next loading', hbar(items, { asc: true })) : '';
+  }
   function overview0(T) {
-    const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no)), activeTrucks = new Set(T.map(x => x.truck)).size;
+    const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no));
     const bds = M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), downH = sum(bds, b => b.inHrs);
     const offDrv = M.bds.filter(b => keepTruck(b.Truck_No) && b.Off_Road_Type === 'Driver not available');
-    const availDays = fleet.length * M.days - downH / 24;
-    const spend = sum(M.mnt.filter(m => keepTruck(m.Truck_No)), m => m.Total_Cost) + sum(M.tex.filter(m => keepTruck(m.Truck_No)), m => m.Amount) + sum(M.tyr.filter(m => keepTruck(m.Truck_No)), m => m.Cost);
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
     const by = (lt) => dates.map(d => T.filter(x => x.day === d && x.load === lt).length);
-    const bulk = T.filter(x => x.load === 'BULK'), bag = T.filter(x => x.load === 'BAG');
-    const DR = {
-      trips: { f: () => 1, txt: v => fmt(v), title: 'Trips', centre: [fmt(a.trips), 'trips'] },
-      mt: { f: x => x.mt, txt: v => fmt(v, 0) + ' MT', title: 'MT carried', centre: [fmt(a.mt, 0), 'MT'] },
-      rev: { f: x => x.rev, txt: v => inr(v), title: 'Freight revenue', centre: [inr(a.rev), 'freight'] },
-      diesel: { f: x => x.diesel, txt: v => fmt(v) + ' L', title: 'Diesel', centre: [fmt(a.diesel), 'litres'] },
-    };
-    const card = (k, l, v, sub, col) => '<div class="kpi tap' + (drillKey === k ? ' sel1' : '') + '" data-d="' + k + '" style="--k:' + col + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + sub + '</div></div>';
-    let drill = '';
-    if (drillKey && DR[drillKey]) {
-      const d = DR[drillKey];
-      drill = '<div class="drill">' + sec(d.title, 'split — tap the card again to close', '<div class="cgrid"><div>' + donut([{ label: 'Bulk', value: sum(bulk, d.f), color: 'var(--s1)', text: d.txt(sum(bulk, d.f)) }, { label: 'Bag', value: sum(bag, d.f), color: 'var(--s2)', text: d.txt(sum(bag, d.f)) }], d.centre) + '</div><div><div class="muted2" style="margin-bottom:6px">By truck size</div>' + stackByClass(T, d.f, d.txt) + '</div></div>') + '</div>';
-    }
-    setTimeout(() => { const k = $('kp'); if (k) k.onclick = e => { const c = e.target.closest('.kpi.tap'); if (!c) return; drillKey = drillKey === c.dataset.d ? '' : c.dataset.d; render(); }; }, 0);
+    const lo = liveOff(), u = utilSum(utilRows(T));
     const perf = T.length ? sec('Performance', 'top by trips · tap any name for its profile', '<div class="cgrid3">' + ['truck', 'driver', 'dest'].map(dm =>
         '<div class="qs" data-d="' + dm + '"><div class="muted2" style="margin-bottom:6px;font-weight:700">' + DIM[dm].l + 's</div>' + hbar(metItems(T, dm, 'trips'), { top: 5, click: 1 }) + '</div>').join('') + '</div>' +
         '<button type="button" class="btn2" id="goX">Open Explore – every measure, every split ›</button>') : '';
     setTimeout(() => { const g = $('goX'); if (g) g.onclick = () => { tab = 'explore'; prof = null; drawNav(); render(); window.scrollTo(0, 0); };
-      document.querySelectorAll('#view .qs').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { tab = 'explore'; prof = { dim: el.dataset.d, key: r.dataset.k }; profBack = null; drawNav(); render(); window.scrollTo(0, 0); } }); }, 0);
+      document.querySelectorAll('#view .qs').forEach(el => el.onclick = e => { const r = e.target.closest('.tap'); if (r) { tab = 'explore'; prof = { dim: el.dataset.d, key: r.dataset.k }; profBack = null; drawNav(); render(); window.scrollTo(0, 0); } });
+      const rb = $('opsRep'); if (rb) rb.onclick = () => shareOpsReport(T); }, 0);
     SHARE.kp0 = { title: 'Headline numbers', fn: 'kpis' };
-    return '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
-      card('trips', 'Trips', fmt(a.trips), activeTrucks + ' trucks · Bulk ' + bulk.length + ' / Bag ' + bag.length, 'var(--blue)') +
-      card('mt', 'MT carried', fmt(a.mt, 0), a.est ? a.est + ' trips without builty' : 'from builty', 'var(--blue)') +
-      (MONEY() ? card('rev', 'Freight revenue', inr(a.rev), 'Bulk ' + inr(sum(bulk, x => x.rev)) + ' · Bag ' + inr(sum(bag, x => x.rev)), 'var(--orange)') : '') +
-      (MONEY() ? card('diesel', 'Revenue / litre', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') : card('diesel', 'Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' trips', 'var(--orange)')) +
-      drill +
-      kpi('Fleet utilisation', pct(availDays ? a.busy / availDays : NaN), fmt(a.busy, 0) + ' of ' + fmt(availDays, 0) + ' truck-days busy', 'var(--navy)') +
+    return '<div class="card repbar"><div><b>📋 Operations report</b><small>One image for the team group — trips, tons, rotation, utilisation, off-road. No ₹ figures.</small></div><button type="button" id="opsRep">📷 Share report</button></div>' +
+      '<div class="cgrid">' +
+      sec('Trips', 'Bulk vs Bag · Own vs Market', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
+      sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + (a.est ? '<div class="muted2" style="margin-top:6px">' + a.est + ' trips without builty — truck capacity used</div>' : ''), () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
+      '</div>' +
+      '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
+      kpi('Fleet utilisation', pct(u.u), u.trips + ' of ' + fmt(u.target, 0) + ' expected trips', 'var(--navy)') +
       kpi('Avg rotation', dd(a.rot), 'loading → next loading', 'var(--blue)') +
       kpi('Delivery TAT', h1(a.tat), 'on time ' + pct(a.onTime), 'var(--blue)') +
-      kpi('Breakdown downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
+      kpi('Off road now', lo.n + ' trucks', fmt(lo.days, 0) + ' truck-days lost so far (live)', 'var(--red)') +
+      kpi('Breakdown downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns in these dates · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
       kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
-      (MONEY() ? kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') : '') +
+      kpi('Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips', 'var(--orange)') +
       kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
-      '</div></div>' + perf +
+      '</div></div>' + utilSection(T) + rotationSection(T) + perf +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
+      '<div class="cgrid">' + sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) + sec('MT by size', 'Bulk vs Bag in each size', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT')) + '</div>' +
+      (MONEY() ? revenueBlock(T, dates) : '');
+  }
+  // ---------- Revenue — management only (Level 1). Never in the ops report.
+  function revenueBlock(T, dates) {
+    const a = agg(T), spend = sum(M.mnt.filter(m => keepTruck(m.Truck_No)), m => m.Total_Cost) + sum(M.tex.filter(m => keepTruck(m.Truck_No)), m => m.Amount) + sum(M.tyr.filter(m => keepTruck(m.Truck_No)), m => m.Cost);
+    SHARE.kpRev = { title: 'Revenue', fn: 'kpis' };
+    const sh = s => inr(s).replace('₹', '');
+    return '<div class="money-h">💰 Revenue <small>management only · not in the ops report</small></div>' +
+      '<div class="kwrap"><div class="khead"><b>Revenue numbers</b><button type="button" class="shr" data-s="kpRev">📲 Share</button></div><div class="kpis">' +
+      kpi('Freight revenue', inr(a.rev), a.trips + ' trips', 'var(--orange)') +
+      kpi('₹ per litre diesel', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') +
+      kpi('Revenue per trip', a.trips ? inr(a.rev / a.trips) : '—', '', 'var(--orange)') +
+      kpi('Avg rate', a.mt ? '₹' + fmt(a.rev / a.mt) + ' / MT' : '—', fmt(a.mt, 0) + ' MT', 'var(--orange)') +
+      kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') +
+      kpi('Revenue per truck', (() => { const n = new Set(T.map(x => x.truck)).size; return n ? inr(a.rev / n) : '—'; })(), new Set(T.map(x => x.truck)).size + ' trucks ran', 'var(--orange)') +
+      '</div></div>' +
+      sec('Revenue split', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.rev, v => sh(v), '₹ freight'), () => splitText(T, x => x.rev, v => inr(v))) +
       '<div class="cgrid">' +
-      sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) +
-      (MONEY() ? sec('Revenue per litre', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) : sec('MT by size', '', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT'))) +
-      '</div>';
+      sec('₹ per litre diesel', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) +
+      sec('Revenue by size', '₹', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips + ' trips', value: g.trips ? g.rev : NaN, color: CLASS_COLOR[c], text: inr(g.rev) }; }))) +
+      '</div>' +
+      sec('Revenue per day', '₹, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      '<div class="muted2" style="margin:4px 2px 0">Explore tab → Measure: Freight revenue / ₹ per litre → split by truck, driver, destination, party, own/market…</div>';
+  }
+
+  // ================= IMAGES for WhatsApp =================
+  let H2C = null;
+  function loadH2C() {
+    if (window.html2canvas) return Promise.resolve();
+    if (H2C) return H2C;
+    return (H2C = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'; s.onload = res; s.onerror = () => { H2C = null; rej(new Error('Could not load the image maker — check internet')); }; document.head.appendChild(s); }));
+  }
+  async function snap(el) {
+    await loadH2C();
+    const c = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false, ignoreElements: n => n.classList && (n.classList.contains('shr') || n.classList.contains('more') || n.tagName === 'BUTTON') });
+    return await new Promise(r => c.toBlob(r, 'image/png'));
+  }
+  async function sendImage(blob, name, caption) {
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: caption }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); JNP.toast('Image copied — open WhatsApp and paste (Ctrl+V)', 'ok', 6000); window.open('https://web.whatsapp.com/', 'jnp_whatsapp'); return; } catch (e) { }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    JNP.toast('Image downloaded — attach it in WhatsApp', 'warn', 6000);
+  }
+  // ---------- the group report: one image, no ₹
+  async function shareOpsReport(T) {
+    JNP.busy(true, 'Making report image…');
+    const box = document.createElement('div'); box.className = 'opsrep';
+    try {
+      const day = RAW.to, D1 = T.filter(x => x.day === day), a = agg(T), d1 = agg(D1), u = utilSum(utilRows(T)), lo = liveOff(), fl = M.fleet.filter(t => keepTruck(t.no));
+      const ur = utilRows(T), sizes = CLASSES.map(c => c + 'T').map(c => { const tt = T.filter(x => x.cls === c), g = agg(tt), us = utilSum(ur.filter(r => r.cls === c)); return { c: c, trucks: ur.filter(r => r.cls === c).length, trips: g.trips, mt: g.mt, rot: g.rot, u: us.u }; }).filter(r => r.trips || r.trucks);
+      const pc = (k, v) => sum(T.filter(x => x[k] === v), x => x.mt);
+      const bar = (parts) => '<div class="or-split">' + parts.filter(p => p.v).map(p => '<div style="flex:' + p.v + ';background:' + p.c + '">' + (sum(parts, q => q.v) && p.v / sum(parts, q => q.v) > .14 ? Math.round(100 * p.v / sum(parts, q => q.v)) + '%' : '') + '</div>').join('') + '</div><div class="or-lg">' + parts.map(p => '<span><i style="background:' + p.c + '"></i>' + p.l + ' ' + fmt(p.v, 0) + '</span>').join('') + '</div>';
+      const why = {}; lo.rows.forEach(r => why[r.g] = (why[r.g] || 0) + 1);
+      const filt = filtTxt();
+      box.innerHTML = '<div class="or-h"><img src="' + JNP.CONFIG.LOGO + '" alt=""><div><b>Operations report</b><span>' + JNP.dmy(day) + (filt ? ' · ' + E(filt) : '') + '</span></div></div>' +
+        '<div class="or-stripe"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
+        '<div class="or-band">' +
+          '<div><small>' + (day === iso(new Date()) ? 'Today' : 'On ' + JNP.dmy(day).slice(0, 5)) + '</small><b>' + fmt(d1.mt, 0) + ' MT</b><span>' + d1.trips + ' trips</span></div>' +
+          '<div><small>' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</small><b>' + fmt(a.mt, 0) + ' MT</b><span>' + a.trips + ' trips</span></div>' +
+          '<div><small>Utilisation</small><b>' + pct(u.u) + '</b><span>' + u.trips + ' / ' + fmt(u.target, 0) + ' trips</span></div>' +
+          '<div><small>Avg rotation</small><b>' + dd(a.rot) + '</b><span>loading → loading</span></div></div>' +
+        '<div class="or-sec">MT lifted · ' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</div>' +
+        bar([{ l: 'Bulk', v: pc('load', 'BULK'), c: '#1565D8' }, { l: 'Bag', v: pc('load', 'BAG'), c: '#F7821A' }]) +
+        bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
+        '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Trucks</th><th>Trips</th><th>MT</th><th>Rotation</th><th>Utilisation</th></tr>' +
+          sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.trucks + '</td><td>' + r.trips + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
+        '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' trucks on road</div>' +
+        '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(lo.days, 0) + ' truck-days lost so far<div>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => '<span>' + g[1] + ' ' + g[2] + ' ' + why[g[0]] + '</span>').join('') + '</div></div>' +
+        (lo.rows.length ? '<table class="or-t sm">' + lo.rows.slice(0, 6).map(r => '<tr><td><b>' + E(r.no.slice(-4)) + '</b> ' + E(r.size) + '</td><td>' + E(OFF_GROUPS.find(g => g[0] === r.g)[2]) + '</td><td>' + (r.since ? 'since ' + JNP.dmy(iso(r.since)).slice(0, 5) : '') + '</td><td><b>' + dayTxt(r.days) + '</b></td></tr>').join('') + '</table>' + (lo.rows.length > 6 ? '<div class="or-more">+ ' + (lo.rows.length - 6) + ' more</div>' : '') : '') +
+        '<div class="or-f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + JNP.nowText() + '</div>';
+      document.body.appendChild(box);
+      await new Promise(r => setTimeout(r, 120));
+      const blob = await snap(box);
+      const cap = '*JNP Operations report · ' + JNP.dmy(day) + '*\n' + (day === iso(new Date()) ? 'Today' : JNP.dmy(day).slice(0, 5)) + ': ' + fmt(d1.mt, 0) + ' MT · ' + d1.trips + ' trips\n' +
+        JNP.dmy(RAW.from).slice(0, 5) + '–' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + fmt(a.mt, 0) + ' MT · ' + a.trips + ' trips · utilisation ' + pct(u.u) + ' · rotation ' + dd(a.rot) + '\nOff road: ' + lo.n + ' trucks · ' + fmt(lo.days, 0) + ' truck-days lost';
+      JNP.busy(false);
+      await sendImage(blob, 'JNP_Ops_Report_' + day + '.png', cap);
+    } catch (e) { JNP.busy(false); JNP.toast(e.message, 'bad'); }
+    finally { box.remove(); }
   }
 
   // WhatsApp report — same layout as the daily "vehicles not on road" message
