@@ -7,13 +7,26 @@
   <title>Off-Road · JNP</title>
   <link rel="icon" href="../icon.png">
   <link rel="stylesheet" href="../jnp.css">
+  <style>
+    .bigtile { display: flex; align-items: center; gap: 14px; margin-top: 14px; padding: 18px 16px; background: #fff; border-radius: 18px; box-shadow: var(--shadow); text-decoration: none; color: var(--ink); border-left: 6px solid var(--red); }
+    .bigtile.res { border-left-color: var(--orange); }
+    .bigtile .bi { font-size: 34px; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; background: var(--bg); border-radius: 14px; flex: none; }
+    .bigtile b { display: block; font-size: 18px; color: var(--navy); } .bigtile small { display: block; font-size: 15px; color: var(--muted); font-weight: 600; }
+    .bigtile em { display: block; font-style: normal; font-size: 12.5px; color: var(--muted); margin-top: 4px; } .bigtile .go { margin-left: auto; font-size: 28px; color: var(--muted); }
+    .backlink { display: inline-block; margin-top: 12px; font-weight: 800; color: var(--blue); text-decoration: none; }
+  </style>
   <script src="../jnp.js"></script>
 </head>
 <body>
   <div id="hdr"></div>
   <div class="wrap">
-    <div id="tabs"></div>
-    <div id="repView">
+    <div id="home" class="hidden">
+      <a class="bigtile" id="goAdd" href="?tab=report"><span class="bi">🚧</span><span><b>Add new off-road</b><small>नया ऑफ-रोड जोड़ें</small><em>Breakdown · No driver · Accident · Documents</em></span><span class="go">›</span></a>
+      <a class="bigtile res" id="goRes" href="?tab=resolve"><span class="bi">🛠️</span><span><b>Off-road resolution</b><small>ऑफ-रोड समाधान</small><em id="resInfo">Trucks off road now — update, mark back on road</em></span><span class="go">›</span></a>
+    </div>
+    <div id="backRow" class="hidden"><a class="backlink" href="./">‹ Off-Road · ऑफ-रोड</a></div>
+    <div id="tabs" class="hidden"></div>
+    <div id="repView" class="hidden">
       <form id="f" class="card" autocomplete="off" novalidate>
         <h3 class="cardh"><span>Report truck off road · गाड़ी बंद</span></h3>
         <div id="fields"></div>
@@ -172,10 +185,20 @@
     });
   });
 
-  const tabsList = (canReport ? [{ id: 'report', label: '🚧 Report' }] : []).concat([{ id: 'resolve', label: '📋 Off road now' }]);
-  JNP.tabs($('tabs'), tabsList, t => {
-    $('repView').classList.toggle('hidden', t !== 'report'); $('openView').classList.toggle('hidden', t !== 'resolve'); if (t === 'resolve') loadOpen();
-  }, JNP.param('tab'));
+  // Landing: two big tiles (Add new / Resolution). ?tab=report or ?tab=resolve opens one directly.
+  const want = JNP.param('tab');
+  function show(t) {
+    $('home').classList.add('hidden'); $('backRow').classList.remove('hidden');
+    $('repView').classList.toggle('hidden', t !== 'report'); $('openView').classList.toggle('hidden', t !== 'resolve');
+    if (t === 'resolve') loadOpen();
+    window.scrollTo(0, 0);
+  }
+  if (want === 'report' && canReport) show('report');
+  else if (want === 'resolve' || !canReport) show('resolve');
+  else {
+    $('repView').classList.add('hidden'); $('openView').classList.add('hidden'); $('home').classList.remove('hidden');
+    JNP.call('openBreakdowns', {}).then(o => { $('resInfo').textContent = o.rows.length + ' trucks off road now · ' + o.rows.length + ' गाड़ियाँ बंद'; }).catch(() => { });
+  }
 })();
 </script>
 </body>

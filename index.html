@@ -89,11 +89,9 @@
     return '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + g.path + '"><span class="ic">' + g.icon + '</span><span class="en">' + g.name + '</span><span class="hi">' + g.hindi + '</span><span class="tag">' + (t || '') + '</span></a>';
   }
   // Off-road (OPS-06 report / RM-01 resolution) → always two clear tiles: Add new + Resolution
-  function offPair(color) {
-    const add = JNP.can('OPS-06', 'E'), res = JNP.rights('OPS-06').length || JNP.rights('RM-01').length;
-    const t = (path, icon, en, hi, tg) => '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + path + '"><span class="ic">' + icon + '</span><span class="en">' + en + '</span><span class="hi">' + hi + '</span><span class="tag">' + (tg || '') + '</span></a>';
-    return (add ? t('breakdown/?tab=report', '🚧', 'Add Off-Road', 'नया ऑफ-रोड जोड़ें') : '') +
-      (res ? t('breakdown/?tab=resolve', '🛠️', 'Off-Road Resolution', 'ऑफ-रोड समाधान', JNP.can('RM-01', 'E') || JNP.can('OPS-06', 'E') ? '' : '<span class="pill">View only</span>') : '');
+  // Off-road: ONE tile per department; the screen itself offers Add new / Resolution
+  function offTile(color) {
+    return '<a class="tile" style="--accent:' + color + '" href="' + JNP.CONFIG.HUB + 'breakdown/"><span class="ic">🚧</span><span class="en">Off-Road</span><span class="hi">ऑफ-रोड · नया / समाधान</span><span class="tag"></span></a>';
   }
   function tileHtml(code, color, badge) {
     const s = JNP.session(), a = s.access[code], m = JNP.MODULES[code] || { icon: '▪️', path: '' };
@@ -132,7 +130,7 @@
       const codes = order.filter(cd => cd.indexOf(dept.prefix) === 0 && s.access[cd] && JNP.rights(cd).length);
       if (!codes.length) return;
       html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' + JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">' +
-        codes.map(cd => { if (cd === 'OPS-06' || cd === 'RM-01') return offPair(dept.color); const m = MERGE[cd]; if (!m) return tileHtml(cd, dept.color); if (seen[m]) return ''; seen[m] = 1; return mergedHtml(m, dept.color); }).join('') + '</div></div>';
+        codes.map(cd => { if (cd === 'OPS-06' || cd === 'RM-01') return offTile(dept.color); const m = MERGE[cd]; if (!m) return tileHtml(cd, dept.color); if (seen[m]) return ''; seen[m] = 1; return mergedHtml(m, dept.color); }).join('') + '</div></div>';
     });
     const gen = ['APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
     const cfg = JNP.M().settings || {}, lst = k => String(cfg[k] || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
