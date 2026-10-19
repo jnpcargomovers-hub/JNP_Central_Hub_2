@@ -8,6 +8,7 @@
   <link rel="icon" href="../icon.png">
   <link rel="stylesheet" href="../jnp.css">
   <style>
+    #in_Off_Road_Type button:nth-child(-n+2) { flex: 1 1 45%; padding: 16px 10px; font-size: 16px; }
     .bigtile { display: flex; align-items: center; gap: 14px; margin-top: 14px; padding: 18px 16px; background: #fff; border-radius: 18px; box-shadow: var(--shadow); text-decoration: none; color: var(--ink); border-left: 6px solid var(--red); }
     .bigtile.res { border-left-color: var(--orange); }
     .bigtile .bi { font-size: 34px; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; background: var(--bg); border-radius: 14px; flex: none; }
@@ -61,30 +62,42 @@
   const canFixOps = ctx.isL1 || JNP.can('RM-01', 'E') || (JNP.can('OPS-06', 'E') && me.role !== 'Loader');
   const isRm = t => !t || t === 'Breakdown' || t === 'Accident';
   const FLOW = ['Reported', 'Acknowledged by R&M', 'Mechanic / Towing Sent', 'Under Repair', 'Resolved - Back on Road', 'Closed (Verified)'];
-  const TYPES = [{ v: 'Breakdown', t: '🔧 Breakdown' }, { v: 'Driver not available', t: '🧑 No driver' }, { v: 'Accident', t: '💥 Accident' }, { v: 'Documents / RTO', t: '📄 Documents' }, { v: 'Other', t: '⋯ Other' }];
+  const TYPES = [{ v: 'Breakdown', t: '🔧 Breakdown · ब्रेकडाउन' }, { v: 'Driver not available', t: '👤 Driver · ड्राइवर' }, { v: 'Accident', t: '💥 Accident' }, { v: 'Documents / RTO', t: '📄 Documents' }, { v: 'Other', t: '⋯ Other' }];
   const ICON = { 'Breakdown': '🔧', 'Driver not available': '🧑', 'Accident': '💥', 'Documents / RTO': '📄', 'Other': '⋯' };
   const rmMobile = JNP.M().settings.Vehicle_Maintenance_Mobile || '';
   let pos = null, clientReqId = JNP.uid(), rows = [], cur = null, typeFilter = 'All';
   const ty = v => v.Off_Road_Type || 'Breakdown';
 
   // ---------- REPORT
+  const isDrv = v => ty(v) === 'Driver not available';
+  const DRV_REASONS = [{ v: 'Driver on leave', t: 'On leave · छुट्टी पर' }, { v: 'Driver sick', t: 'Sick · बीमार' }, { v: 'Driver absent (no notice)', t: 'Absent, no notice · बिना बताए गायब' }, { v: 'Driver left job', t: 'Left the job · नौकरी छोड़ी' }, { v: 'No driver assigned', t: 'No driver assigned · ड्राइवर नहीं दिया' }, { v: 'Driver under disciplinary action', t: 'Disciplinary action · कार्यवाही' }];
   const F = JNP.form($('fields'), [
-    { k: 'Off_Road_Type', label: 'Why is it off road?', hi: 'कारण', type: 'seg', options: TYPES, value: 'Breakdown', req: true },
+    { k: 'Off_Road_Type', label: 'Why is the truck off road?', hi: 'गाड़ी क्यों बंद है', type: 'seg', options: TYPES, value: 'Breakdown', req: true },
     { k: 'Truck_No', label: 'Truck', hi: 'गाड़ी', type: 'truck', req: true, allowNew: false },
+    // ---- breakdown / accident
     { k: 'sym_bd', label: 'Problem', hi: 'समस्या', type: 'symptom', noSend: true, req: v => isRm(ty(v)), show: v => isRm(ty(v)) },
-    { k: 'sym_drv', label: 'Driver reason', hi: 'ड्राइवर क्यों नहीं', type: 'select', noSend: true, options: ['Driver sick', 'Driver on leave', 'Driver absent (no notice)', 'Driver left job', 'No driver assigned', 'Driver under disciplinary action'], req: v => ty(v) === 'Driver not available', show: v => ty(v) === 'Driver not available' },
+    { k: 'Details', label: 'What happened?', hi: 'क्या हुआ? पूरी जानकारी', type: 'textarea', ph: 'e.g. air pressure dropped near Songir, brake hard, smoke from engine…', req: v => isRm(ty(v)), show: v => !isDrv(v) },
+    // ---- driver
+    { k: 'sym_drv', label: 'What happened with the driver?', hi: 'ड्राइवर को क्या हुआ', type: 'select', noSend: true, options: DRV_REASONS, req: isDrv, show: isDrv },
+    { k: 'Leave_From', label: 'Leave from', hi: 'छुट्टी कब से', type: 'date', half: true, show: v => isDrv(v) && /leave|sick/i.test(v.sym_drv) },
+    { k: 'Leave_To', label: 'Leave till', hi: 'कब तक', type: 'date', half: true, show: v => isDrv(v) && /leave|sick/i.test(v.sym_drv) },
+    // ---- documents / other
     { k: 'sym_doc', label: 'Document problem', type: 'select', noSend: true, options: ['Fitness expired', 'Permit expired', 'Insurance expired', 'Tax / PUC expired', 'RTO / police hold', 'Other document'], req: v => ty(v) === 'Documents / RTO', show: v => ty(v) === 'Documents / RTO' },
     { k: 'sym_oth', label: 'Reason', noSend: true, req: v => ty(v) === 'Other', show: v => ty(v) === 'Other', ph: 'e.g. no load, owner hold' },
-    { k: 'Driver_Name', label: 'Driver (last / current)', hi: 'ड्राइवर', type: 'driver' },
-    { k: 'Driver_Mobile', label: 'Driver mobile', type: 'num', half: true },
-    { k: 'Loaded', label: 'Loaded?', type: 'seg', options: ['Yes', 'No'], half: true },
-    { k: 'LR_No', label: 'LR (if loaded)', upper: true, show: v => v.Loaded === 'Yes' },
+    // ---- driver on the truck
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver', req: isDrv, labelFn: v => isDrv(v) ? 'Driver who is not available' : 'Driver on the truck' },
+    { k: 'Driver_Mobile', label: 'Driver mobile', hi: 'ड्राइवर का नंबर', type: 'num', ph: '10 digits' },
+    { k: 'Replacement_Given', label: 'Has he given a replacement driver?', hi: 'क्या बदले में दूसरा ड्राइवर दिया?', type: 'seg', options: [{ v: 'Yes', t: 'Yes · हाँ' }, { v: 'No', t: 'No · नहीं' }], value: 'No', show: isDrv },
+    { k: 'Replacement_Driver', label: 'Replacement driver name', hi: 'नए ड्राइवर का नाम', type: 'driver', req: v => isDrv(v) && v.Replacement_Given === 'Yes', show: v => isDrv(v) && v.Replacement_Given === 'Yes' },
+    { k: 'Replacement_Mobile', label: 'Replacement driver mobile (optional)', hi: 'नए ड्राइवर का नंबर', type: 'num', ph: '10 digits', show: v => isDrv(v) && v.Replacement_Given === 'Yes' },
+    { k: 'Loaded', label: 'Loaded?', hi: 'माल भरा है?', type: 'seg', options: ['Yes', 'No'], half: true },
+    { k: 'LR_No', label: 'LR (if loaded)', upper: true, half: true, show: v => v.Loaded === 'Yes' },
     { k: 'Location', label: 'Where is the truck?', hi: 'गाड़ी कहाँ है', req: true, ph: 'e.g. Depot, Songir, Dhule bypass' },
     { k: 'gps', type: 'html', html: '<button class="mini orange" type="button" id="gpsBtn">📍 Add my GPS location</button> <span id="gpsInfo" class="hint"></span><div style="height:12px"></div>' },
-    { k: 'Report_Photo_URLs', label: 'Photos', type: 'photo', multiple: true, show: v => ty(v) !== 'Driver not available' },
+    { k: 'Report_Photo_URLs', label: 'Photos', hi: 'फोटो', type: 'photo', multiple: true, show: v => !isDrv(v) },
   ], { module: 'OPS-06' });
   F.on(k => {
-    if (k === 'Off_Road_Type') $('saveBtn').innerHTML = isRm(F.val('Off_Road_Type')) ? '🚧 Report off road' : '🚧 Report off road';
+    if (k === 'Off_Road_Type' || k === '_init') { const d = isDrv(F.all()); const l = F.field('Driver_Name').querySelector('label'); if (l) l.innerHTML = (d ? 'Driver who is not available <span class="hi">· कौन सा ड्राइवर</span>' : 'Driver on the truck <span class="hi">· ड्राइवर</span>'); if (l) l.classList.toggle('req', d); }
     if (k !== 'Truck_No') return;
     const t = JNP.findTruck(F.val('Truck_No'));
     if (t && t.driver && !F.val('Driver_Name')) { F.set('Driver_Name', t.driver); const d = JNP.findDriver(t.driver); if (d && d.mobile) F.set('Driver_Mobile', d.mobile); }
@@ -104,7 +117,10 @@
       const data = Object.assign(F.values(), { Symptom: sym }, pos ? { Latitude: pos.lat, Longitude: pos.lng } : {});
       const out = await JNP.call('save', { module: 'OPS-06', clientReqId: clientReqId, data: data });
       const r = out.record;
-      const msg = JNP.waText('🚧 OFF ROAD · ' + r.Truck_No + ' · ' + r.Off_Road_Type, [['Reason', r.Symptom], ['Location', r.Location], ['Map', pos ? 'https://maps.google.com/?q=' + pos.lat + ',' + pos.lng : ''],
+      const msg = JNP.waText('🚧 OFF ROAD · ' + r.Truck_No + ' · ' + (r.Off_Road_Type === 'Driver not available' ? 'Driver' : r.Off_Road_Type), [['Reason', r.Symptom], ['What happened', r.Details],
+        ['Leave', r.Leave_From ? JNP.dmy(String(r.Leave_From).slice(0, 10)) + (r.Leave_To ? ' to ' + JNP.dmy(String(r.Leave_To).slice(0, 10)) : '') : ''],
+        ['Replacement', r.Replacement_Given === 'Yes' ? r.Replacement_Driver + (r.Replacement_Mobile ? ' (' + r.Replacement_Mobile + ')' : '') : r.Off_Road_Type === 'Driver not available' ? 'Not given — arrange a driver' : ''],
+        ['Location', r.Location], ['Map', pos ? 'https://maps.google.com/?q=' + pos.lat + ',' + pos.lng : ''],
         ['Driver', r.Driver_Name ? r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '') : ''], ['Loaded', r.Loaded === 'Yes' ? 'Yes' + (r.LR_No ? ' · LR ' + r.LR_No : '') : r.Loaded],
         ['Photo', (r.Report_Photo_URLs || '').split(' ')[0]], ['Ref', r.Record_ID]], isRm(r.Off_Road_Type) ? 'R&M please acknowledge: ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID : 'Operations: arrange ' + (r.Off_Road_Type === 'Driver not available' ? 'a driver' : 'clearance') + ' — ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID);
       $('f').classList.add('hidden');
@@ -138,12 +154,17 @@
     cur = r; $('udone').classList.add('hidden');
     const t = ty(r), rm = isRm(t), photos = (r.Report_Photo_URLs || '').split(/\s+/).filter(Boolean);
     $('detail').innerHTML = '<h3 class="cardh"><span>' + ICON[t] + ' ' + JNP.esc(r.Truck_No) + '</span><span class="pill ' + JNP.statusCls(r.Breakdown_Status) + '">' + JNP.esc(rm ? r.Breakdown_Status : t) + '</span></h3>' +
-      '<div class="kv">' + [['Type', t], ['Reason', r.Symptom], ['Location', r.Location], ['Driver', r.Driver_Name + (r.Driver_Mobile ? ' · ' + r.Driver_Mobile : '')], ['Loaded', r.Loaded + (r.LR_No ? ' · ' + r.LR_No : '')],
+      '<div class="kv">' + [['Type', t], ['Reason', r.Symptom], ['What happened', r.Details], ['Location', r.Location], ['Driver', r.Driver_Name + (r.Driver_Mobile ? ' · ' + r.Driver_Mobile : '')],
+        ['Leave', r.Leave_From ? JNP.dmy(String(r.Leave_From).slice(0, 10)) + (r.Leave_To ? ' → ' + JNP.dmy(String(r.Leave_To).slice(0, 10)) : '') : ''],
+        ['Replacement', r.Replacement_Given === 'Yes' ? r.Replacement_Driver + (r.Replacement_Mobile ? ' · ' + r.Replacement_Mobile : '') : t === 'Driver not available' ? 'Not given' : ''],
+        ['Repaired', r.Repair_Mode], ['Loaded', r.Loaded + (r.LR_No ? ' · ' + r.LR_No : '')],
         ['Reported', JNP.dmy(r.Created_At) + ' by ' + r.Created_By], ['Off road for', r.Open_Hrs >= 48 ? Math.round(r.Open_Hrs / 24) + ' days' : r.Open_Hrs + ' h'], ['Fault', r.Fault_Code], ['Repair at', r.Repair_Location], ['Mechanic', r.Assigned_To || r.Vendor], ['Repair cost', JNP.inr(r.Repair_Cost)]]
         .filter(x => x[1]).map(x => '<span>' + x[0] + '</span><b>' + JNP.esc(x[1]) + '</b>').join('') + '</div>' +
       (r.Latitude ? '<a class="mini" target="_blank" href="https://maps.google.com/?q=' + r.Latitude + ',' + r.Longitude + '">📍 Map</a> ' : '') +
       (r.Driver_Mobile ? '<a class="mini" href="tel:' + JNP.esc(r.Driver_Mobile) + '">📞 Call driver</a> ' : '') +
+      (r.Replacement_Mobile ? '<a class="mini" href="tel:' + JNP.esc(r.Replacement_Mobile) + '">📞 Call replacement</a> ' : '') +
       (rm && JNP.can('RM-03', 'E') ? '<a class="mini orange" href="../truck-expense/?truck=' + encodeURIComponent(r.Truck_No) + '&bd=' + encodeURIComponent(r.Record_ID) + '">💸 Raise expense</a>' : '') +
+      (rm ? '<div class="grouph">Expenses for this breakdown · खर्च</div>' + ((r.Expenses || []).length ? JNP.rowsHtml(r.Expenses, x => ({ t: JNP.esc(JNP.inr(x.amt) + ' · ' + x.head), s: JNP.esc((x.vendor || '') + ' · ' + x.id), tag: x.status, cls: JNP.statusCls(x.status) })) : '<div class="hint">None yet. If it is repaired in-house with no spend, nothing to raise.</div>') : '') +
       (photos.length ? '<div class="thumbs">' + photos.map(u => '<a href="' + JNP.esc(u) + '" target="_blank"><img src="' + JNP.esc(JNP.driveThumb(u)) + '"></a>').join('') + '</div>' : '') +
       '<div class="grouph">Timeline</div><div id="log" class="list muted">Loading…</div>';
     $('detail').classList.remove('hidden'); $('detail').scrollIntoView({ behavior: 'smooth' });
@@ -157,13 +178,16 @@
       { k: 'Repair_Location', label: 'Repair location', type: 'select', list: 'Repair_Location', value: r.Repair_Location || '', show: v => /Mechanic|Under|Resolved/.test(v.Breakdown_Status) },
       { k: 'Vendor', label: 'Garage / vendor', type: 'vendor', value: r.Vendor || '', show: v => /Mechanic|Under|Resolved/.test(v.Breakdown_Status) },
       { k: 'Fault_Code', label: 'Actual fault', hi: 'असली खराबी', type: 'fault', allowNew: false, value: r.Fault_Code || '', req: v => /Resolved/.test(v.Breakdown_Status), show: v => /Under|Resolved|Closed/.test(v.Breakdown_Status) },
-      { k: 'Resolution_Note', label: 'What was done', type: 'textarea', show: v => /Resolved|Closed/.test(v.Breakdown_Status) },
+      { k: 'Repair_Mode', label: 'How was it repaired?', hi: 'कैसे ठीक हुआ', type: 'seg', options: [{ v: 'In-house (no expense)', t: '🏠 In-house · बिना खर्च' }, { v: 'With expense', t: '💸 With expense · खर्च हुआ' }], value: r.Repair_Mode || '', req: v => /Resolved/.test(v.Breakdown_Status), show: v => /Resolved/.test(v.Breakdown_Status) },
+      { k: 'expHint', type: 'html', html: (r.Expenses || []).length ? '' : '<div class="warnline" style="margin:-4px 0 10px">No expense raised yet for this breakdown — <a href="../truck-expense/?truck=' + encodeURIComponent(r.Truck_No) + '&bd=' + encodeURIComponent(r.Record_ID) + '">💸 raise it now</a> (can be done after back on road too).</div>', show: v => v.Repair_Mode === 'With expense' },
+      { k: 'Resolution_Note', label: 'What was done', hi: 'क्या काम किया', type: 'textarea', show: v => /Resolved|Closed/.test(v.Breakdown_Status) },
       { k: 'Resolution_Photo_URLs', label: 'Photos after repair', type: 'photo', multiple: true, show: v => /Resolved/.test(v.Breakdown_Status) },
       { k: 'note', label: 'Note for the timeline', ph: 'optional' },
     ] : [
-      { k: 'Breakdown_Status', label: 'New status', type: 'select', options: next, req: true, value: next[0] },
-      { k: 'Driver_Name', label: 'Driver now on the truck', hi: 'नया ड्राइवर', type: 'driver', req: v => t === 'Driver not available' && /Resolved/.test(v.Breakdown_Status), show: () => t === 'Driver not available' },
-      { k: 'Resolution_Note', label: 'What was done', type: 'textarea', ph: t === 'Driver not available' ? 'e.g. driver back from leave / new driver joined' : 'e.g. fitness renewed' },
+      { k: 'Breakdown_Status', label: 'New status', type: 'select', options: next.map(x => ({ v: x, t: /Resolved/.test(x) ? (t === 'Driver not available' ? '✅ Driver assigned — back on road' : '✅ Back on road') : x })), req: true, value: next[0] },
+      { k: 'Driver_Name', label: 'Driver now on the truck', hi: 'नया ड्राइवर कौन', type: 'driver', value: r.Replacement_Driver || '', req: v => t === 'Driver not available' && /Resolved/.test(v.Breakdown_Status), show: () => t === 'Driver not available' },
+      { k: 'Driver_Mobile', label: 'His mobile', hi: 'नंबर', type: 'num', ph: '10 digits', value: r.Replacement_Mobile || '', show: () => t === 'Driver not available' },
+      { k: 'Resolution_Note', label: 'What was done', hi: 'क्या किया', type: 'textarea', ph: t === 'Driver not available' ? 'e.g. replacement joined / driver back from leave' : 'e.g. fitness renewed' },
       { k: 'note', label: 'Note for the timeline', ph: 'optional' },
     ], { module: 'RM-01' });
     $('uf').classList.remove('hidden');
@@ -175,7 +199,7 @@
       const out = await JNP.call('bdUpdate', { id: cur.Record_ID, data: U.values() });
       const r = out.record, t = ty(r);
       const msg = out.backOnRoad
-        ? JNP.waText('✅ BACK ON ROAD · ' + r.Truck_No, [['Was off road', t + ' — ' + r.Symptom], ['Fault', r.Fault_Code], ['Driver', r.Driver_Name], ['Work done', r.Resolution_Note], ['Repaired at', r.Repair_Location], ['Garage', r.Vendor],
+        ? JNP.waText('✅ BACK ON ROAD · ' + r.Truck_No, [['Was off road', t + ' — ' + r.Symptom], ['Fault', r.Fault_Code], ['Driver', r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '')], ['Work done', r.Resolution_Note], ['Repaired', r.Repair_Mode], ['Repaired at', r.Repair_Location], ['Garage', r.Vendor],
             ['Off road for', r.Downtime_Hrs >= 48 ? Math.round(r.Downtime_Hrs / 24) + ' days' : r.Downtime_Hrs + ' h'], ['Repeat fault', r.Repeat_Flag === 'Yes' ? '⚠️ YES' : ''], ['Ref', r.Record_ID]])
         : JNP.waText('OFF-ROAD UPDATE · ' + r.Truck_No, [['Status', r.Breakdown_Status], ['Reason', r.Symptom], ['Mechanic', r.Assigned_To], ['Repair at', r.Repair_Location], ['Note', U.val('note')], ['Ref', r.Record_ID]]);
       $('uf').classList.add('hidden');
@@ -187,14 +211,14 @@
 
   // Landing: two big tiles (Add new / Resolution). ?tab=report or ?tab=resolve opens one directly.
   const want = JNP.param('tab');
-  function show(t) {
+  function openPane(t) {
     $('home').classList.add('hidden'); $('backRow').classList.remove('hidden');
     $('repView').classList.toggle('hidden', t !== 'report'); $('openView').classList.toggle('hidden', t !== 'resolve');
     if (t === 'resolve') loadOpen();
     window.scrollTo(0, 0);
   }
-  if (want === 'report' && canReport) show('report');
-  else if (want === 'resolve' || !canReport) show('resolve');
+  if (want === 'report' && canReport) openPane('report');
+  else if (want === 'resolve' || !canReport) openPane('resolve');
   else {
     $('repView').classList.add('hidden'); $('openView').classList.add('hidden'); $('home').classList.remove('hidden');
     JNP.call('openBreakdowns', {}).then(o => { $('resInfo').textContent = o.rows.length + ' trucks off road now · ' + o.rows.length + ' गाड़ियाँ बंद'; }).catch(() => { });
