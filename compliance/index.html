@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Vehicle Compliance · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .sum4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
+    .sum4 button { border: 0; border-radius: 12px; padding: 10px 4px; background: #fff; box-shadow: var(--shadow); cursor: pointer; text-align: center; }
+    .sum4 button b { display: block; font-size: 22px; line-height: 1.1; } .sum4 button span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+    .sum4 button.on { outline: 2.5px solid var(--navy); }
+    .srch { position: relative; margin-top: 12px; } .srch input { padding-left: 40px; } .srch i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 18px; }
+    .chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; } .chips::-webkit-scrollbar { display: none; }
+    .chips button { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 13px; color: var(--char); cursor: pointer; }
+    .chips button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .vc { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin-top: 10px; cursor: pointer; border-left: 5px solid var(--ok); }
+    .vc.warn { border-left-color: #D48A00; } .vc.bad { border-left-color: var(--red); } .vc.off { opacity: .6; }
+    .vc .t { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; } .vc .t b { font-size: 16px; letter-spacing: .3px; color: var(--navy); }
+    .vc .t small { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+    .db { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .db span { font-size: 11.5px; font-weight: 800; border-radius: 7px; padding: 3px 7px; }
+    .s-ok { background: var(--ok-bg); color: var(--ok); } .s-warn { background: #FFF1DF; color: #A55A00; } .s-bad { background: var(--bad-bg); color: var(--red); } .s-na { background: #EEF2F8; color: #7A8596; }
+    .det { margin-top: 12px; } .det h3.cardh small { font-weight: 600; color: var(--muted); font-size: 12.5px; }
+    .grp { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--blue); margin: 16px 0 4px; }
+    .fr { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #EEF1F5; }
+    .fr .k { flex: 1; min-width: 0; } .fr .k small { display: block; color: var(--muted); font-size: 12px; font-weight: 600; } .fr .k b { font-size: 15px; word-break: break-all; }
+    .fr .st { font-size: 12px; font-weight: 800; border-radius: 8px; padding: 4px 8px; white-space: nowrap; }
+    .ib { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 6px 9px; font-weight: 700; font-size: 12.5px; color: var(--navy); cursor: pointer; }
+    .ib.cp { color: var(--ok); } .lock { color: var(--muted); font-size: 13px; }
+    .fr img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+    .ed { background: var(--bg); border-radius: 12px; padding: 12px; margin: 4px 0 8px; display: grid; gap: 10px; }
+    .ed .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .ed label.na { display: flex; gap: 6px; align-items: center; font-weight: 700; font-size: 13.5px; }
+    .ed .hint2 { font-size: 12.5px; font-weight: 700; }
+    .topbtns { display: flex; gap: 8px; margin-top: 10px; } .topbtns .btn { margin: 0; }
+    .back2 { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; font-weight: 800; color: var(--navy); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="listView">
+      <div class="sum4" id="sum"></div>
+      <div class="srch"><i>🔍</i><input id="q" class="input upper" placeholder="Truck no. / last 4 / brand / chassis" autocomplete="off"></div>
+      <div class="chips" id="fSize"></div>
+      <div class="chips" id="fMore"></div>
+      <div class="hint" id="cnt" style="margin-top:6px"></div>
+      <div id="list"><div class="card muted">Loading…</div></div>
+      <div class="topbtns"><button class="btn light" type="button" id="shareDue">📲 Share expired / due list</button></div>
+    </div>
+    <div id="detView" class="hidden"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Vehicle Compliance', 'गाड़ी के कागज़ात · फिटनेस · टैक्स · इंश्योरेंस · PUC', { sync: () => load(true) });
+  const s0 = JNP.session(); if (!s0 || !s0.token) { JNP.goLogin(); return; }
+  let ROWS = [], CAN = false, TODAY = '', cur = null, editKey = '';
+  const F = { st: 'All', size: 'All', cargo: 'All', own: 'All', act: 'Active' };
+  const DUE = 30;
+  const DOC_HI = { fit: 'फिटनेस', tax: 'टैक्स', ins: 'इंश्योरेंस', puc: 'पीयूसी', np: 'परमिट' };
+
+  // ---------- status of one document
+  const dayDiff = d => Math.round((new Date(d + 'T00:00:00') - new Date(TODAY + 'T00:00:00')) / 864e5);
+  function st(doc) {
+    if (doc.na) return { c: 'na', t: 'Not applicable', s: 'N/A' };
+    if (!doc.date) return { c: 'na', t: 'Not recorded · दर्ज नहीं', s: '—', miss: 1 };
+    const n = dayDiff(doc.date);
+    if (n < 0) return { c: 'bad', t: 'Expired ' + (-n) + ' days ago · खत्म', s: 'Expired', n: n };
+    if (n <= DUE) return { c: 'warn', t: 'Valid · due in ' + n + ' days', s: n + 'd left', n: n };
+    return { c: 'ok', t: 'Valid · ' + n + ' days left · चालू', s: 'Valid', n: n };
+  }
+  const worst = r => { const ss = r.docs.map(st); return ss.some(x => x.c === 'bad') ? 'bad' : ss.some(x => x.c === 'warn') ? 'warn' : 'ok'; };
+  const sizeOf = r => r.cap ? Math.round(r.cap) + 'T' : '?';
+  const dmy = d => d ? JNP.dmy(d) : '—';
+
+  async function load(force) {
+    try {
+      const o = await JNP.call('compList');
+      ROWS = o.rows.sort((a, b) => a.no < b.no ? -1 : 1); CAN = o.canEdit; TODAY = o.today;
+      if (force) JNP.toast('Updated', 'ok');
+      drawFilters(); drawList();
+      if (cur) { cur = ROWS.find(r => r.no === cur.no) || null; if (cur) drawDetail(); }
+    } catch (e) { $('list').innerHTML = '<div class="card err">' + E(e.message) + '</div>'; }
+  }
+  function base() { return ROWS.filter(r => (F.act === 'All' || (F.act === 'Active' ? r['Vehicle Status'] !== 'Inactive' && !/Archived/i.test(r['Compliance Status']) : r['Vehicle Status'] === 'Inactive' || /Archived/i.test(r['Compliance Status'])))); }
+  function filtered() {
+    const q = JNP.keyOf($('q').value);
+    return base().filter(r => (F.size === 'All' || sizeOf(r) === F.size) && (F.cargo === 'All' || String(r['Cargo Type']).toUpperCase() === F.cargo) && (F.own === 'All' || String(r.Ownership).toUpperCase() === F.own) &&
+      (F.st === 'All' || worst(r) === F.st) &&
+      (!q || r.no.indexOf(q) >= 0 || JNP.keyOf(r['Truck Brand']).indexOf(q) >= 0 || JNP.keyOf(r['Chassis No']).indexOf(q) >= 0 || JNP.keyOf(r['Engine No']).indexOf(q) >= 0));
+  }
+  function drawFilters() {
+    const b = base(), n = k => b.filter(r => worst(r) === k).length;
+    $('sum').innerHTML = [['All', b.length, 'Trucks · कुल', 'var(--navy)'], ['ok', n('ok'), 'All valid', 'var(--ok)'], ['warn', n('warn'), 'Due ≤30 d', '#D48A00'], ['bad', n('bad'), 'Expired', 'var(--red)']]
+      .map(x => '<button type="button" data-st="' + x[0] + '" class="' + (F.st === x[0] ? 'on' : '') + '"><b style="color:' + x[3] + '">' + x[1] + '</b><span>' + x[2] + '</span></button>').join('');
+    const sizes = ['All'].concat([...new Set(b.map(sizeOf))].sort((p, q) => parseInt(p) - parseInt(q)));
+    $('fSize').innerHTML = sizes.map(z => '<button type="button" data-size="' + z + '" class="' + (F.size === z ? 'on' : '') + '">' + (z === 'All' ? 'All sizes' : z) + '</button>').join('');
+    $('fMore').innerHTML = [['cargo', 'BULK', 'Bulk'], ['cargo', 'BAG', 'Bag'], ['own', 'OWN', 'Own'], ['own', 'MARKET', 'Market'], ['act', 'Inactive', 'Inactive / archived']]
+      .map(([k, v, l]) => '<button type="button" data-k="' + k + '" data-v="' + v + '" class="' + (F[k] === v ? 'on' : '') + '">' + l + '</button>').join('');
+  }
+  function drawList() {
+    const rs = filtered().sort((a, b) => ({ bad: 0, warn: 1, ok: 2 }[worst(a)] - { bad: 0, warn: 1, ok: 2 }[worst(b)]) || (a.no < b.no ? -1 : 1));
+    $('cnt').textContent = rs.length + ' trucks';
+    $('list').innerHTML = rs.length ? rs.map(r => { const w = worst(r);
+      return '<div class="vc ' + w + (r['Vehicle Status'] === 'Inactive' ? ' off' : '') + '" data-no="' + E(r.no) + '"><div class="t"><b>' + E(r.no) + '</b><small>' + E([sizeOf(r), r['Cargo Type'], r.Ownership, r['Truck Brand']].filter(Boolean).join(' · ')) + '</small></div>' +
+        '<div class="db">' + r.docs.map(d => { const x = st(d); return '<span class="s-' + x.c + '">' + E(d.label.replace('National permit', 'Permit').replace('Road tax', 'Tax')) + ' · ' + E(x.s) + '</span>'; }).join('') + '</div></div>'; }).join('')
+      : '<div class="card muted">No truck matches.</div>';
+  }
+  $('q').addEventListener('input', drawList);
+  $('sum').onclick = e => { const b = e.target.closest('button'); if (!b) return; F.st = F.st === b.dataset.st ? 'All' : b.dataset.st; drawFilters(); drawList(); };
+  $('fSize').onclick = e => { const b = e.target.closest('button'); if (!b) return; F.size = b.dataset.size; drawFilters(); drawList(); };
+  $('fMore').onclick = e => { const b = e.target.closest('button'); if (!b) return; const k = b.dataset.k, v = b.dataset.v;
+    if (k === 'act') F.act = F.act === 'Inactive' ? 'Active' : 'Inactive'; else F[k] = F[k] === v ? 'All' : v; drawFilters(); drawList(); };
+  $('list').onclick = e => { const c = e.target.closest('.vc'); if (!c) return; cur = ROWS.find(r => r.no === c.dataset.no); editKey = ''; drawDetail(); window.scrollTo(0, 0); };
+
+  // ---------- detail
+  function copyBtn(v) { return v ? '<button type="button" class="ib cp" data-copy="' + E(v) + '">⧉ Copy</button>' : ''; }
+  function editBtn(k) { return CAN ? '<button type="button" class="ib" data-edit="' + E(k) + '">✎ Edit</button>' : ''; }
+  function fieldRow(k, label, val, extra) {
+    return '<div class="fr"><div class="k"><small>' + label + '</small><b>' + (val === '' || val === undefined || val === null ? '<span class="muted">—</span>' : E(val)) + '</b></div>' + (extra || '') + '</div>' + (editKey === k ? editor(k) : '');
+  }
+  function docRow(d) {
+    const x = st(d);
+    return '<div class="fr"><div class="k"><small>' + E(d.label) + ' · ' + DOC_HI[d.k] + '</small><b>' + (d.na ? 'N/A' : dmy(d.date)) + '</b></div>' +
+      '<span class="st s-' + x.c + '">' + E(x.t.split(' · ')[0]) + '</span>' + (d.photo ? '<a href="' + E(d.photo) + '" target="_blank" rel="noopener"><img src="' + E(JNP.driveThumb(d.photo)) + '" alt=""></a>' : '') + editBtn(d.col) + '</div>' +
+      (x.c === 'warn' ? '<div class="hint" style="margin:-4px 0 6px">' + E(x.t) + '</div>' : '') + (editKey === d.col ? editor(d.col, d) : '');
+  }
+  const SEL = { 'Hypothecated': ['YES', 'NO'], 'Vehicle Status': ['Active', 'Inactive'], 'Cargo Type': ['BULK', 'BAG'], 'Ownership': ['OWN', 'MARKET'] };
+  function editor(k, d) {
+    const r = cur, isDate = /Valid Up To|Registration Date/.test(k), v = d ? (d.date || '') : isDate ? r[k] : r[k];
+    let inp;
+    if (isDate) inp = '<input class="input" type="date" id="edV" value="' + E(v || '') + '">' + (d ? '<label class="na"><input type="checkbox" id="edNA"' + (d.na ? ' checked' : '') + '> Not applicable for this truck</label>' : '') + '<div class="hint2" id="edS"></div>';
+    else if (SEL[k]) inp = '<div class="seg small" id="edSeg">' + SEL[k].map(o => '<button type="button" data-v="' + o + '" class="' + (String(v).toUpperCase() === o.toUpperCase() ? 'on' : '') + '">' + o + '</button>').join('') + '</div><input type="hidden" id="edV" value="' + E(v || '') + '">';
+    else inp = '<input class="input' + (/No$/.test(k) ? ' upper' : '') + '" id="edV" value="' + E(v === undefined ? '' : v) + '"' + (/Tyres|Capacity/.test(k) ? ' inputmode="numeric"' : '') + '>';
+    const ph = d ? d.photoCol : k === 'Registration Date' ? 'RC_Photo_URL' : '';
+    return '<div class="ed">' + inp + (ph ? '<div class="row"><label class="photo-add"><input type="file" accept="image/*" capture="environment" hidden data-ph="' + ph + '">📷 Camera</label><label class="photo-add"><input type="file" accept="image/*" hidden data-ph="' + ph + '">🖼️ Upload</label><span class="hint" id="edP">' + (ph ? 'Document photo (optional)' : '') + '</span></div>' : '') +
+      '<div class="err hidden" id="edErr"></div><div class="row"><button type="button" class="btn green" id="edSave" style="flex:1;margin:0">Save · सेव</button><button type="button" class="btn light" id="edCancel" style="flex:none;width:auto;margin:0;padding:12px 16px">Cancel</button></div></div>';
+  }
+  function drawDetail() {
+    const r = cur; if (!r) return;
+    $('listView').classList.add('hidden'); $('detView').classList.remove('hidden');
+    const w = worst(r), bad = r.docs.filter(d => st(d).c === 'bad').map(d => d.label), warn = r.docs.filter(d => st(d).c === 'warn').map(d => d.label);
+    $('detView').innerHTML = '<div style="margin-top:12px"><button type="button" class="back2" id="back">‹ All trucks</button></div>' +
+      '<div class="card det"><h3 class="cardh"><span>' + E(r.no) + ' <small>' + E([sizeOf(r), r['Cargo Type'], r.Ownership].filter(Boolean).join(' · ')) + '</small></span>' + copyBtn(r.no) + '</h3>' +
+      '<div class="' + (w === 'bad' ? 'err' : w === 'warn' ? 'warnline' : 'okline') + '" style="display:block">' + (w === 'bad' ? '⚠️ Expired: ' + E(bad.join(', ')) : w === 'warn' ? '⏳ Due soon: ' + E(warn.join(', ')) : '✅ All documents valid · सब कागज़ चालू') + '</div>' +
+      '<div class="grp">Documents · कागज़ात</div>' + r.docs.map(docRow).join('') +
+      '<div class="grp">Registration · रजिस्ट्रेशन</div>' +
+      fieldRow('Registering Authority', 'Registration station (RTO)', r['Registering Authority'], '<span class="lock" title="Cannot be changed">🔒</span>') +
+      fieldRow('Registration Date', 'Registration date', dmy(r['Registration Date']), (r.RC_Photo_URL ? '<a href="' + E(r.RC_Photo_URL) + '" target="_blank" rel="noopener"><img src="' + E(JNP.driveThumb(r.RC_Photo_URL)) + '" alt=""></a>' : '') + editBtn('Registration Date')) +
+      fieldRow('_age', 'Truck age', r.age !== '' ? r.age + ' years' : '') +
+      fieldRow('Hypothecated', 'Hypothecation (loan)', r.Hypothecated, editBtn('Hypothecated')) +
+      fieldRow('Vehicle Status', 'Vehicle status', r['Vehicle Status'], editBtn('Vehicle Status')) +
+      fieldRow('Vehicle Class', 'Vehicle class', r['Vehicle Class'], editBtn('Vehicle Class')) +
+      fieldRow('Emission Norm', 'Emission norm', r['Emission Norm'], editBtn('Emission Norm')) +
+      '<div class="grp">Identity · पहचान</div>' +
+      fieldRow('Chassis No', 'Chassis number', r['Chassis No'], copyBtn(r['Chassis No']) + editBtn('Chassis No')) +
+      fieldRow('Engine No', 'Engine number', r['Engine No'], copyBtn(r['Engine No']) + editBtn('Engine No')) +
+      '<div class="grp">Truck · गाड़ी</div>' +
+      fieldRow('Truck Brand', 'Brand', r['Truck Brand'], editBtn('Truck Brand')) +
+      fieldRow('Capacity (Tons)', 'Capacity (tons)', r['Capacity (Tons)'], editBtn('Capacity (Tons)')) +
+      fieldRow('Tyres', 'Tyres', r.Tyres, editBtn('Tyres')) +
+      fieldRow('Cargo Type', 'Cargo type', r['Cargo Type'], editBtn('Cargo Type')) +
+      fieldRow('Body Type', 'Body type', r['Body Type'], editBtn('Body Type')) +
+      fieldRow('Ownership', 'Ownership', r.Ownership, editBtn('Ownership')) +
+      fieldRow('_drv', 'Current driver', r.Current_Driver) +
+      (r.Compliance_Updated_By ? '<div class="hint" style="margin-top:10px">Last changed by ' + E(r.Compliance_Updated_By) + ' · ' + E(JNP.dmy(r.Compliance_Updated_At)) + '</div>' : '') +
+      (CAN ? '' : '<div class="hint" style="margin-top:10px">Only MD / Directors / HO can change details. Ask HO if something is wrong.</div>') +
+      '<div class="topbtns"><button type="button" class="btn green" id="shareOne">📲 Share on WhatsApp</button></div></div>';
+    wireEditor();
+  }
+  let upPhoto = null;
+  function wireEditor() {
+    const v = $('edV'); upPhoto = null; if (!v) return;
+    const showSt = () => { const s = $('edS'); if (!s) return; const na = $('edNA') && $('edNA').checked; if (na) { s.innerHTML = '<span class="muted">Not applicable</span>'; return; }
+      if (!v.value) { s.textContent = ''; return; } const n = dayDiff(v.value); s.innerHTML = /Registration/.test(editKey) ? '' : n < 0 ? '<span style="color:var(--red)">Expired · ' + (-n) + ' days ago</span>' : '<span style="color:var(--ok)">Valid · ' + n + ' days left</span>'; };
+    v.addEventListener('input', showSt); v.addEventListener('change', showSt); if ($('edNA')) $('edNA').onchange = () => { v.disabled = $('edNA').checked; showSt(); }; if ($('edNA') && $('edNA').checked) v.disabled = true; showSt();
+    const seg = $('edSeg'); if (seg) seg.onclick = e => { const b = e.target.closest('button'); if (!b) return; seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); v.value = b.dataset.v; };
+    v.focus && v.type !== 'hidden' && v.focus();
+  }
+  $('detView').addEventListener('click', async e => {
+    const t = e.target;
+    if (t.closest('#back')) { cur = null; editKey = ''; $('detView').classList.add('hidden'); $('listView').classList.remove('hidden'); drawFilters(); drawList(); return; }
+    const cp = t.closest('[data-copy]'); if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); JNP.toast('Copied: ' + cp.dataset.copy, 'ok'); } catch (x) { prompt('Copy:', cp.dataset.copy); } return; }
+    const ed = t.closest('[data-edit]'); if (ed) { editKey = editKey === ed.dataset.edit ? '' : ed.dataset.edit; drawDetail(); return; }
+    if (t.closest('#edCancel')) { editKey = ''; drawDetail(); return; }
+    if (t.closest('#shareOne')) { JNP.whatsapp(oneText(cur)); return; }
+    if (t.closest('#edSave')) {
+      const btn = $('edSave'), ch = {}, na = $('edNA') && $('edNA').checked, val = $('edV').value.trim();
+      ch[editKey] = na ? 'NA' : val;
+      const d = cur.docs.find(x => x.col === editKey); const phCol = d ? d.photoCol : editKey === 'Registration Date' ? 'RC_Photo_URL' : '';
+      if (upPhoto && phCol) ch[phCol] = upPhoto;
+      await JNP.submit(btn, $('edErr'), async () => {
+        const out = await JNP.call('compUpdate', { truck: cur.no, changes: ch });
+        const i = ROWS.findIndex(r => r.no === cur.no); ROWS[i] = out.record; cur = out.record; editKey = '';
+        JNP.toast(out.changed ? 'Saved · सेव हो गया ✓' : 'No change', 'ok'); drawDetail();
+      });
+    }
+  });
+  $('detView').addEventListener('change', async e => {
+    const inp = e.target; if (!inp.dataset || !inp.dataset.ph || !inp.files[0]) return;
+    $('edP').textContent = 'Uploading… · फोटो जा रहा है';
+    try { const up = await JNP.uploadPhoto(inp.files[0], 'COMPLIANCE', cur.no + '_' + inp.dataset.ph); upPhoto = up.url; $('edP').innerHTML = '<span class="okline">Photo added ✓</span>'; }
+    catch (x) { $('edP').innerHTML = '<span class="err">' + E(x.message) + '</span>'; }
+  });
+
+  // ---------- WhatsApp
+  function oneText(r) {
+    return JNP.waText('🚛 ' + r.no + ' · documents', r.docs.map(d => [d.label, (d.na ? 'N/A' : dmy(d.date)) + ' – ' + st(d).t.split(' · ')[0]]).concat([['Reg. date', dmy(r['Registration Date']) + (r.age !== '' ? ' (' + r.age + ' yrs)' : '')], ['Hypothecated', r.Hypothecated], ['Chassis', r['Chassis No']], ['Engine', r['Engine No']]]));
+  }
+  $('shareDue').onclick = () => {
+    const rs = base().filter(r => worst(r) !== 'ok').sort((a, b) => ({ bad: 0, warn: 1 }[worst(a)] - { bad: 0, warn: 1 }[worst(b)]));
+    if (!rs.length) { JNP.toast('All documents are valid ✓', 'ok'); return; }
+    const lines = rs.map((r, i) => (i + 1) + '. ' + r.no + ' (' + sizeOf(r) + ') – ' + r.docs.filter(d => st(d).c === 'bad' || st(d).c === 'warn').map(d => (st(d).c === 'bad' ? '❌ ' : '⏳ ') + d.label + ' ' + dmy(d.date)).join(', '));
+    JNP.whatsapp('*JNP · Vehicle documents expired / due in ' + DUE + ' days*\nAs on ' + JNP.dmy(TODAY) + '\n————————\n' + lines.join('\n') + '\n— ' + JNP.session().user.name);
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

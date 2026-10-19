@@ -136,9 +136,11 @@
     const cfg = JNP.M().settings || {}, lst = k => String(cfg[k] || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
     const meK = [u.role, u.name, u.mobile].map(x => String(x || '').toUpperCase()), hit = l => l.some(x => meK.indexOf(x) >= 0 || x.replace(/\D/g, '').slice(-10) === u.mobile);
     const dashOk = (lst('Dashboard_Roles').length ? hit(lst('Dashboard_Roles')) : u.level === 'Level 1') || hit(lst('Dashboard_Ops_Roles'));
-    if (gen.length || dashOk) {
+    const compTile = '<a class="tile" style="--accent:var(--navy)" href="' + JNP.CONFIG.HUB + 'compliance/"><span class="ic">📑</span><span class="en">Vehicle Compliance</span><span class="hi">गाड़ी के कागज़ात</span><span class="tag"></span></a>';   // everyone
+    if (true) {
       html += '<div class="section"><h2 style="color:var(--navy)"><span class="dot" style="background:var(--navy)"></span>General <small>सामान्य</small></h2><div class="tiles">' +
         gen.map(cd => tileHtml(cd, 'var(--gen)', cd === 'APR-01' ? (c.toApprove || 0) + (c.toPay || 0) : 0)).join('') +
+        compTile +
         (dashOk ? '<a class="tile" style="--accent:var(--orange)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span><span class="en">Dashboard</span><span class="hi">डैशबोर्ड</span></a>' : '') +
         '</div></div>';
     }
