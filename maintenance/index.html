@@ -37,7 +37,7 @@
   const F = JNP.form($('fields'), [
     { k: 'Truck_No', label: 'Truck', hi: 'गाड़ी', type: 'truck', req: true, allowNew: false },
     { k: 'Odometer_KM', label: 'Odometer KM', type: 'num', req: true, half: true },
-    { k: 'Record_Type', label: 'Type', type: 'select', options: ['Preventive (PM)', 'Repair', 'Breakdown Repair', 'Accident Repair', 'Inspection'], req: true, half: true },
+    { k: 'Record_Type', label: 'Type', type: 'select', options: [{ v: 'Preventive (PM)', t: 'Service · सर्विस' }, { v: 'Repair', t: 'Repair · रिपेयर' }, { v: 'Accident Repair', t: 'Accident repair · दुर्घटना' }], req: true, half: true },
     { k: 'pm', type: 'html', html: '' },
     { k: 'Fault_Code', label: 'Fault', hi: 'खराबी', type: 'fault', allowNew: false, show: v => !isPM(v) },
     { k: 'Breakdown_ID', label: 'Linked breakdown', type: 'select', options: () => openBd.map(b => ({ v: b.Record_ID, t: b.Symptom + ' (' + b.Breakdown_Status + ')' })), show: () => openBd.length > 0 },

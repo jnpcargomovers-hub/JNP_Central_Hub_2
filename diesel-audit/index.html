@@ -59,8 +59,7 @@
     F = JNP.form($('fields'), [
       { k: 'Finding', label: 'Finding', type: 'textarea', req: true, ph: 'e.g. KM entries missing, possible pilferage, engine issue' },
       { k: 'Action', label: 'Action', type: 'select', options: ['No action', 'Warn driver', 'Debit driver', 'Send truck to R&M', 'Correct KM entries'], req: true },
-      { k: 'Debit_Driver', label: 'Debit driver?', type: 'seg', options: ['No', 'Yes'], value: 'No' },
-      { k: 'Debit_Amount', label: 'Debit amount ₹', type: 'num', value: cur.Variance_Value > 0 ? cur.Variance_Value : '', req: v => v.Debit_Driver === 'Yes', show: v => v.Debit_Driver === 'Yes', hint: 'Goes to ' + (cur.Main_Driver || 'driver') + "'s ledger" },
+      { k: 'Debit_Amount', label: 'Debit amount ₹', type: 'num', value: cur.Variance_Value > 0 ? cur.Variance_Value : '', req: v => v.Action === 'Debit driver', show: v => v.Action === 'Debit driver', hint: 'Goes to ' + (cur.Main_Driver || 'driver') + "'s ledger" },
     ], { module: CODE });
     $('f').classList.remove('hidden'); $('f').scrollIntoView({ behavior: 'smooth' });
   };
@@ -68,7 +67,7 @@
     e.preventDefault();
     JNP.submit($('saveBtn'), $('err'), async () => {
       const bad = F.check(); if (bad) throw new Error(bad);
-      const out = await JNP.call('save', { module: CODE, clientReqId: JNP.uid(), data: Object.assign({ Month: cur.Month, Truck_No: cur.Truck_No }, F.values()) });
+      const out = await JNP.call('save', { module: CODE, clientReqId: JNP.uid(), data: Object.assign({ Month: cur.Month, Truck_No: cur.Truck_No }, F.values(), { Debit_Driver: F.val('Action') === 'Debit driver' ? 'Yes' : 'No' }) });
       const r = out.record;
       const msg = JNP.waText('⛽ DIESEL AUDIT · ' + r.Truck_No + ' · ' + r.Month, [['KM run', r.KM_Run], ['Diesel', r.Diesel_Ltr + ' L'], ['Actual', r.Actual_KMPL + ' km/L'], ['Own average', r.Standard_KMPL],
         ['Excess', r.Variance_Ltr !== '' ? r.Variance_Ltr + ' L (' + JNP.inr(r.Variance_Value) + ')' : ''], ['Finding', r.Finding], ['Action', r.Action], ['Driver debit', r.Debit_Driver === 'Yes' ? JNP.inr(r.Debit_Amount) + ' · ' + cur.Main_Driver : '']]);

@@ -25,7 +25,7 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    nextLR: 'ops', lookupLR: 'ops', board: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
@@ -40,6 +40,7 @@
 
   // ---- 2. SCREENS — tile icon + folder for every module code -------------------
   const MODULES = {
+    'OPS-07': { icon: '📍', path: 'truck-status/' },
     'OPS-01': { icon: '🚚', path: 'loader/' },
     'OPS-03': { icon: '🧾', path: 'builty/' },
     'OPS-02': { icon: '📦', path: 'delivery/' },
@@ -114,7 +115,7 @@
   function can(code, r) { return rights(code).indexOf(r) >= 0; }
   async function refreshMe() {
     const me = await api('me'); const s = session();
-    if (me.ok && s) { s.user = me.user; s.access = me.access; s.counts = me.counts; store.set(S_KEY, s); }
+    if (me.ok && s) { s.user = me.user; s.access = me.access; s.counts = me.counts; s.meAt = Date.now(); store.set(S_KEY, s); }
     return me;
   }
   /** Top of every screen. codes = one code or a list (screen opens if any is allowed). */
@@ -122,7 +123,10 @@
     codes = [].concat(codes);
     const s = session();
     if (!s || !s.token) { goLogin(); return new Promise(() => { }); }
-    try { await refreshMe(); } catch (e) { toast('Offline — using saved access', 'warn'); }
+    // Access checked in the last 10 min → open the screen at once and re-check quietly in the background.
+    // (The server still checks rights on every save, so nothing is skipped.)
+    if (s.meAt && Date.now() - s.meAt < 10 * 60 * 1000 && codes.some(c => rights(c).length)) refreshMe().catch(() => { });
+    else { try { await refreshMe(); } catch (e) { toast('Offline — using saved access', 'warn'); } }
     const ok = codes.filter(c => rights(c).length);
     if (!ok.length) { alert('You do not have access to this screen.'); location.href = CONFIG.HUB; return new Promise(() => { }); }
     const u = session().user;
@@ -494,6 +498,63 @@
   function nowText() { const d = new Date(), p = n => String(n).padStart(2, '0'); return p(d.getDate()) + '-' + p(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
   function normTruck(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function inr(n) { if (n === '' || n === null || n === undefined || isNaN(Number(n))) return ''; return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+  // ---- TRUCK JOURNEY (shared by Truck Status board and Dashboard) --------------
+  const STAGES = [
+    { k: 'WAIT_ORDER', icon: '🅿️', en: 'Waiting for order', hi: 'ऑर्डर का इंतज़ार', wa: 'WAIT FOR ORDER', c: '#64748B' },
+    { k: 'WAIT_LOADER', icon: '⏳', en: 'Order given · waiting for loader', hi: 'लोडिंग का इंतज़ार', wa: 'ORDER GIVEN · WAIT FOR LOADER', c: '#B45309', next: 'LOADED' },
+    { k: 'LOADED', icon: '🚚', en: 'Loaded, on the way', hi: 'माल भरा, रास्ते में', wa: 'LOADED · ON THE WAY', c: '#1D4ED8', next: 'UNLOADING' },
+    { k: 'UNLOADING', icon: '📍', en: 'At party, unloading', hi: 'पार्टी पर, खाली हो रही', wa: 'AT PARTY · UNLOADING', c: '#7C3AED', next: 'RETURNING' },
+    { k: 'RETURNING', icon: '↩️', en: 'Returning', hi: 'वापसी', wa: 'RETURNING', c: '#0F766E', next: 'DONE' },
+    { k: 'OFF', icon: '🔧', en: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
+    { k: 'UNSET', icon: '❓', en: 'Status not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
+  ];
+  const NEXT_BTN = { LOADED: '✅ Loaded · माल भर गया', UNLOADING: '📍 Reached party · पार्टी पर पहुँचा', RETURNING: '✅ Unloaded · खाली हो गया', DONE: '🏠 Reached depot · डिपो पहुँचा' };
+  const stageOf = k => STAGES.find(x => x.k === k) || STAGES[0];
+  const tDate = v => { if (!v) return null; const m = String(v).trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:[ T,]+(\d{1,2}):(\d{2}))?/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)); const d = new Date(String(v).trim().replace(' ', 'T')); return isNaN(d) ? null : d; };
+  /** One status per truck. d = { trips, pending, off, locs, now }; list = trucks [{no, capacity|cap, ownership|own}] to show. */
+  function truckStages(d, list) {
+    const now = tDate(d.now) || new Date(), open = {}, done = {}, off = {}, pend = {};
+    (d.trips || []).slice().sort((a, b) => (tDate(a.Order_At) || 0) - (tDate(b.Order_At) || 0)).forEach(t => { if (t.Stage === 'DONE') done[t.Truck_No] = t; else open[t.Truck_No] = t; });
+    (d.off || []).forEach(b => off[b.Truck_No] = b);
+    (d.pending || []).forEach(l => pend[l.Truck_No] = l);
+    const seen = {}, all = [];
+    const add = t => { if (!t || !t.no || seen[t.no]) return; seen[t.no] = 1; all.push(t); };
+    (list || []).forEach(add);
+    Object.keys(open).concat(Object.keys(off), Object.keys(pend)).forEach(no => add({ no: no }));
+    return all.map(t => {
+      const o = off[t.no], tr = open[t.no], p = pend[t.no], loc = (d.locs || {})[t.no], dn = done[t.no];
+      let st, since, place;
+      if (o) { st = 'OFF'; since = o.Created_At; place = (o.Off_Road_Type === 'Driver not available' ? 'No driver' : o.Off_Road_Type || 'Breakdown') + (o.Location ? ' · ' + o.Location : ''); }
+      else if (tr) { st = tr.Stage; since = tr.Stage_At || tr.Order_At; place = tr.Location || tr.Destination; }
+      else if (p) { st = 'UNSET'; since = p.Created_At; place = p.Destination; }
+      else { st = 'WAIT_ORDER'; since = (loc && loc.at) || (dn && dn.Returned_At) || ''; place = (loc && loc.loc) || 'Depot'; }
+      const s0 = tDate(since), h = s0 ? Math.max(0, (now - s0) / 36e5) : NaN;
+      return { no: t.no, cap: Number(t.capacity || t.cap) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
+        trip: tr || null, off: o || null, pend: p || null, place: place || '', dest: (tr && tr.Destination) || (p && p.Destination) || '' };
+    });
+  }
+  const ago = h => isNaN(h) ? '' : h < 1 ? Math.round(h * 60) + ' min' : h < 48 ? Math.round(h) + ' h' : Math.round(h / 24) + ' d';
+  /** WhatsApp text in the same layout the team already sends ("RETURNING VEHICLE STATUS"). */
+  function stageReport(rows, title, escHrs) {
+    const by = {}; rows.forEach(r => (by[r.st] = by[r.st] || []).push(r));
+    const now = new Date(), p2 = n => String(n).padStart(2, '0');
+    let t = '*' + (title || 'TRUCK STATUS') + ' · ' + p2(now.getDate()) + '-' + p2(now.getMonth() + 1) + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes()) + '*\n';
+    STAGES.forEach(s => {
+      const a = (by[s.k] || []).sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return;
+      t += '\n*' + s.wa + ' (' + a.length + ')*\n' + a.map(r => {
+        const id = r.no.slice(-4) + (r.est ? '~' : ''), pl = String(r.place || '').toUpperCase();
+        if (s.k === 'UNLOADING') { const day = Math.floor((r.hrs || 0) / 24) + 1; return id + ' - ' + (r.dest || pl).toUpperCase() + (r.trip && r.trip.Party ? ' · ' + String(r.trip.Party).toUpperCase() : '') + ' · Day-' + day + ((r.hrs || 0) >= (escHrs || 4) ? ' ⚠️' : ''); }
+        if (s.k === 'LOADED' || s.k === 'WAIT_LOADER') return id + ' - ' + (s.k === 'LOADED' ? (r.dest || pl).toUpperCase() : pl) + (isNaN(r.hrs) ? '' : ' · ' + ago(r.hrs));
+        if (s.k === 'RETURNING') return id + ' - ' + (r.dest ? r.dest.toUpperCase() + ' → DEPOT' : pl);
+        if (s.k === 'OFF') return id + ' - ' + pl + (isNaN(r.hrs) ? '' : ' · ' + ago(r.hrs));
+        return id + (pl ? ' - ' + pl : '');
+      }).join('\n') + '\n';
+    });
+    if (rows.some(r => r.est)) t += '\n_~ = estimate (not yet updated on Truck Status board)_';
+    return t.trim();
+  }
+
   function param(k) { return new URLSearchParams(location.search).get(k); }
   function dmy(v) { const s = String(v || ''); const m = s.match(/^(\d{4})-(\d\d)-(\d\d)(.*)$/); return m ? m[3] + '-' + m[2] + '-' + m[1] + m[4] : s; }
 
@@ -501,6 +562,7 @@
     CONFIG, MODULES, TILES, api, call, session, login, logout, goLogin, rights, can, requireModule, refreshMe, masters, M, list,
     findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
+    STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };
 })(window);

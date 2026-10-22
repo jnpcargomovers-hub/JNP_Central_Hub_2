@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Truck Status · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .chips { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 2px; scrollbar-width: none; } .chips::-webkit-scrollbar { display: none; }
+    .chips button { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 12px; font-weight: 700; font-size: 13px; color: var(--char); cursor: pointer; }
+    .chips button b { margin-left: 4px; } .chips button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .alert { display: flex; gap: 10px; align-items: center; border-radius: 12px; padding: 10px 12px; margin-top: 10px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+    .alert.red { background: var(--bad-bg); color: var(--red); } .alert.purple { background: #F3E8FF; color: #7E22CE; }
+    .srch { position: relative; margin-top: 10px; } .srch input { padding-left: 40px; } .srch i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-style: normal; }
+    .lane { margin-top: 16px; } .lane h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 6px; color: var(--c); }
+    .lane h3 .n { background: var(--c); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 12.5px; } .lane h3 small { color: var(--muted); font-weight: 600; }
+    .tr { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 10px 10px 10px 12px; margin-top: 8px; border-left: 5px solid var(--c); }
+    .tr .k { flex: 1; min-width: 0; cursor: pointer; } .tr .k b { font-size: 16px; color: var(--navy); letter-spacing: .3px; } .tr .k b small { font-size: 12px; color: var(--muted); font-weight: 700; margin-left: 4px; }
+    .tr .k div { font-size: 12.5px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tr .k .late { color: var(--red); font-weight: 800; }
+    .tr .go { flex: none; border: 0; border-radius: 10px; padding: 10px 10px; font-weight: 800; font-size: 12.5px; color: #fff; background: var(--c); cursor: pointer; max-width: 46%; line-height: 1.2; text-align: center; text-decoration: none; }
+    .tr .go.red { background: var(--red); } .tr .go.ghost { background: #fff; color: var(--c); border: 1.5px solid var(--c); }
+    .sheet-bg { position: fixed; inset: 0; background: rgba(2, 20, 45, .45); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { background: #fff; width: 100%; max-width: 560px; border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); max-height: 88vh; overflow-y: auto; }
+    .sheet h3 { margin: 0 0 4px; color: var(--navy); } .sheet .sub { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .tl { margin: 10px 0 4px; } .tl div { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid #EEF1F5; font-size: 13.5px; }
+    .tl div span { color: var(--muted); font-weight: 600; } .tl div.skip b { color: #A55A00; }
+    .pick { display: grid; gap: 8px; } .pick button { text-align: left; border: 1.5px solid #CCD5E2; background: #fff; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 14.5px; cursor: pointer; }
+    .pick button.on { border-color: var(--navy); background: #EEF4FF; }
+    .preview { white-space: pre-wrap; background: #F4F7FB; border-radius: 10px; padding: 10px; font-size: 12.5px; margin: 8px 0 12px; max-height: 220px; overflow: auto; }
+    .row2 { display: flex; gap: 8px; } .row2 > * { flex: 1; }
+    .foot { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 14px 0 calc(10px + env(safe-area-inset-bottom)); margin-top: 10px; }
+    @media (min-width: 900px) { .lanes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; } }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="chips" id="chips"></div>
+    <div id="alerts"></div>
+    <div class="srch"><i>🔍</i><input id="q" class="input upper" placeholder="Truck no. or last 4 · गाड़ी नंबर" autocomplete="off" inputmode="text"></div>
+    <div id="lanes" class="lanes"><div class="card muted">Loading…</div></div>
+    <div class="hint" id="upd" style="margin-top:10px"></div>
+    <div class="foot"><button class="btn green" type="button" id="share">📲 Share truck status on WhatsApp · भेजें</button></div>
+  </div>
+  <div id="sheet"></div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Truck Status', 'गाड़ी स्थिति', { sync: () => load(true) });
+  const ctx = await JNP.requireModule(['OPS-07', 'DASH-02', 'DASH-03']);
+  let DATA = null, ROWS = [], filt = JNP.param('stage') || 'All', M = null;
+  const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
+  const lane = k => JNP.stageOf(k);
+  const LANE_ORDER = ['UNSET', 'UNLOADING', 'WAIT_LOADER', 'LOADED', 'RETURNING', 'WAIT_ORDER', 'OFF'];
+
+  async function load(fresh) {
+    try {
+      if (!M || fresh) M = await JNP.masters(!!fresh);
+      DATA = await JNP.call('board', {});
+      ROWS = JNP.truckStages(DATA, (M.trucks || []).filter(own));
+      draw();
+      $('upd').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' · ' + ROWS.length + ' trucks';
+    } catch (e) { $('lanes').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
+  }
+  const lateUnload = r => r.st === 'UNLOADING' && r.hrs >= (DATA.escalateHrs || 4);
+  function draw() {
+    const cnt = {}; ROWS.forEach(r => cnt[r.st] = (cnt[r.st] || 0) + 1);
+    $('chips').innerHTML = '<button type="button" data-f="All" class="' + (filt === 'All' ? 'on' : '') + '">All<b>' + ROWS.length + '</b></button>' +
+      LANE_ORDER.filter(k => cnt[k]).map(k => '<button type="button" data-f="' + k + '" class="' + (filt === k ? 'on' : '') + '">' + lane(k).icon + ' ' + E(lane(k).en.split(' · ')[0]) + '<b>' + cnt[k] + '</b></button>').join('');
+    const late = ROWS.filter(lateUnload), unset = ROWS.filter(r => r.st === 'UNSET');
+    $('alerts').innerHTML = (late.length ? '<div class="alert red" data-f="UNLOADING">⚠️ ' + late.length + ' truck' + (late.length > 1 ? 's' : '') + ' at party over ' + DATA.escalateHrs + ' h — escalate · पार्टी पर ज़्यादा देर</div>' : '') +
+      (unset.length ? '<div class="alert purple" data-f="UNSET">❓ ' + unset.length + ' truck' + (unset.length > 1 ? 's' : '') + ' loaded before — tap to set where they are now · स्थिति डालें</div>' : '');
+    const q = $('q').value.trim().toUpperCase().replace(/\s/g, '');
+    const show = ROWS.filter(r => (filt === 'All' || r.st === filt) && (!q || r.no.indexOf(q) >= 0));
+    $('lanes').innerHTML = LANE_ORDER.map(k => {
+      const a = show.filter(r => r.st === k).sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
+      const L = lane(k);
+      return '<div class="lane" style="--c:' + L.c + '"><h3>' + L.icon + ' ' + E(L.en) + ' <span class="n">' + a.length + '</span> <small>' + L.hi + '</small></h3>' + a.map(rowHtml).join('') + '</div>';
+    }).join('') || '<div class="card muted">No trucks here.</div>';
+  }
+  function rowHtml(r) {
+    const L = lane(r.st), late = lateUnload(r), t = r.trip;
+    const line = r.st === 'UNLOADING' ? (r.dest + (t && t.Party ? ' · ' + t.Party : '') + ' · ' + JNP.ago(r.hrs))
+      : r.st === 'WAIT_ORDER' ? (r.place + (r.since ? ' · ' + JNP.ago(r.hrs) : ''))
+      : r.st === 'OFF' ? r.place + ' · ' + JNP.ago(r.hrs)
+      : (r.st === 'LOADED' ? '→ ' + r.dest : r.st === 'RETURNING' ? r.dest + ' → depot' : r.place) + ' · ' + JNP.ago(r.hrs);
+    let btn = '';
+    if (DATA.canMove) {
+      if (r.st === 'UNSET') btn = '<button type="button" class="go" data-a="set" data-t="' + r.no + '">Set status<br>स्थिति डालें</button>';
+      else if (r.st === 'WAIT_ORDER') btn = '<a class="go ghost" href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 New order<br>लोडर एंट्री</a>';
+      else if (r.st === 'OFF') btn = '<a class="go ghost" href="../breakdown/?tab=resolve&id=' + encodeURIComponent(r.off.Record_ID || '') + '">🔧 Details</a>';
+      else if (late) btn = '<button type="button" class="go red" data-a="esc" data-t="' + r.no + '">⚠️ Escalate<br>शिकायत</button>';
+      else if (L.next) btn = '<button type="button" class="go" data-a="next" data-t="' + r.no + '">' + JNP.NEXT_BTN[L.next].replace(' · ', '<br>') + '</button>';
+    }
+    return '<div class="tr" style="--c:' + L.c + '"><div class="k" data-a="open" data-t="' + r.no + '"><b>' + E(r.no.slice(-4)) + '<small>' + E(r.no.slice(0, -4)) + (r.cap ? ' · ' + r.cap + 'T' : '') + (r.own === 'MARKET' ? ' · Market' : '') + '</small></b>' +
+      '<div class="' + (late ? 'late' : '') + '">' + E(line) + '</div></div>' + btn + '</div>';
+  }
+  $('chips').onclick = e => { const b = e.target.closest('button'); if (!b) return; filt = b.dataset.f; draw(); };
+  $('alerts').onclick = e => { const b = e.target.closest('.alert'); if (!b) return; filt = b.dataset.f; draw(); };
+  $('q').oninput = draw;
+  $('lanes').onclick = e => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const r = ROWS.find(x => x.no === b.dataset.t); if (!r) return;
+    if (b.dataset.a === 'next') stepSheet(r, lane(r.st).next);
+    else if (b.dataset.a === 'esc') escSheet(r);
+    else if (b.dataset.a === 'set') setSheet(r);
+    else if (b.dataset.a === 'open') detail(r);
+  };
+
+  // ---------- bottom sheets
+  function sheet(html) { $('sheet').innerHTML = '<div class="sheet-bg" id="bg"><div class="sheet">' + html + '<button class="btn light" type="button" id="xCancel" style="margin-top:10px">Close · बंद करें</button></div></div>';
+    $('bg').onclick = e => { if (e.target.id === 'bg' || e.target.id === 'xCancel') close(); }; }
+  const close = () => { $('sheet').innerHTML = ''; };
+  const defLoc = (r, to) => to === 'DONE' ? 'Depot' : to === 'UNLOADING' ? r.dest : '';
+  async function move(r, to, loc, note, lr, btn) {
+    btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = 'Saving…';
+    try { await JNP.call('tripMove', { truck: r.no, to: to, location: loc, note: note, lr: lr || '' }); close(); JNP.toast(r.no.slice(-4) + ' → ' + (to === 'DONE' ? 'Waiting for order' : JNP.stageOf(to).en), 'ok'); await load(); }
+    catch (e) { JNP.toast(e.message, 'bad', 5000); btn.disabled = false; btn.innerHTML = old; }
+  }
+  function stepSheet(r, to) {
+    const name = to === 'DONE' ? '🏠 Reached depot · waiting for order' : JNP.stageOf(to).icon + ' ' + JNP.stageOf(to).en;
+    sheet('<h3>' + E(r.no) + '</h3><div class="sub">' + E(name) + '</div>' +
+      '<div class="field"><label>Where is it now? <span class="hi">· कहाँ है (optional)</span></label><input id="sLoc" class="input upper" value="' + E(defLoc(r, to)) + '" placeholder="e.g. DEPO, Songir, Dhule bypass"></div>' +
+      '<div class="field"><label>Note <span class="hi">· टिप्पणी (optional)</span></label><input id="sNote" class="input" placeholder="e.g. driver confirmed on call / gtrophy"></div>' +
+      '<button class="btn green" type="button" id="sGo">' + E(JNP.NEXT_BTN[to]) + '</button>');
+    $('sGo').onclick = () => move(r, to, $('sLoc').value.trim(), $('sNote').value.trim(), '', $('sGo'));
+  }
+  function setSheet(r) {
+    const opts = [['WAIT_LOADER', '⏳ Still waiting for loader'], ['LOADED', '🚚 Loaded, on the way'], ['UNLOADING', '📍 At party, unloading'], ['RETURNING', '↩️ Unloaded, returning'], ['DONE', '🏠 Back at depot · waiting for order']];
+    let sel = '';
+    sheet('<h3>' + E(r.no) + ' · where is it now?</h3><div class="sub">Last order LR ' + E(r.pend.LR_No) + ' → ' + E(r.dest) + ' · ' + JNP.dmy(String(r.pend.Created_At).slice(0, 16)) + '</div>' +
+      '<div class="pick" id="pk">' + opts.map(o => '<button type="button" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' +
+      '<div class="field" style="margin-top:12px"><label>Place <span class="hi">· जगह (optional)</span></label><input id="sLoc" class="input upper" placeholder="e.g. DEPO / Songir"></div>' +
+      '<button class="btn green" type="button" id="sGo" disabled>Save · सेव करें</button>');
+    $('pk').onclick = e => { const b = e.target.closest('button'); if (!b) return; sel = b.dataset.v; $('pk').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); $('sGo').disabled = false; };
+    $('sGo').onclick = () => move(r, sel, $('sLoc').value.trim(), 'Status set on board', r.pend.LR_No, $('sGo'));
+  }
+  function escMsg(r, party, dealer, reason) {
+    const t = r.trip || {}, rd = JNP.tDate(t.Reached_At) || new Date(), p2 = n => String(n).padStart(2, '0');
+    const day = Math.floor((Date.now() - rd) / 864e5) + 1, mt = Number(t.Qty_MT) ? Math.round(Number(t.Qty_MT)) : (r.cap || '');
+    return ['*JNP CARGO MOVERS PVT LTD*', '', '*UNLOADING ISSUE*', '', '*' + r.no + '*- *' + mt + 'MT*', '', ' *Day-' + day + '*', '',
+      ' *DATE:' + p2(rd.getDate()) + '/' + p2(rd.getMonth() + 1) + '/' + String(rd.getFullYear()).slice(2) + '*', '', '*DEST -' + String(r.dest).toUpperCase() + '*', '',
+      '*PARTY- ' + String(party || '').toUpperCase() + '*', '', '*DEALER* *' + String(dealer || '').toUpperCase() + '*', '', '*REASON - ' + reason + '*', '', '*Sir please unloading kara dijiye*'].join('\n');
+  }
+  function escSheet(r) {
+    const t = r.trip || {};
+    sheet('<h3>⚠️ Unloading issue · ' + E(r.no) + '</h3><div class="sub">At ' + E(r.dest) + ' for ' + JNP.ago(r.hrs) + (Number(t.Escalations) ? ' · escalated ' + t.Escalations + '× before' : '') + '</div>' +
+      '<div class="field"><label>Party <span class="hi">· पार्टी</span></label><input id="eP" class="input upper" value="' + E(t.Party || '') + '"></div>' +
+      '<div class="field"><label>Dealer <span class="hi">· डीलर</span></label><input id="eD" class="input upper" value="' + E(t.Dealer || '') + '"></div>' +
+      '<div class="field"><label class="req">Reason <span class="hi">· कारण</span></label><textarea id="eR" class="input" rows="2" placeholder="e.g. सुबह 7 बजे से खड़ी है, एक भी बैग नहीं उतरा">' + E(t.Escalation_Note || '') + '</textarea></div>' +
+      '<div class="preview" id="ePrev"></div>' +
+      '<button class="btn red" type="button" id="eGo">📲 Save & share in UTCL group</button>');
+    const pv = () => $('ePrev').textContent = escMsg(r, $('eP').value, $('eD').value, $('eR').value.trim());
+    ['eP', 'eD', 'eR'].forEach(id => $(id).oninput = pv); pv();
+    $('eGo').onclick = async () => {
+      const b = $('eGo'); b.disabled = true;
+      try {
+        const msg = escMsg(r, $('eP').value, $('eD').value, $('eR').value.trim());
+        await JNP.call('tripEscalate', { id: t.Trip_ID, party: $('eP').value.trim(), dealer: $('eD').value.trim(), reason: $('eR').value.trim() });
+        JNP.whatsapp(msg); close(); load();
+      } catch (e) { JNP.toast(e.message, 'bad', 5000); b.disabled = false; }
+    };
+  }
+  function detail(r) {
+    const t = r.trip, L = lane(r.st), drv = t ? t.Driver_Name : r.pend ? r.pend.Driver_Name : (r.off ? '' : ''), mob = t ? t.Driver_Mobile : r.pend ? r.pend.Driver_Mobile : '';
+    const rowT = (k, v, h) => v ? '<div><span>' + k + '</span><b>' + E(JNP.dmy(String(v).slice(0, 16))) + (h !== '' && h !== undefined && h !== null ? ' · ' + h + ' h' : '') + '</b></div>' : '<div class="skip"><span>' + k + '</span><b>—</b></div>';
+    sheet('<h3>' + L.icon + ' ' + E(r.no) + (r.cap ? ' · ' + r.cap + 'T' : '') + '</h3><div class="sub">' + E(L.en) + ' · ' + E(L.hi) + (isNaN(r.hrs) ? '' : ' · since ' + JNP.ago(r.hrs)) + '</div>' +
+      (t ? '<div class="kv"><span>LR</span><b>' + E(t.LR_No) + '</b><span>Destination</span><b>' + E(t.Destination) + '</b>' + (t.Party ? '<span>Party</span><b>' + E(t.Party) + '</b>' : '') +
+        '<span>Driver</span><b>' + E(drv || '—') + '</b>' + (t.Location ? '<span>Place</span><b>' + E(t.Location) + '</b>' : '') + '</div>' +
+        '<div class="tl">' + rowT('Order · ऑर्डर', t.Order_At) + rowT('Loaded · लोड', t.Loaded_At, t.Wait_Loader_Hrs) + rowT('At party · पार्टी', t.Reached_At, t.Travel_Hrs) + rowT('Unloaded · खाली', t.Unloaded_At, t.Unload_Hrs) + '</div>' +
+        (t.Skipped_Steps ? '<div class="warnline">Skipped: ' + E(t.Skipped_Steps) + '</div>' : '') + (Number(t.Escalations) ? '<div class="hint">Escalated ' + t.Escalations + '× · ' + E(t.Escalation_Note || '') + '</div>' : '')
+        : '<div class="kv"><span>Place</span><b>' + E(r.place || '—') + '</b>' + (r.off ? '<span>Problem</span><b>' + E(r.off.Symptom || '') + '</b>' : '') + '</div>') +
+      '<div class="row2" style="margin-top:12px">' + (mob ? '<a class="btn light" href="tel:' + E(mob) + '">📞 Call driver</a>' : '') +
+        (DATA.canMove && t ? '<button class="btn light" type="button" id="dUndo">↶ Undo last step</button>' : '') + '</div>' +
+      (DATA.canMove && r.st === 'WAIT_ORDER' ? '<button class="btn light" type="button" id="dPlace" style="margin-top:10px">📍 Update place · जगह बदलें</button>' : '') +
+      (DATA.canMove && r.st === 'UNLOADING' ? '<button class="btn red" type="button" id="dEsc" style="margin-top:10px">⚠️ Escalate unloading</button>' : '') +
+      (DATA.canMove && L.next && r.st !== 'UNSET' ? '<button class="btn green" type="button" id="dNext" style="margin-top:10px">' + E(JNP.NEXT_BTN[L.next]) + '</button>' : ''));
+    if ($('dNext')) $('dNext').onclick = () => stepSheet(r, L.next);
+    if ($('dEsc')) $('dEsc').onclick = () => escSheet(r);
+    if ($('dPlace')) $('dPlace').onclick = () => {
+      sheet('<h3>' + E(r.no) + ' · waiting for order</h3><div class="field"><label>Where is it? <span class="hi">· कहाँ खड़ी है</span></label><input id="sLoc" class="input upper" value="' + E(r.place) + '"></div><button class="btn green" type="button" id="sGo">Save · सेव करें</button>');
+      $('sGo').onclick = () => move(r, 'WAIT_ORDER', $('sLoc').value.trim(), '', '', $('sGo'));
+    };
+    if ($('dUndo')) $('dUndo').onclick = async () => {
+      if (!confirm('Undo the last step of ' + r.no + '?')) return;
+      try { await JNP.call('tripUndo', { id: t.Trip_ID }); close(); JNP.toast('Undone', 'ok'); load(); } catch (e) { JNP.toast(e.message, 'bad', 5000); }
+    };
+  }
+  $('share').onclick = () => {
+    const rows = filt === 'All' ? ROWS : ROWS.filter(r => r.st === filt);
+    JNP.whatsapp(JNP.stageReport(rows, 'JNP TRUCK STATUS', DATA && DATA.escalateHrs));
+  };
+  await load();
+  setInterval(() => { if (document.visibilityState === 'visible' && !$('sheet').innerHTML) load(); }, 120000);
+})();
+</script>
+</body>

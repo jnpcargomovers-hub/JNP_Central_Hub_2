@@ -215,7 +215,10 @@
     .prof-h .back { border: 1px solid var(--rule); background: #fff; border-radius: 9px; padding: 6px 10px; font-weight: 700; cursor: pointer; }
     .prof-h b { font-family: 'Barlow Condensed', sans-serif; font-size: 24px; color: #022A5B; }
     .empty2 { padding: 22px 10px; text-align: center; color: #5D6877; font-size: 14px; }
-  </style>
+    .tk.est { border-style: dashed !important; opacity: .85; }
+  .mktline { margin-top: 10px; font-size: 13px; color: #334155; background: #F1F5F9; border-radius: 10px; padding: 8px 10px; }
+  .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; } .row-btns .btn2 { flex: 1 1 180px; text-align: center; text-decoration: none; margin-top: 0; }
+</style>
 </head>
 <body>
   <div id="hdr"></div>
@@ -239,9 +242,8 @@
 <script>
 (async function () {
   const $ = id => document.getElementById(id), E = JNP.esc;
-  JNP.header($('hdr'), 'Dashboard', 'डैशबोर्ड · ऑपरेशन्स + R&M');
-  const ctx = await JNP.requireModule(['OPS-01', 'RM-01', 'RM-02', 'FIN-01', 'FIN-02', 'APR-01']);
-  if (ctx.user.level === 'Level 3') { $('status').textContent = 'Dashboard is for HO and department heads.'; return; }
+  JNP.header($('hdr'), 'Dashboard', 'डैशबोर्ड · ऑपरेशन्स + R&M', { sync: () => load(true) });
+  const ctx = await JNP.requireModule(['DASH-01', 'DASH-02', 'DASH-03', 'DASH-04', 'OPS-01', 'RM-01', 'RM-02', 'FIN-01', 'FIN-02', 'APR-01']);
 
   // ---------- helpers
   const CLASSES = [12, 25, 31, 35, 42];
@@ -284,7 +286,8 @@
   const TABS = [{ id: 'overview', i: '📊', label: 'Overview' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }];
   let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
   if (!TABS.some(t => t.id === tab)) tab = 'overview';
-  const drawNav = () => { $('bnav').innerHTML = TABS.map(t => '<button type="button" data-t="' + t.id + '" class="' + (t.id === tab ? 'on' : '') + '"><i>' + t.i + '</i>' + t.label + '</button>').join(''); };
+  const allowed = () => (RAW && RAW.sections) || TABS.map(t => t.id);
+  const drawNav = () => { $('bnav').innerHTML = TABS.filter(t => allowed().indexOf(t.id) >= 0).map(t => '<button type="button" data-t="' + t.id + '" class="' + (t.id === tab ? 'on' : '') + '"><i>' + t.i + '</i>' + t.label + '</button>').join(''); };
   drawNav();
   $('bnav').onclick = e => { const b = e.target.closest('button'); if (!b) return; if (tab === 'explore' && b.dataset.t === 'explore') prof = null; tab = b.dataset.t; drawNav(); render(); window.scrollTo(0, 0); };
   const goTab = t => { tab = t; drawNav(); render(); window.scrollTo(0, 0); };
@@ -292,9 +295,13 @@
 
   $('view').addEventListener('click', e => { const b = e.target.closest('.shr'); if (b) shareSection(b.dataset.s); });
   // ---------- data
-  async function load() {
+  async function load(fresh) {
     $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
-    try { RAW = await JNP.call('dash', { from: $('from').value, to: $('to').value }); M = model(RAW); render(); }
+    try {
+      RAW = await JNP.call('dash', { from: $('from').value, to: $('to').value, fresh: fresh === true }); M = model(RAW);
+      if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore'].find(x => allowed().indexOf(x) >= 0) || 'explore';
+      drawNav(); render();
+    }
     catch (e) { $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
   }
 
@@ -347,7 +354,10 @@
     all.forEach(x => { if (!truckM[x.truck]) { const g = maxMt[x.truck] ? Number(classOf(maxMt[x.truck]).replace('T', '')) : ''; truckM[x.truck] = { no: x.truck, cap: g, capGuess: !!g, cargo: x.load, status: 'Not in master', missing: true }; R.trucks.push(truckM[x.truck]); } });
     rows(R.breakdowns).forEach(b => { if (b.Truck_No && !truckM[b.Truck_No]) { truckM[b.Truck_No] = { no: b.Truck_No, cap: '', cargo: '', status: 'Not in master', missing: true }; R.trucks.push(truckM[b.Truck_No]); } });
     const openOff = new Set(rows(R.breakdowns).filter(b => !b.Back_On_Road_At).map(b => b.Truck_No));
-    const fleet = R.trucks.filter(t => loadedNow.has(t.no) || openOff.has(t.no) || !/Archived|Sold/i.test(t.status + ' ' + t.compliance));
+    // own fleet = own trucks whose Vehicle Status is not Inactive / NOC issued / sold (still counted if loaded or off road in these dates)
+    const isMkt = t => t.missing || /MARKET|HIRE|ATTACH/i.test(t.own || ''), gone = t => /INACTIVE|NOC|SOLD|SCRAP/i.test(t.vstatus || '') || /Sold/i.test(t.status || '');
+    const fleet = R.trucks.filter(t => !isMkt(t) && (!gone(t) || loadedNow.has(t.no) || openOff.has(t.no)));
+    const market = R.trucks.filter(t => isMkt(t) && (!gone(t) || loadedNow.has(t.no)));
     const bds = rows(R.breakdowns).map(b => {
       const s = D(b.Created_At), e = b.Back_On_Road_At ? D(b.Back_On_Road_At) : now;
       const a = s < from ? from : s, z = e > end ? end : e;
@@ -370,7 +380,7 @@
     const asOf = now, isNow = true, liveEst = Math.abs(now - end) < 864e5;   // off-road board is ALWAYS today, whatever dates are picked
     const OFF_STAT = { 'No Driver': 'Driver not available', 'In Workshop': 'Breakdown', 'Breakdown (On Route)': 'Breakdown', 'Accident / Insurance Hold': 'Accident', 'RTO / Documents Hold': 'Documents / RTO' };
     const status = {};
-    fleet.forEach(t => {
+    fleet.concat(market).forEach(t => {
       const lastL = (byTruck[t.no] || []).filter(x => x.at <= asOf).slice(-1)[0];
       const ob = bds.filter(b => b.Truck_No === t.no && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf) && !(lastL && b.start && lastL.at > b.start)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];   // loaded after it went off road → it is on road
       if (ob) { status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: ob.Symptom, loc: ob.Location, since: ob.start, daysDown: ob.start ? (now - ob.start) / 864e5 : NaN, rec: ob }; return; }
@@ -383,7 +393,18 @@
       else if (el <= R) status[t.no] = { st: 'ret', last: L, R: R, el: el, del: del };
       else status[t.no] = { st: 'wait', last: L, R: R, el: el };
     });
-    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
+    // ---- real stages from the Truck Status board (estimates stay only for trucks nobody has tapped yet)
+    const ST_LANE = { WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', RETURNING: 'ret' };
+    const jr = rows(R.trips).map(j => Object.assign(j, { Truck_No: fixNo(j.Truck_No) })).sort((p, q) => (D(p.Order_At) || 0) - (D(q.Order_At) || 0));
+    const jOpen = {}, jDone = {}; jr.forEach(j => { if (j.Stage === 'DONE') jDone[j.Truck_No] = j; else jOpen[j.Truck_No] = j; });
+    if (liveEst) fleet.concat(market).forEach(t => {
+      const s0 = status[t.no]; if (s0 && s0.st === 'off') return;
+      const o = jOpen[t.no], d = jDone[t.no], lastL = (byTruck[t.no] || []).slice(-1)[0];
+      if (o) status[t.no] = { st: ST_LANE[o.Stage] || 'load', real: 1, trip: o, since: D(o.Stage_At || o.Order_At), place: o.Location, el: hrs(D(o.Stage_At || o.Order_At) || now, now) };
+      else if (d && D(d.Returned_At) && !(lastL && lastL.at > D(d.Returned_At))) status[t.no] = { st: 'wait', real: 1, trip: d, since: D(d.Returned_At), place: 'Depot', el: hrs(D(d.Returned_At), now) };
+    });
+    const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
+    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
   }
 
   // ---------- filtering (load type + class)
@@ -554,35 +575,51 @@
   function fleetStatus() {
     const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
     const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
-    const LANES = [['load', 'Loaded, on the way', 'var(--st-load)'], ['ret', 'Returning empty', 'var(--st-ret)'], ['wait', 'Waiting for load', 'var(--st-wait)'], ['off', 'Off road', 'var(--st-off)']];
-    if (!M.liveEst) return '<div class="sec card muted2">On-road estimates (loaded / returning / waiting) need the To date set to today.</div>';
+    const LANES = [['wl', 'Waiting for loader', '#B45309'], ['load', 'Loaded, on the way', 'var(--st-load)'], ['unl', 'At party, unloading', '#7C3AED'], ['ret', 'Returning', 'var(--st-ret)'], ['wait', 'Waiting for order', 'var(--st-wait)'], ['off', 'Off road', 'var(--st-off)']];
+    if (!M.liveEst) return '<div class="sec card muted2">Truck status (loaded / at party / returning / waiting) needs the To date set to today.</div>';
     const shortWhy = w => w === 'Driver not available' ? 'no driver' : w === 'Documents / RTO' ? 'documents' : String(w || '').toLowerCase();
     const lane = ([k, label, c]) => {
-      const list = g(k).sort((p, q) => (q.cap || 0) - (p.cap || 0));
+      const list = g(k).sort((p, q) => (q.cap || 0) - (p.cap || 0)); if (!list.length && (k === 'wl' || k === 'unl')) return '';
+      const est = list.filter(t => !M.status[t.no].real && k !== 'off').length;
       const why = {}; if (k === 'off') list.forEach(t => { const w = shortWhy(M.status[t.no].why); why[w] = (why[w] || 0) + 1; });
-      return '<div class="lane' + (laneOpen[k] ? '' : ' closed') + '" style="--c:' + c + '"><div class="lane-h" data-l="' + k + '"><b><i>' + list.length + '</i>' + label + (k !== 'off' ? '<span class="est">estimate</span>' : '') + '</b><span>' + fmt(tons(list)) + ' T<span class="tog">' + (laneOpen[k] ? '▾' : '▸') + '</span></span></div>' +
+      return '<div class="lane' + (laneOpen[k] ? '' : ' closed') + '" style="--c:' + c + '"><div class="lane-h" data-l="' + k + '"><b><i>' + list.length + '</i>' + label + (est ? '<span class="est">' + (est === list.length ? 'estimate' : est + ' estimated') + '</span>' : '') + '</b><span>' + fmt(tons(list)) + ' T<span class="tog">' + (laneOpen[k] ? '▾' : '▸') + '</span></span></div>' +
         (k === 'off' && list.length ? '<div class="muted2" style="margin-top:2px">' + Object.keys(why).map(w => w + ' ' + why[w]).join(', ') + '</div>' : '') +
-        '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + '</small></span>').join('') + '</div></div>';
+        '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + (M.status[t.no].real || k === 'off' ? '' : ' est') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + '</small></span>').join('') + '</div></div>';
     };
     let info = '';
     if (tkSel && M.status[tkSel]) {
-      const t = M.truckM[tkSel] || {}, s0 = M.status[tkSel];
+      const t = M.truckM[tkSel] || {}, s0 = M.status[tkSel], j = s0.trip;
       info = '<div class="tkinfo"><b>' + E(tkSel) + '</b> · ' + (t.cap ? t.cap + ' T ' : '') + E(t.cargo || '') + '<br>' +
         (s0.st === 'off' ? E(s0.why + (s0.note ? ' — ' + s0.note : '') + (s0.loc ? ', ' + s0.loc : '') + (s0.since ? ', since ' + JNP.dmy(iso(s0.since)) : ''))
-          : s0.last ? E('Loaded for ' + s0.last.dest + ' on ' + JNP.dmy(iso(s0.last.at)) + ', ' + fmt(s0.el, 0) + ' h ago (usual round trip ' + fmt(s0.R, 0) + ' h). Driver ' + s0.last.driver + (s0.del ? '. Unloaded.' : ''))
+          : s0.real && j && s0.st !== 'wait' ? E((s0.place || j.Destination) + ' · LR ' + j.LR_No + ' → ' + j.Destination + (j.Party ? ' (' + j.Party + ')' : '') + ' · since ' + fmt(s0.el, 0) + ' h · driver ' + (j.Driver_Name || '—') + (Number(j.Escalations) ? ' · escalated ' + j.Escalations + '×' : ''))
+          : s0.real ? E('Back at depot ' + fmt(s0.el, 0) + ' h ago (LR ' + j.LR_No + ' ' + j.Destination + ')')
+          : s0.last ? E('Estimate · loaded for ' + s0.last.dest + ' on ' + JNP.dmy(iso(s0.last.at)) + ', ' + fmt(s0.el, 0) + ' h ago (usual round trip ' + fmt(s0.R, 0) + ' h). Driver ' + s0.last.driver + (s0.del ? '. Unloaded.' : ''))
           : E(s0.note || 'No loading recorded recently')) + '</div>';
     }
-    setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const h = e.target.closest('.lane-h'); if (h) { laneOpen[h.dataset.l] = !laneOpen[h.dataset.l]; render(); return; } const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); }; }, 0);
-    const miss = fl.filter(t => !t.cap);
-    SHARE.fleetNow = { asOn: 1, title: 'Fleet status', fn: fleetText }; 
-    return '<div class="sec card"><div class="fleet-head"><div class="bigno">' + on.length + '<small>of ' + fl.length + ' trucks on road</small></div>' +
+    setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const h = e.target.closest('.lane-h'); if (h) { laneOpen[h.dataset.l] = !laneOpen[h.dataset.l]; render(); return; } const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); };
+      const sb = $('stShare'); if (sb) sb.onclick = () => JNP.whatsapp(JNP.stageReport(boardRows(), 'JNP TRUCK STATUS')); }, 0);
+    const miss = fl.filter(t => !t.cap), mk = M.market.filter(t => keepTruck(t.no)), mka = M.mktActive.filter(t => keepTruck(t.no));
+    const real = fl.filter(t => (M.status[t.no] || {}).real).length;
+    SHARE.fleetNow = { asOn: 1, title: 'Fleet status', fn: fleetText };
+    return '<div class="sec card"><div class="fleet-head"><div class="bigno">' + on.length + '<small>of ' + fl.length + ' own trucks on road</small></div>' +
       '<div style="text-align:right"><div style="font-weight:700;color:#022A5B">' + fmt(tons(on)) + ' of ' + fmt(totT) + ' T on road (' + pct(totT ? tons(on) / totT : NaN) + ')</div><div class="muted2">' + (M.isNow ? 'Right now' : 'On ' + JNP.dmy(RAW.to)) + ' · tap a truck for details</div></div></div>' +
       '<div class="capbar" title="Capacity by state">' + LANES.map(([k, l, c]) => tons(g(k)) ? '<div style="flex:' + tons(g(k)) + ';background:' + c + '" title="' + l + ': ' + fmt(tons(g(k))) + ' T"></div>' : '').join('') + '</div>' +
       '<div class="lanes" id="lanes">' + LANES.map(lane).join('') + '</div>' + info +
+      (mk.length ? '<div class="mktline">🚛 <b>Market trucks:</b> ' + mk.length + ' attached · ' + mka.length + ' on a trip now' + (mka.length ? ' (' + mka.map(t => E(t.no.slice(-4))).join(', ') + ')' : '') + ' — not counted above</div>' : '') +
       (miss.length ? '<div class="note">No capacity in Truck_Master for ' + miss.map(t => E(t.no)).join(', ') + ' — shown as “?” and counted as 0 T.</div>' : '') +
-      '<div class="muted2" style="margin-top:10px">How it is worked out: from each truck’s last loading, using the <b>average round trip</b> (loading → next loading) for that destination and truck size. First half = <b>Loaded</b> (or Returning once unloading is entered), second half = <b>Returning empty</b>, after a full round trip = <b>Waiting for load</b>. A truck loaded after an off-road report is on road — the report closes itself.</div></div>';
+      '<div class="row-btns"><a class="btn2" href="' + JNP.CONFIG.HUB + 'truck-status/">📍 Open Truck Status board</a><button type="button" class="btn2" id="stShare">📲 Share truck status</button></div>' +
+      '<div class="muted2" style="margin-top:10px">' + real + ' of ' + fl.length + ' trucks are from the <b>Truck Status board</b> (what the team tapped). The rest, shown with a dashed border, are <b>estimates</b> from the last loading and the usual round trip for that destination. Own fleet = own trucks with Vehicle Status Active.</div></div>';
   }
-
+  /** Fleet card → same rows the Truck Status board shares (estimates included). */
+  function boardRows() {
+    const LS = { wl: 'WAIT_LOADER', load: 'LOADED', unl: 'UNLOADING', ret: 'RETURNING', wait: 'WAIT_ORDER', off: 'OFF' }, now = new Date();
+    return M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)).map(t => {
+      const s0 = M.status[t.no] || {}, j = s0.trip, L = s0.last;
+      const since = s0.st === 'off' ? s0.since : s0.real ? s0.since : L ? L.at : null;
+      return { no: t.no, st: LS[s0.st] || 'WAIT_ORDER', hrs: since ? hrs(since, now) : NaN, trip: j && s0.st !== 'wait' ? j : null,
+        dest: j && s0.st !== 'wait' ? j.Destination : L ? L.dest : '', est: !s0.real && s0.st !== 'off', place: s0.st === 'off' ? (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.loc ? ' · ' + s0.loc : '') : (s0.place || '') };
+    });
+  }
 
   // ================= EXPLORE: any measure × any split, tap a bar for a profile =================
   const MET = {
@@ -845,7 +882,7 @@
         bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
         '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Trucks</th><th>Trips</th><th>MT</th><th>Rotation</th><th>Utilisation</th></tr>' +
           sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.trucks + '</td><td>' + r.trips + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
-        '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' trucks on road</div>' +
+        '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (M.market.length ? ' · market ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
         '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(lo.days, 0) + ' truck-days lost so far<div>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => '<span>' + g[1] + ' ' + g[2] + ' ' + why[g[0]] + '</span>').join('') + '</div></div>' +
         (lo.rows.length ? '<table class="or-t sm">' + lo.rows.slice(0, 6).map(r => '<tr><td><b>' + E(r.no.slice(-4)) + '</b> ' + E(r.size) + '</td><td>' + E(OFF_GROUPS.find(g => g[0] === r.g)[2]) + '</td><td>' + (r.since ? 'since ' + JNP.dmy(iso(r.since)).slice(0, 5) : '') + '</td><td><b>' + dayTxt(r.days) + '</b></td></tr>').join('') + '</table>' + (lo.rows.length > 6 ? '<div class="or-more">+ ' + (lo.rows.length - 6) + ' more</div>' : '') : '') +
         '<div class="or-f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + JNP.nowText() + '</div>';
@@ -870,8 +907,9 @@
     L.push('*JNP FLEET REPORT · ' + JNP.dmy(iso(new Date())) + '*');
     if (fSize.size || fLoad !== 'All') L.push('Filter: ' + [fSize.size ? sizeLabel() : '', fLoad !== 'All' ? fLoad : ''].filter(Boolean).join(' · '));
     L.push('————————');
-    L.push('🚚 Fleet: ' + fl.length + ' trucks · ' + fmt(tons(fl)) + ' T');
-    L.push('✅ On road: ' + on.length + '  (Loaded ' + n('load') + ' · Returning ' + n('ret') + ' · Waiting ' + n('wait') + ')');
+    L.push('🚚 Own fleet: ' + fl.length + ' trucks · ' + fmt(tons(fl)) + ' T');
+    L.push('✅ On road: ' + on.length + '  (' + [['wl', 'Wait for loader'], ['load', 'Loaded'], ['unl', 'At party'], ['ret', 'Returning'], ['wait', 'Wait for order']].filter(x => n(x[0])).map(x => x[1] + ' ' + n(x[0])).join(' · ') + ')');
+    if (M.market.length) L.push('🚛 Market: ' + M.market.filter(t => keepTruck(t.no)).length + ' attached · ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on a trip');
     const why = {}; off.forEach(t => why[st(t).why] = (why[st(t).why] || 0) + 1);
     L.push('⚠️ Off road: ' + off.length + (off.length ? '  (' + Object.keys(why).map(k => k + ' ' + why[k]).join(' · ') + ')' : ''));
     if (off.length) {
@@ -1042,7 +1080,7 @@
       (rows.length ? '<button type="button" class="shr btn2" data-s="offAll" style="color:#12804A;background:#E8F6EE">📲 Share full off-road list</button>' : '<div class="okline" style="margin-top:10px">All trucks on road ✓</div>') + '</div>' +
       OFF_GROUPS.map(card).join('');
   }
-  function fleetTab() { return offRoadGroups() + fleetStatus() + fleet(); }
+  function fleetTab() { return fleetStatus() + offRoadGroups() + fleet(); }
 
   function fleet() {
     const keep = x => keepTruck(x.Truck_No), bdsAll = M.bds.filter(keep), bds = bdsAll.filter(b => b.rm), mnt = M.mnt.filter(keep), tex = M.tex.filter(keep), tyr = M.tyr.filter(keep), fl = M.fleet.filter(t => keepTruck(t.no));

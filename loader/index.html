@@ -214,6 +214,9 @@
     onTruck(); onDriver(); onDest();
   })();
   $('f').addEventListener('input', saveDraft);
+  if (JNP.param('truck') && JNP.normTruck(JNP.param('truck')) !== JNP.normTruck($('truck').value)) {   // opened from Truck Status board
+    fields.forEach(f => $(f).value = ''); $('truck').value = JNP.normTruck(JNP.param('truck')); onTruck(); onDriver(); onDest();
+  }
   await fetchLR();
 
   // ---------- save (same checks as the original Loader app)
