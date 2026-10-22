@@ -243,7 +243,7 @@
 (async function () {
   const $ = id => document.getElementById(id), E = JNP.esc;
   JNP.header($('hdr'), 'Dashboard', 'डैशबोर्ड · ऑपरेशन्स + R&M', { sync: () => load(true) });
-  const ctx = await JNP.requireModule(['DASH-01', 'DASH-02', 'DASH-03', 'DASH-04', 'OPS-01', 'RM-01', 'RM-02', 'FIN-01', 'FIN-02', 'APR-01']);
+  const ctx = await JNP.requireModule(['DASH-01', 'DASH-02', 'DASH-03', 'DASH-04', 'DASH-05', 'OPS-01', 'RM-01', 'RM-02', 'FIN-01', 'FIN-02', 'APR-01']);
 
   // ---------- helpers
   const CLASSES = [12, 25, 31, 35, 42];
@@ -283,7 +283,7 @@
   ['change', 'input', 'blur'].forEach(ev => { $('from').addEventListener(ev, onDate); $('to').addEventListener(ev, onDate); });
   $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
 
-  const TABS = [{ id: 'overview', i: '📊', label: 'Overview' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }];
+  const TABS = [{ id: 'finance', i: '💰', label: 'Financial' }, { id: 'overview', i: '📊', label: 'Operations' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }];
   let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
   if (!TABS.some(t => t.id === tab)) tab = 'overview';
   const allowed = () => (RAW && RAW.sections) || TABS.map(t => t.id);
@@ -299,7 +299,7 @@
     $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
     try {
       RAW = await JNP.call('dash', { from: $('from').value, to: $('to').value, fresh: fresh === true }); M = model(RAW);
-      if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore'].find(x => allowed().indexOf(x) >= 0) || 'explore';
+      if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore', 'finance'].find(x => allowed().indexOf(x) >= 0) || 'explore';
       drawNav(); render();
     }
     catch (e) { $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
@@ -542,7 +542,7 @@
     $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
     const T = M.trips.filter(keepT);
     SHARE = {}; SHN = 0;
-    const fn = { overview, explore, trips: tripsView, fleet: fleetTab }[tab] || overview;
+    const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab }[tab] || overview;
     $('view').innerHTML = fn(T);
   }
 
@@ -575,7 +575,7 @@
   function fleetStatus() {
     const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
     const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
-    const LANES = [['wl', 'Waiting for loader', '#B45309'], ['load', 'Loaded, on the way', 'var(--st-load)'], ['unl', 'At party, unloading', '#7C3AED'], ['ret', 'Returning', 'var(--st-ret)'], ['wait', 'Waiting for order', 'var(--st-wait)'], ['off', 'Off road', 'var(--st-off)']];
+    const LANES = [['wait', 'At depot – waiting for order', 'var(--st-wait)'], ['wl', 'At depot – waiting for loader', '#B45309'], ['load', 'Loaded – to destination', 'var(--st-load)'], ['unl', 'At party – unloading / waiting', '#7C3AED'], ['ret', 'Unloaded – returning', 'var(--st-ret)'], ['off', 'Off road', 'var(--st-off)']];
     if (!M.liveEst) return '<div class="sec card muted2">Truck status (loaded / at party / returning / waiting) needs the To date set to today.</div>';
     const shortWhy = w => w === 'Driver not available' ? 'no driver' : w === 'Documents / RTO' ? 'documents' : String(w || '').toLowerCase();
     const lane = ([k, label, c]) => {
@@ -597,7 +597,7 @@
           : E(s0.note || 'No loading recorded recently')) + '</div>';
     }
     setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const h = e.target.closest('.lane-h'); if (h) { laneOpen[h.dataset.l] = !laneOpen[h.dataset.l]; render(); return; } const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); };
-      const sb = $('stShare'); if (sb) sb.onclick = () => JNP.whatsapp(JNP.stageReport(boardRows(), 'JNP TRUCK STATUS')); }, 0);
+      const sb = $('stShare'); if (sb) sb.onclick = () => JNP.shareStatusImage(boardRows(), { title: 'Truck status' }); }, 0);
     const miss = fl.filter(t => !t.cap), mk = M.market.filter(t => keepTruck(t.no)), mka = M.mktActive.filter(t => keepTruck(t.no));
     const real = fl.filter(t => (M.status[t.no] || {}).real).length;
     SHARE.fleetNow = { asOn: 1, title: 'Fleet status', fn: fleetText };
@@ -607,7 +607,7 @@
       '<div class="lanes" id="lanes">' + LANES.map(lane).join('') + '</div>' + info +
       (mk.length ? '<div class="mktline">🚛 <b>Market trucks:</b> ' + mk.length + ' attached · ' + mka.length + ' on a trip now' + (mka.length ? ' (' + mka.map(t => E(t.no.slice(-4))).join(', ') + ')' : '') + ' — not counted above</div>' : '') +
       (miss.length ? '<div class="note">No capacity in Truck_Master for ' + miss.map(t => E(t.no)).join(', ') + ' — shown as “?” and counted as 0 T.</div>' : '') +
-      '<div class="row-btns"><a class="btn2" href="' + JNP.CONFIG.HUB + 'truck-status/">📍 Open Truck Status board</a><button type="button" class="btn2" id="stShare">📲 Share truck status</button></div>' +
+      '<div class="row-btns"><a class="btn2" href="' + JNP.CONFIG.HUB + 'truck-status/">📍 Open Truck Status board</a><button type="button" class="btn2" id="stShare">📷 Share truck status</button></div>' +
       '<div class="muted2" style="margin-top:10px">' + real + ' of ' + fl.length + ' trucks are from the <b>Truck Status board</b> (what the team tapped). The rest, shown with a dashed border, are <b>estimates</b> from the last loading and the usual round trip for that destination. Own fleet = own trucks with Vehicle Status Active.</div></div>';
   }
   /** Fleet card → same rows the Truck Status board shares (estimates included). */
@@ -616,7 +616,7 @@
     return M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)).map(t => {
       const s0 = M.status[t.no] || {}, j = s0.trip, L = s0.last;
       const since = s0.st === 'off' ? s0.since : s0.real ? s0.since : L ? L.at : null;
-      return { no: t.no, st: LS[s0.st] || 'WAIT_ORDER', hrs: since ? hrs(since, now) : NaN, trip: j && s0.st !== 'wait' ? j : null,
+      return { no: t.no, cap: t.cap, mt: n0(j && s0.st !== 'wait' && j.Qty_MT) || n0(t.cap), remark: j && s0.st !== 'wait' ? j.Remark || '' : '', st: LS[s0.st] || 'WAIT_ORDER', hrs: since ? hrs(since, now) : NaN, trip: j && s0.st !== 'wait' ? j : null,
         dest: j && s0.st !== 'wait' ? j.Destination : L ? L.dest : '', est: !s0.real && s0.st !== 'off', place: s0.st === 'off' ? (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.loc ? ' · ' + s0.loc : '') : (s0.place || '') };
     });
   }
@@ -751,7 +751,13 @@
       '<div class="muted2" style="margin:14px 0 6px;font-weight:700">Trucks furthest behind target</div>' + hbar(low, { top: 10, asc: true, ref: 100, refLabel: '' }));
   }
 
-  function overview(T) { return overview0(T) + (T.length ? '<details class="dsl card"><summary>⛽ Diesel & ₹ per litre</summary>' + diesel(T) + '</details>' : ''); }
+  function overview(T) { return overview0(T); }
+  /** Financial tab — Level 1 only (Access_Matrix DASH-05). Revenue, spend, diesel ₹. */
+  function financeTab(T) {
+    if (!MONEY()) return '<div class="card muted">Financial figures are for the MD and Directors only.</div>';
+    const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+    return revenueBlock(T, dates) + (T.length ? '<details class="dsl card" open><summary>⛽ Diesel & ₹ per litre</summary>' + diesel(T) + '</details>' : '');
+  }
   // small donut with the total in the middle and a legend underneath
   function donutMini(title, parts, centre) {
     const t = sum(parts, p => p.value) || 1; let a0 = -Math.PI / 2, paths = '';
@@ -813,7 +819,7 @@
       '</div></div>' + fleetStatus() + utilSection(T) + rotationSection(T) + perf +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
       '<div class="cgrid">' + sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) + sec('MT by size', 'Bulk vs Bag in each size', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT')) + '</div>' +
-      (MONEY() ? revenueBlock(T, dates) : '');
+      '';
   }
   // ---------- Revenue — management only (Level 1). Never in the ops report.
   function revenueBlock(T, dates) {
@@ -882,6 +888,8 @@
         bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
         '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Trucks</th><th>Trips</th><th>MT</th><th>Rotation</th><th>Utilisation</th></tr>' +
           sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.trucks + '</td><td>' + r.trips + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
+        (() => { const all = M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)), q = k => { const a2 = all.filter(t => (M.status[t.no] || {}).st === k); return a2.length + ' trucks · ' + fmt(sum(a2, t => t.cap)) + ' MT'; };
+          return M.liveEst ? '<div class="or-sec">Right now</div><table class="or-t sm"><tr><td><b>Order received</b> · waiting for loader</td><td>' + q('wl') + '</td></tr><tr><td><b>Loaded</b> · to destination</td><td>' + q('load') + '</td></tr><tr><td>At party · unloading</td><td>' + q('unl') + '</td></tr></table>' : ''; })() +
         '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (M.market.length ? ' · market ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
         '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(lo.days, 0) + ' truck-days lost so far<div>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => '<span>' + g[1] + ' ' + g[2] + ' ' + why[g[0]] + '</span>').join('') + '</div></div>' +
         (lo.rows.length ? '<table class="or-t sm">' + lo.rows.slice(0, 6).map(r => '<tr><td><b>' + E(r.no.slice(-4)) + '</b> ' + E(r.size) + '</td><td>' + E(OFF_GROUPS.find(g => g[0] === r.g)[2]) + '</td><td>' + (r.since ? 'since ' + JNP.dmy(iso(r.since)).slice(0, 5) : '') + '</td><td><b>' + dayTxt(r.days) + '</b></td></tr>').join('') + '</table>' + (lo.rows.length > 6 ? '<div class="or-more">+ ' + (lo.rows.length - 6) + ' more</div>' : '') : '') +

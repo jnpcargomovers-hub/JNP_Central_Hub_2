@@ -25,7 +25,7 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', board: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    nextLR: 'ops', lookupLR: 'ops', board: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
@@ -500,13 +500,13 @@
   function inr(n) { if (n === '' || n === null || n === undefined || isNaN(Number(n))) return ''; return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
   // ---- TRUCK JOURNEY (shared by Truck Status board and Dashboard) --------------
   const STAGES = [
-    { k: 'WAIT_ORDER', icon: '🅿️', en: 'Waiting for order', hi: 'ऑर्डर का इंतज़ार', wa: 'WAIT FOR ORDER', c: '#64748B' },
-    { k: 'WAIT_LOADER', icon: '⏳', en: 'Order given · waiting for loader', hi: 'लोडिंग का इंतज़ार', wa: 'ORDER GIVEN · WAIT FOR LOADER', c: '#B45309', next: 'LOADED' },
-    { k: 'LOADED', icon: '🚚', en: 'Loaded, on the way', hi: 'माल भरा, रास्ते में', wa: 'LOADED · ON THE WAY', c: '#1D4ED8', next: 'UNLOADING' },
-    { k: 'UNLOADING', icon: '📍', en: 'At party, unloading', hi: 'पार्टी पर, खाली हो रही', wa: 'AT PARTY · UNLOADING', c: '#7C3AED', next: 'RETURNING' },
-    { k: 'RETURNING', icon: '↩️', en: 'Returning', hi: 'वापसी', wa: 'RETURNING', c: '#0F766E', next: 'DONE' },
-    { k: 'OFF', icon: '🔧', en: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
-    { k: 'UNSET', icon: '❓', en: 'Status not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
+    { k: 'WAIT_ORDER', icon: '🅿️', en: 'At depot – waiting for order', short: 'Waiting for order', hi: 'डिपो पर – ऑर्डर का इंतज़ार', wa: 'AT DEPOT · WAITING FOR ORDER', c: '#64748B' },
+    { k: 'WAIT_LOADER', icon: '⏳', en: 'At depot – waiting for loader', short: 'Waiting for loader', hi: 'डिपो पर – लोडिंग का इंतज़ार', wa: 'AT DEPOT · WAITING FOR LOADER', c: '#B45309', next: 'LOADED' },
+    { k: 'LOADED', icon: '🚚', en: 'Loaded – to destination', short: 'Loaded', hi: 'माल भरा – रास्ते में', wa: 'LOADED · TO DESTINATION', c: '#1D4ED8', next: 'UNLOADING' },
+    { k: 'UNLOADING', icon: '📍', en: 'At party – unloading / waiting', short: 'At party', hi: 'पार्टी पर – खाली होना बाकी', wa: 'AT PARTY · UNLOADING / WAITING', c: '#7C3AED', next: 'RETURNING' },
+    { k: 'RETURNING', icon: '↩️', en: 'Unloaded – returning', short: 'Returning', hi: 'खाली – वापसी', wa: 'UNLOADED · RETURNING', c: '#0F766E', next: 'DONE' },
+    { k: 'OFF', icon: '🔧', en: 'Off road', short: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
+    { k: 'UNSET', icon: '❓', en: 'Status not set', short: 'Not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
   ];
   const NEXT_BTN = { LOADED: '✅ Loaded · माल भर गया', UNLOADING: '📍 Reached party · पार्टी पर पहुँचा', RETURNING: '✅ Unloaded · खाली हो गया', DONE: '🏠 Reached depot · डिपो पहुँचा' };
   const stageOf = k => STAGES.find(x => x.k === k) || STAGES[0];
@@ -526,12 +526,13 @@
       const o = off[t.no], tr = open[t.no], p = pend[t.no], loc = (d.locs || {})[t.no], dn = done[t.no];
       let st, since, place;
       if (o) { st = 'OFF'; since = o.Created_At; place = (o.Off_Road_Type === 'Driver not available' ? 'No driver' : o.Off_Road_Type || 'Breakdown') + (o.Location ? ' · ' + o.Location : ''); }
-      else if (tr) { st = tr.Stage; since = tr.Stage_At || tr.Order_At; place = tr.Location || tr.Destination; }
+      else if (tr) { st = tr.Stage; since = tr.Stage_At || tr.Order_At; place = tr.Location || (tr.Stage === 'LOADED' ? '' : tr.Destination); }
       else if (p) { st = 'UNSET'; since = p.Created_At; place = p.Destination; }
       else { st = 'WAIT_ORDER'; since = (loc && loc.at) || (dn && dn.Returned_At) || ''; place = (loc && loc.loc) || 'Depot'; }
       const s0 = tDate(since), h = s0 ? Math.max(0, (now - s0) / 36e5) : NaN;
       return { no: t.no, cap: Number(t.capacity || t.cap) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
-        trip: tr || null, off: o || null, pend: p || null, place: place || '', dest: (tr && tr.Destination) || (p && p.Destination) || '' };
+        trip: tr || null, off: o || null, pend: p || null, place: place || '', dest: (tr && tr.Destination) || (p && p.Destination) || '',
+        remark: tr ? (tr.Remark || '') : (!o && !p && loc ? loc.note || '' : ''), mt: Number(tr && tr.Qty_MT) || Number(t.capacity || t.cap) || 0 };
     });
   }
   const ago = h => isNaN(h) ? '' : h < 1 ? Math.round(h * 60) + ' min' : h < 48 ? Math.round(h) + ' h' : Math.round(h / 24) + ' d';
@@ -555,6 +556,70 @@
     return t.trim();
   }
 
+  // ---- STATUS REPORT IMAGE (Truck Status board + Dashboard) -------------------
+  let H2C = null;
+  function loadH2C() {
+    if (w.html2canvas) return Promise.resolve();
+    return H2C || (H2C = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'; sc.onload = res; sc.onerror = () => { H2C = null; rej(new Error('Could not load the image maker — check internet')); }; document.head.appendChild(sc); }));
+  }
+  /** Turns an element into a PNG and shares it (phone: share sheet → WhatsApp; laptop: copied for WhatsApp Web). */
+  async function shareImage(el, name, caption) {
+    await loadH2C();
+    const cv = await w.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png')), file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: caption }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('Image copied — open WhatsApp and paste (Ctrl+V)', 'ok', 6000); w.open('https://web.whatsapp.com/', 'jnp_whatsapp'); return; } catch (e) { }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    toast('Image downloaded — attach it in WhatsApp', 'warn', 6000);
+  }
+  const SR_CSS = '.srep{position:fixed;left:-10000px;top:0;width:460px;background:#fff;padding:18px;font-family:Barlow,Arial,sans-serif;color:#1B2430}' +
+    '.srep .h{display:flex;align-items:center;gap:12px;padding-bottom:10px}.srep .h img{height:38px}.srep .h b{display:block;font:800 21px "Barlow Condensed",Arial,sans-serif;color:#022A5B}.srep .h span{font-size:13px;color:#5D6877}' +
+    '.srep .st{display:flex;height:4px}.srep .st i{flex:1}.srep .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}' +
+    '.srep .kp div{background:#F3F6FB;border-radius:10px;padding:7px 6px;text-align:center;border-top:3px solid var(--c)}.srep .kp small{display:block;font-size:10.5px;color:#5D6877;font-weight:700;line-height:1.2}' +
+    '.srep .kp b{display:block;font:800 19px "Barlow Condensed",Arial,sans-serif;color:#022A5B}.srep .kp span{font-size:11px;color:#334155;font-weight:700}' +
+    '.srep .sec{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--c);display:flex;justify-content:space-between;border-bottom:2px solid var(--c);padding-bottom:3px}' +
+    '.srep table{width:100%;border-collapse:collapse;font-size:12.5px}.srep td{padding:4px 3px;border-bottom:1px solid #EEF1F5;vertical-align:top}.srep td.n{font-weight:800;white-space:nowrap}.srep td.r{text-align:right;white-space:nowrap;color:#5D6877}.srep td.rm{color:#7C2D12;font-style:italic}.srep td.late{color:#B91C1C;font-weight:800}' +
+    '.srep .f{margin-top:12px;font-size:11px;color:#7A8596;text-align:right}';
+  /** Builds the status report element: totals for heads on top, one table per stage, off road as a size summary at the bottom. */
+  function statusReportEl(rows, opt) {
+    opt = opt || {};
+    if (!document.getElementById('srepCss')) { const st = document.createElement('style'); st.id = 'srepCss'; st.textContent = SR_CSS; document.head.appendChild(st); }
+    const by = {}; rows.forEach(r => (by[r.st] = by[r.st] || []).push(r));
+    const mt = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0)), n = k => (by[k] || []).length;
+    const now = new Date(), p2 = v => String(v).padStart(2, '0'), stamp = p2(now.getDate()) + '-' + p2(now.getMonth() + 1) + '-' + now.getFullYear() + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
+    const kp = (k, label) => { const s = stageOf(k), a = by[k] || []; return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span></div>'; };
+    const cls = r => r.cap ? Math.round(r.cap) + 'T' : '';
+    const sect = k => {
+      const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
+      return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + (a.length === 1 ? ' truck · ' : ' trucks · ') + mt(a) + ' MT</span></div><table>' + a.map(r => {
+        const late = k === 'UNLOADING' && (r.hrs || 0) >= (opt.escHrs || 4);
+        const where = k === 'LOADED' ? '→ ' + (r.dest || '') : k === 'RETURNING' ? (r.dest || '') + ' → depot' : k === 'UNLOADING' ? (r.dest || r.place) + (r.trip && r.trip.Party ? ' · ' + r.trip.Party : '') : (r.place || '');
+        return '<tr><td class="n">' + esc(r.no.slice(-4)) + (r.est ? '~' : '') + '</td><td>' + cls(r) + '</td><td>' + esc(where) + '</td><td class="' + (late ? 'late' : 'r') + '">' + (isNaN(r.hrs) ? '' : (k === 'UNLOADING' ? 'Day-' + (Math.floor((r.hrs || 0) / 24) + 1) + (late ? ' ⚠️' : '') : ago(r.hrs))) + '</td></tr>' +
+          (r.remark ? '<tr><td></td><td colspan="3" class="rm">' + esc(r.remark) + '</td></tr>' : '');
+      }).join('') + '</table>';
+    };
+    const off = by.OFF || [], sizes = {};
+    off.forEach(r => { const c = cls(r) || '?'; (sizes[c] = sizes[c] || []).push(r); });
+    const offHtml = off.length ? '<div class="sec" style="--c:#B91C1C"><span>Off road</span><span>' + off.length + ' trucks · ' + mt(off) + ' MT</span></div><table>' +
+      Object.keys(sizes).sort((a, b) => (parseInt(b) || 0) - (parseInt(a) || 0)).map(c => '<tr><td class="n">' + c + '</td><td>' + sizes[c].length + ' truck' + (sizes[c].length === 1 ? '' : 's') + '</td><td class="r">' + mt(sizes[c]) + ' MT</td></tr>').join('') + '</table>' : '';
+    const box = document.createElement('div'); box.className = 'srep';
+    box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>' + esc(opt.title || 'Truck status') + '</b><span>' + stamp + '</span></div></div>' +
+      '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
+      '<div class="kp">' + kp('WAIT_LOADER', 'Order received<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') + kp('UNLOADING', 'At party<br>unloading') +
+        kp('RETURNING', 'Unloaded<br>returning') + kp('WAIT_ORDER', 'At depot<br>waiting for order') + '<div style="--c:#B91C1C"><small>Off road</small><b>' + mt(off) + ' MT</b><span>' + off.length + ' trucks</span></div></div>' +
+      ['UNSET', 'WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'].map(sect).join('') + offHtml +
+      (rows.some(r => r.est) ? '<div class="f" style="text-align:left">~ = estimate (not yet updated on the Truck Status board)</div>' : '') +
+      '<div class="f">JNP Cargo Movers · ' + esc((session() || { user: {} }).user.name || '') + ' · ' + stamp + '</div>';
+    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*\nOrder received (waiting for loader): ' + n('WAIT_LOADER') + ' trucks · ' + mt(by.WAIT_LOADER || []) + ' MT\nLoaded (to destination): ' + n('LOADED') + ' trucks · ' + mt(by.LOADED || []) + ' MT\nAt party: ' + n('UNLOADING') + ' · Returning: ' + n('RETURNING') + ' · Waiting for order: ' + n('WAIT_ORDER') + ' · Off road: ' + off.length;
+    return { el: box, caption: cap };
+  }
+  async function shareStatusImage(rows, opt) {
+    busy(true, 'Making report image…');
+    const r = statusReportEl(rows, opt); document.body.appendChild(r.el);
+    try { await new Promise(x => setTimeout(x, 150)); busy(false); await shareImage(r.el, 'JNP_Truck_Status_' + todayISO() + '.png', r.caption); }
+    catch (e) { busy(false); toast(e.message, 'bad'); } finally { r.el.remove(); }
+  }
+
   function param(k) { return new URLSearchParams(location.search).get(k); }
   function dmy(v) { const s = String(v || ''); const m = s.match(/^(\d{4})-(\d\d)-(\d\d)(.*)$/); return m ? m[3] + '-' + m[2] + '-' + m[1] + m[4] : s; }
 
@@ -562,7 +627,7 @@
     CONFIG, MODULES, TILES, api, call, session, login, logout, goLogin, rights, can, requireModule, refreshMe, masters, M, list,
     findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
-    STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate,
+    STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };
 })(window);
