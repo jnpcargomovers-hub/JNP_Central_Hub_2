@@ -218,6 +218,9 @@
     .tk.est { border-style: dashed !important; opacity: .85; }
   .mktline { margin-top: 10px; font-size: 13px; color: #334155; background: #F1F5F9; border-radius: 10px; padding: 8px 10px; }
   .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; } .row-btns .btn2 { flex: 1 1 180px; text-align: center; text-decoration: none; margin-top: 0; }
+  .plt { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13.5px; } .plt td { padding: 7px 4px; border-bottom: 1px solid #EEF1F5; vertical-align: top; }
+  .plt small { display: block; color: #5D6877; font-size: 11.5px; font-weight: 600; } .plt td.r { text-align: right; white-space: nowrap; } .plt .age { color: var(--red); }
+  .callb { display: inline-block; text-decoration: none; background: #E8F5EE; border-radius: 10px; padding: 7px 9px; font-size: 16px; }
 </style>
 </head>
 <body>
@@ -327,12 +330,14 @@
     const ind = {}; rows(R.indent).forEach(i => ind[i.LR_No] = i);
     const all = rows(R.loader).map(r => {
       const t = truckM[r.Truck_No] || {}, b = blt[r.LR_No], i = ind[r.LR_No];
-      const mt = b && n0(b.Qty_MT) ? n0(b.Qty_MT) : i && n0(i.Qty_Issued_MT) ? n0(i.Qty_Issued_MT) : n0(t.cap);
+      // MT: UTCL portal (actual) → builty → delivery → truck capacity
+      const mt = n0(r.Actual_Qty_MT) ? n0(r.Actual_Qty_MT) : b && n0(b.Qty_MT) ? n0(b.Qty_MT) : i && n0(i.Qty_Issued_MT) ? n0(i.Qty_Issued_MT) : n0(t.cap);
+      const fr = n0(r.Final_Freight) || n0(r.Freight_Amount);      // portal freight (final after GPS lead check, else billed amount)
       const lt = b && b.Load_Type ? String(b.Load_Type).toUpperCase() : (t.cargo || '');
       const at = D(r.Created_At), un = i && (i.Unloaded_At || i.Created_At) ? D(i.Unloaded_At || i.Created_At) : null;
       return { lr: r.LR_No, at: at, day: String(r.Trip_Date || r.Created_At).slice(0, 10), truck: r.Truck_No, driver: r.Driver_Name, dest: r.Destination, km0: n0(r.Start_KM),
-        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(b && n0(b.Qty_MT)),
-        rev: n0(r.Rate) * mt, consignee: b ? b.Consignee : '', unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
+        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(n0(r.Actual_Qty_MT) || (b && n0(b.Qty_MT))), portal: !!n0(r.Actual_Qty_MT), frPortal: !!fr,
+        rev: fr || n0(r.Rate) * mt, consignee: r.Party || (b ? b.Consignee : ''), unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By };
     }).sort((a, b) => a.at - b.at);
     // rotation / km / idle need the sequence per truck and per driver (includes 35 days before the range)
@@ -415,7 +420,7 @@
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
     return { trips: list.length, mt: sum(list, x => x.mt), rev: sum(list, x => x.rev), diesel: sum(list, x => x.diesel), dieselTrips: withD.length,
       cap: sum(list, x => x.cap), km: sum(km, x => x.km), kmDiesel: sum(km, x => x.diesel), rot: avg(list.map(x => x.rot).filter(v => !isNaN(v))),
-      tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length,
+      tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length, portal: list.filter(x => x.portal).length,
       onTime: (() => { const z = list.filter(x => !isNaN(x.tat) && x.targetTat); return z.length ? z.filter(x => x.tat <= x.targetTat).length / z.length : NaN; })(),
       busy: sum(list, x => x.busy) / 24, idle: avg(list.map(x => x.truckIdle).filter(v => !isNaN(v) && v >= 0 && v < 15 * 24)) };
   }
@@ -752,6 +757,29 @@
   }
 
   function overview(T) { return overview0(T); }
+  // ---------- Pending LRs (Finance's Daily Paste): older than 5 days, no bill, EPOD not received — with party phone to call
+  let plAll = false;
+  function pendingLRCard() {
+    const P = Array.isArray(RAW.pendingLR) ? RAW.pendingLR : [];
+    if (!Array.isArray(RAW.pendingLR)) return '';
+    const mt = sum(P, x => x.qty), shown = plAll ? P : P.slice(0, 8);
+    setTimeout(() => { const a = $('plMore'); if (a) a.onclick = () => { plAll = !plAll; render(); }; const sb = $('plShare'); if (sb) sb.onclick = sharePendingLR; }, 0);
+    return '<div class="sec card"><div class="khead"><b>⏳ Pending LRs · EPOD / bill</b><button type="button" class="shr" id="plShare">📷 Share</button></div>' +
+      '<div class="muted2">' + (P.length ? P.length + ' LRs · ' + fmt(mt, 0) + ' MT · older than 5 days, no bill, EPOD not received' : 'None pending 🎉 (from Finance’s Daily Paste)') + '</div>' +
+      (P.length ? '<table class="plt">' + shown.map(x => '<tr><td><b>' + E(x.lr) + '</b><small>' + E(x.truck.slice(-4)) + '</small></td><td>' + E(x.dest) + '<small>' + E(x.party) + '</small></td><td class="r"><b class="age">' + E(x.age) + ' d</b><small>' + E(x.qty) + ' MT</small></td><td class="r">' +
+        (x.phone ? '<a class="callb" href="tel:' + E(x.phone) + '">📞</a>' : '') + '</td></tr>').join('') + '</table>' +
+        (P.length > 8 ? '<button type="button" class="btn2" id="plMore">' + (plAll ? 'Show fewer' : 'Show all ' + P.length) + '</button>' : '') : '') + '</div>';
+  }
+  async function sharePendingLR() {
+    const P = RAW.pendingLR || [], box = document.createElement('div'); box.className = 'opsrep';
+    box.innerHTML = '<div class="or-h"><img src="' + JNP.CONFIG.LOGO + '" alt=""><div><b>Pending LR follow-up</b><span>' + JNP.nowText() + ' · ' + P.length + ' LRs · ' + fmt(sum(P, x => x.qty), 0) + ' MT</span></div></div>' +
+      '<div class="or-stripe"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
+      '<table class="or-t sm"><tr><th>LR</th><th>Truck</th><th>Destination · Party</th><th>Phone</th><th>Age</th></tr>' + P.map(x => '<tr><td><b>' + E(x.lr) + '</b></td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '<br><small>' + E(x.party) + '</small></td><td>' + E(x.phone || '—') + '</td><td class="bad">' + E(x.age) + ' d</td></tr>').join('') + '</table>' +
+      '<div class="or-f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + JNP.nowText() + '</div>';
+    document.body.appendChild(box);
+    try { await new Promise(r => setTimeout(r, 150)); await JNP.shareImage(box, 'JNP_Pending_LR_' + JNP.todayISO() + '.png', '*Pending LR follow-up · ' + JNP.nowText() + '*\n' + P.length + ' LRs'); }
+    catch (e) { JNP.toast(e.message, 'bad'); } finally { box.remove(); }
+  }
   /** Financial tab — Level 1 only (Access_Matrix DASH-05). Revenue, spend, diesel ₹. */
   function financeTab(T) {
     if (!MONEY()) return '<div class="card muted">Financial figures are for the MD and Directors only.</div>';
@@ -805,7 +833,7 @@
     return '<div class="card repbar"><div><b>📋 Operations report</b><small>Trips · tons · rotation · utilisation · off-road</small></div><button type="button" id="opsRep">📷 Share report</button></div>' +
       '<div class="cgrid">' +
       sec('Trips', 'Bulk vs Bag · Own vs Market', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
-      sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + (a.est ? '<div class="muted2" style="margin-top:6px">' + a.est + ' trips without builty — truck capacity used</div>' : ''), () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
+      sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + '<div class="muted2" style="margin-top:6px">' + (a.portal ? '✓ ' + a.portal + ' of ' + a.trips + ' trips confirmed on UTCL portal' : 'Not yet synced with UTCL portal') + (a.est ? ' · ' + a.est + ' trips use truck capacity (no portal / builty yet)' : '') + '</div>', () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
       '</div>' +
       '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
       kpi('Fleet utilisation', pct(u.u), u.trips + ' of ' + fmt(u.target, 0) + ' expected trips', 'var(--navy)') +
@@ -814,9 +842,10 @@
       kpi('Off road now', lo.n + ' trucks', fmt(lo.days, 0) + ' truck-days lost so far (live)', 'var(--red)') +
       kpi('Breakdown downtime', fmt(downH, 0) + ' h', bds.length + ' breakdowns in these dates · uptime ' + pct(fleet.length ? 1 - downH / (fleet.length * M.days * 24) : NaN), 'var(--red)') +
       kpi('No-driver days', fmt(sum(offDrv, b => b.inHrs) / 24, 1), offDrv.length + ' trucks off road for want of a driver', 'var(--red)') +
-      kpi('Diesel', fmt(a.diesel) + ' L', 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips', 'var(--orange)') +
+      (() => { const xd = sum(rows(RAW.extraDiesel).filter(x => keepTruck(JNP.normTruck(x.Truck_No))), x => x.Litres);
+        return kpi('Diesel', fmt(a.diesel + xd) + ' L', (xd ? 'incl. ' + fmt(xd) + ' L extra (repairs etc.) · ' : '') + 'on ' + a.dieselTrips + ' of ' + a.trips + ' trips', 'var(--orange)'); })() +
       kpi('Repeat faults', fmt(repeats(M.bds.filter(b => keepTruck(b.Truck_No)), M.mnt.filter(m => keepTruck(m.Truck_No))).length), 'same truck + fault', 'var(--red)') +
-      '</div></div>' + fleetStatus() + utilSection(T) + rotationSection(T) + perf +
+      '</div></div>' + fleetStatus() + pendingLRCard() + utilSection(T) + rotationSection(T) + perf +
       sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
       '<div class="cgrid">' + sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) + sec('MT by size', 'Bulk vs Bag in each size', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT')) + '</div>' +
       '';
@@ -891,8 +920,9 @@
         (() => { const all = M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)), q = k => { const a2 = all.filter(t => (M.status[t.no] || {}).st === k); return a2.length + ' trucks · ' + fmt(sum(a2, t => t.cap)) + ' MT'; };
           return M.liveEst ? '<div class="or-sec">Right now</div><table class="or-t sm"><tr><td><b>Order received</b> · waiting for loader</td><td>' + q('wl') + '</td></tr><tr><td><b>Loaded</b> · to destination</td><td>' + q('load') + '</td></tr><tr><td>At party · unloading</td><td>' + q('unl') + '</td></tr></table>' : ''; })() +
         '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (M.market.length ? ' · market ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
-        '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(lo.days, 0) + ' truck-days lost so far<div>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => '<span>' + g[1] + ' ' + g[2] + ' ' + why[g[0]] + '</span>').join('') + '</div></div>' +
-        (lo.rows.length ? '<table class="or-t sm">' + lo.rows.slice(0, 6).map(r => '<tr><td><b>' + E(r.no.slice(-4)) + '</b> ' + E(r.size) + '</td><td>' + E(OFF_GROUPS.find(g => g[0] === r.g)[2]) + '</td><td>' + (r.since ? 'since ' + JNP.dmy(iso(r.since)).slice(0, 5) : '') + '</td><td><b>' + dayTxt(r.days) + '</b></td></tr>').join('') + '</table>' + (lo.rows.length > 6 ? '<div class="or-more">+ ' + (lo.rows.length - 6) + ' more</div>' : '') : '') +
+        '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(sum(lo.rows, r => r.t.cap), 0) + ' tons · ' + fmt(lo.days, 0) + ' truck-days lost so far</div>' +
+        (lo.rows.length ? '<table class="or-t sm"><tr><th>Off road due to</th><th>Trucks</th><th>Tons</th></tr>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => { const rr = lo.rows.filter(r => r.g === g[0]);
+          return '<tr><td>' + g[1] + ' <b>' + g[2] + '</b></td><td>' + rr.length + '</td><td><b>' + fmt(sum(rr, r => r.t.cap), 0) + '</b></td></tr>'; }).join('') + '</table>' : '') +
         '<div class="or-f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + JNP.nowText() + '</div>';
       document.body.appendChild(box);
       await new Promise(r => setTimeout(r, 120));

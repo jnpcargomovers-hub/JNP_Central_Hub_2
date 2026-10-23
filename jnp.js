@@ -25,7 +25,8 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', board: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm',
+    board: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
@@ -35,6 +36,7 @@
     if (code === 'OPS-06' || code.indexOf('RM-') === 0) return 'rm';
     if (code.indexOf('OPS-') === 0) return 'ops';
     if (code.indexOf('FIN-') === 0) return 'fin';
+    if (code.indexOf('TSK-') === 0 || code.indexOf('ADM-') === 0) return 'adm';
     return 'core';
   }
 
@@ -59,13 +61,18 @@
     'FIN-03': { icon: '📒', path: 'driver-ledger/' },
     'FIN-02': { icon: '🧮', path: 'billing/' },
     'FIN-04': { icon: '⛽', path: 'diesel-audit/' },
+    'FIN-05': { icon: '🔗', path: 'portal/' },
     'ATT-01': { icon: '🕘', path: 'attendance/' },
     'APR-01': { icon: '✅', path: 'approvals/' },
+    'TSK-01': { icon: '📋', path: 'tasks/' },
+    'ADM-01': { icon: '🚨', path: 'challan/' },
+    'ADM-02': { icon: '⛽', path: 'extra-diesel/' },
   };
   const TILES = [
     { name: 'Operations', hindi: 'ऑपरेशन्स', color: 'var(--ops)', prefix: 'OPS-' },
     { name: 'Repair & Maintenance', hindi: 'रिपेयर और मेंटेनेंस', color: 'var(--rm)', prefix: 'RM-' },
     { name: 'Finance', hindi: 'फाइनेंस', color: 'var(--fin)', prefix: 'FIN-' },
+    { name: 'Challans & Diesel', hindi: 'चालान · डीज़ल', color: 'var(--ops)', prefix: 'ADM-' },
   ];
 
   // ---- 3. SAFE STORAGE ---------------------------------------------------------
@@ -76,11 +83,29 @@
   };
   const S_KEY = 'jnp2_session', M_KEY = 'jnp2_masters';
 
+  // ---- 3b. INSTALL AS APP (home-screen icon) ---------------------------------
+  (function () {
+    try {
+      const add = (rel, href, extra) => { if (document.querySelector('link[rel="' + rel + '"]')) return; const l = document.createElement('link'); l.rel = rel; l.href = href; Object.assign(l, extra || {}); document.head.appendChild(l); };
+      add('manifest', BASE + 'manifest.webmanifest');
+      const ap = document.querySelector('link[rel="apple-touch-icon"]'); if (ap) ap.href = BASE + 'apple-touch-icon.png'; else add('apple-touch-icon', BASE + 'apple-touch-icon.png');
+      [['apple-mobile-web-app-capable', 'yes'], ['mobile-web-app-capable', 'yes'], ['apple-mobile-web-app-title', 'JNP Hub'], ['apple-mobile-web-app-status-bar-style', 'default']].forEach(([n, v]) => { if (!document.querySelector('meta[name="' + n + '"]')) { const m = document.createElement('meta'); m.name = n; m.content = v; document.head.appendChild(m); } });
+      if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE }).catch(() => { });
+    } catch (e) { }
+    w.addEventListener('beforeinstallprompt', e => { e.preventDefault(); w.__jnpInstall = e; document.dispatchEvent(new Event('jnp-installable')); });
+  })();
+  const isApp = () => (w.matchMedia && w.matchMedia('(display-mode: standalone)').matches) || w.navigator.standalone === true;
+
   // ---- 4. API ------------------------------------------------------------------
   async function api(action, payload, db) {
     payload = payload || {};
     db = db || ((action === 'save' || action === 'list' || action === 'get' || action === 'edit') ? moduleDb(payload.module) : ACTION_DB[action] || 'core');
-    const url = CONFIG.APIS[db];
+    let url = CONFIG.APIS[db];
+    if (!url && db === 'adm') {          // 5th sheet: its link lives in DB_Master › Settings › Admin_API_URL
+      url = (M().settings || {}).Admin_API_URL;
+      if (!url) { try { await masters(true); } catch (e) { } url = (M().settings || {}).Admin_API_URL; }
+      if (!url) throw new Error('Admin sheet link not set — HO: put Admin_API_URL in DB_Master › Settings');
+    }
     if (!url || url.indexOf('http') !== 0) throw new Error('Web app link for "' + db + '" not set in jnp.js');
     const s = store.get(S_KEY);
     const body = Object.assign({ action: action, token: s && s.token, device: device() }, payload);
@@ -138,17 +163,19 @@
   /** Name typed is not in the list → fetch the latest lists from the sheet once (someone may have just added it). */
   async function mastersRetry() { if (FORCED) return false; FORCED = true; try { await masters(true); return true; } catch (e) { return false; } }
   async function masters(force) {
-    const c = store.get(M_KEY);
+    let c = store.get(M_KEY);
+    if (c && !(c.data && Array.isArray(c.data.trucks))) { store.del(M_KEY); c = null; }      // broken / empty saved copy → fetch again
     const fresh = c && (Date.now() - c.at) < CONFIG.MASTERS_MAX_AGE_HRS * 36e5;
     if (c && fresh && !force) {
       // older than 5 min → use it now, fetch a fresh copy in the background (new drivers / trucks show up without logging out)
-      if (Date.now() - c.at > 5 * 6e4 && !BG) { BG = call('masters').then(o => { store.set(M_KEY, { at: Date.now(), data: o.masters }); MEM = o.masters; }).catch(() => { }).finally(() => { BG = null; }); }
+      if (Date.now() - c.at > 5 * 6e4 && !BG) { BG = call('masters').then(o => { if (o.masters && o.masters.trucks) { store.set(M_KEY, { at: Date.now(), data: o.masters }); MEM = o.masters; } }).catch(() => { }).finally(() => { BG = null; }); }
       return (MEM = c.data);
     }
     try {
       const out = await call('masters');
+      if (!out.masters || !out.masters.trucks) throw new Error('Lists not received from the server — tap ↻ to try again');
       store.set(M_KEY, { at: Date.now(), data: out.masters }); return (MEM = out.masters);
-    } catch (e) { if (c) { toast('Offline — using saved lists', 'warn'); return (MEM = c.data); } throw e; }
+    } catch (e) { if (c) { toast('Offline — using saved lists', 'warn'); return (MEM = c.data); } if (MEM) return MEM; throw e; }
   }
   const M = () => MEM || (store.get(M_KEY) || {}).data || { trucks: [], drivers: [], destinations: [], parties: [], faults: [], pm: [], parts: [], vendors: [], checklist: [], users: [], lists: {}, settings: {} };
   const findTruck = no => M().trucks.find(t => t.no === normTruck(no));
@@ -504,7 +531,7 @@
     { k: 'WAIT_LOADER', icon: '⏳', en: 'At depot – waiting for loader', short: 'Waiting for loader', hi: 'डिपो पर – लोडिंग का इंतज़ार', wa: 'AT DEPOT · WAITING FOR LOADER', c: '#B45309', next: 'LOADED' },
     { k: 'LOADED', icon: '🚚', en: 'Loaded – to destination', short: 'Loaded', hi: 'माल भरा – रास्ते में', wa: 'LOADED · TO DESTINATION', c: '#1D4ED8', next: 'UNLOADING' },
     { k: 'UNLOADING', icon: '📍', en: 'At party – unloading / waiting', short: 'At party', hi: 'पार्टी पर – खाली होना बाकी', wa: 'AT PARTY · UNLOADING / WAITING', c: '#7C3AED', next: 'RETURNING' },
-    { k: 'RETURNING', icon: '↩️', en: 'Unloaded – returning', short: 'Returning', hi: 'खाली – वापसी', wa: 'UNLOADED · RETURNING', c: '#0F766E', next: 'DONE' },
+    { k: 'RETURNING', icon: '↩️', en: 'Unloaded – returning (→ waiting for order)', short: 'Returning', hi: 'खाली – वापसी', wa: 'UNLOADED · RETURNING', c: '#0F766E', next: 'DONE' },
     { k: 'OFF', icon: '🔧', en: 'Off road', short: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
     { k: 'UNSET', icon: '❓', en: 'Status not set', short: 'Not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
   ];
@@ -527,7 +554,7 @@
       let st, since, place;
       if (o) { st = 'OFF'; since = o.Created_At; place = (o.Off_Road_Type === 'Driver not available' ? 'No driver' : o.Off_Road_Type || 'Breakdown') + (o.Location ? ' · ' + o.Location : ''); }
       else if (tr) { st = tr.Stage; since = tr.Stage_At || tr.Order_At; place = tr.Location || (tr.Stage === 'LOADED' ? '' : tr.Destination); }
-      else if (p) { st = 'UNSET'; since = p.Created_At; place = p.Destination; }
+      else if (p) { st = 'WAIT_LOADER'; since = p.Created_At; place = 'Order LR ' + p.LR_No; }
       else { st = 'WAIT_ORDER'; since = (loc && loc.at) || (dn && dn.Returned_At) || ''; place = (loc && loc.loc) || 'Depot'; }
       const s0 = tDate(since), h = s0 ? Math.max(0, (now - s0) / 36e5) : NaN;
       return { no: t.no, cap: Number(t.capacity || t.cap) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
@@ -593,7 +620,7 @@
       const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
       return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + (a.length === 1 ? ' truck · ' : ' trucks · ') + mt(a) + ' MT</span></div><table>' + a.map(r => {
         const late = k === 'UNLOADING' && (r.hrs || 0) >= (opt.escHrs || 4);
-        const where = k === 'LOADED' ? '→ ' + (r.dest || '') : k === 'RETURNING' ? (r.dest || '') + ' → depot' : k === 'UNLOADING' ? (r.dest || r.place) + (r.trip && r.trip.Party ? ' · ' + r.trip.Party : '') : (r.place || '');
+        const where = k === 'WAIT_LOADER' ? 'LR ' + ((r.trip || r.pend || {}).LR_No || '') + ' → ' + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') : k === 'RETURNING' ? (r.dest || '') + ' → depot' : k === 'UNLOADING' ? (r.dest || r.place) + (r.trip && r.trip.Party ? ' · ' + r.trip.Party : '') : (r.place || '');
         return '<tr><td class="n">' + esc(r.no.slice(-4)) + (r.est ? '~' : '') + '</td><td>' + cls(r) + '</td><td>' + esc(where) + '</td><td class="' + (late ? 'late' : 'r') + '">' + (isNaN(r.hrs) ? '' : (k === 'UNLOADING' ? 'Day-' + (Math.floor((r.hrs || 0) / 24) + 1) + (late ? ' ⚠️' : '') : ago(r.hrs))) + '</td></tr>' +
           (r.remark ? '<tr><td></td><td colspan="3" class="rm">' + esc(r.remark) + '</td></tr>' : '');
       }).join('') + '</table>';
@@ -606,11 +633,11 @@
     box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>' + esc(opt.title || 'Truck status') + '</b><span>' + stamp + '</span></div></div>' +
       '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
       '<div class="kp">' + kp('WAIT_LOADER', 'Order received<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') + kp('UNLOADING', 'At party<br>unloading') +
-        kp('RETURNING', 'Unloaded<br>returning') + kp('WAIT_ORDER', 'At depot<br>waiting for order') + '<div style="--c:#B91C1C"><small>Off road</small><b>' + mt(off) + ' MT</b><span>' + off.length + ' trucks</span></div></div>' +
-      ['UNSET', 'WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'].map(sect).join('') + offHtml +
+        kp('WAIT_ORDER', 'At depot<br>waiting for order') + '<div style="--c:#022A5B"><small>Fleet<br>total</small><b>' + mt(rows) + ' MT</b><span>' + rows.length + ' trucks</span></div>' + '<div style="--c:#B91C1C"><small>Off road</small><b>' + mt(off) + ' MT</b><span>' + off.length + ' trucks</span></div></div>' +
+      ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
       (rows.some(r => r.est) ? '<div class="f" style="text-align:left">~ = estimate (not yet updated on the Truck Status board)</div>' : '') +
       '<div class="f">JNP Cargo Movers · ' + esc((session() || { user: {} }).user.name || '') + ' · ' + stamp + '</div>';
-    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*\nOrder received (waiting for loader): ' + n('WAIT_LOADER') + ' trucks · ' + mt(by.WAIT_LOADER || []) + ' MT\nLoaded (to destination): ' + n('LOADED') + ' trucks · ' + mt(by.LOADED || []) + ' MT\nAt party: ' + n('UNLOADING') + ' · Returning: ' + n('RETURNING') + ' · Waiting for order: ' + n('WAIT_ORDER') + ' · Off road: ' + off.length;
+    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*\nOrder received (waiting for loader): ' + n('WAIT_LOADER') + ' trucks · ' + mt(by.WAIT_LOADER || []) + ' MT\nLoaded (to destination): ' + n('LOADED') + ' trucks · ' + mt(by.LOADED || []) + ' MT\nAt party: ' + n('UNLOADING') + ' · Waiting for order: ' + n('WAIT_ORDER') + ' · Off road: ' + off.length;
     return { el: box, caption: cap };
   }
   async function shareStatusImage(rows, opt) {
@@ -627,7 +654,7 @@
     CONFIG, MODULES, TILES, api, call, session, login, logout, goLogin, rights, can, requireModule, refreshMe, masters, M, list,
     findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
-    STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
+    isApp, STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };
 })(window);

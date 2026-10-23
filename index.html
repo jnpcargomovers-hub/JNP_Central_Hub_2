@@ -46,6 +46,12 @@
         <div class="stats" id="stats"></div>
       </div>
       <a class="punch hidden" id="punch" href="attendance/"><span class="dot"></span><span><b id="pT">Attendance</b><small id="pS"></small></span><span class="go" id="pGo">Punch IN</span></a>
+      <div id="installCard" class="card hidden" style="display:flex;gap:12px;align-items:center;border:1.5px solid #CFE0F7;background:#F3F8FF">
+        <img src="icon-192.png" alt="" style="width:46px;height:46px;border-radius:11px;flex:none">
+        <div style="flex:1;min-width:0"><b style="color:#022A5B">Put JNP Hub on your home screen</b><div class="hint" id="instHow" style="margin-top:2px">Opens like an app — no link to search · होम स्क्रीन पर ऐप की तरह</div></div>
+        <button class="mini orange" type="button" id="instBtn">📲 Install</button>
+        <button class="mini" type="button" id="instX" aria-label="Hide" style="padding:6px 8px">✕</button>
+      </div>
       <div id="sections"></div>
       <p class="footnote">J N P Cargo Movers Pvt Ltd · Built on Trust, Driven with Purpose</p>
     </div>
@@ -132,14 +138,14 @@
       html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' + JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">' +
         codes.map(cd => { if (cd === 'OPS-06' || cd === 'RM-01') return offTile(dept.color); const m = MERGE[cd]; if (!m) return tileHtml(cd, dept.color); if (seen[m]) return ''; seen[m] = 1; return mergedHtml(m, dept.color); }).join('') + '</div></div>';
     });
-    const gen = ['APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
+    const gen = ['TSK-01', 'APR-01', 'ATT-01'].filter(cd => s.access[cd] && JNP.rights(cd).length);
     const cfg = JNP.M().settings || {}, lst = k => String(cfg[k] || '').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
     const meK = [u.role, u.name, u.mobile].map(x => String(x || '').toUpperCase()), hit = l => l.some(x => meK.indexOf(x) >= 0 || x.replace(/\D/g, '').slice(-10) === u.mobile);
     const dashOk = ['DASH-01', 'DASH-02', 'DASH-03', 'DASH-04', 'DASH-05'].some(cd => JNP.rights(cd).length) || (lst('Dashboard_Roles').length ? hit(lst('Dashboard_Roles')) : u.level === 'Level 1') || hit(lst('Dashboard_Ops_Roles'));
     const compTile = '<a class="tile" style="--accent:var(--navy)" href="' + JNP.CONFIG.HUB + 'compliance/"><span class="ic">📑</span><span class="en">Vehicle Compliance</span><span class="hi">गाड़ी के कागज़ात</span><span class="tag"></span></a>';   // everyone
     if (true) {
       html += '<div class="section"><h2 style="color:var(--navy)"><span class="dot" style="background:var(--navy)"></span>General <small>सामान्य</small></h2><div class="tiles">' +
-        gen.map(cd => tileHtml(cd, 'var(--gen)', cd === 'APR-01' ? (c.toApprove || 0) + (c.toPay || 0) : 0)).join('') +
+        gen.map(cd => tileHtml(cd, 'var(--gen)', cd === 'APR-01' ? (c.toApprove || 0) + (c.toPay || 0) : cd === 'TSK-01' ? (TASKS.mine || 0) : 0)).join('') +
         compTile +
         (dashOk ? '<a class="tile" style="--accent:var(--orange)" href="' + JNP.CONFIG.DASHBOARD + '"><span class="ic">📊</span><span class="en">Dashboard</span><span class="hi">डैशबोर्ड</span></a>' : '') +
         '</div></div>';
@@ -147,13 +153,32 @@
     $('sections').innerHTML = html || '<div class="card center muted">No modules assigned to you yet. Ask HO.</div>';
   }
 
+  // ---------- "Install app" card: hidden once installed or dismissed
+  function installCard() {
+    const card = $('installCard'), ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    let hidden = false; try { hidden = localStorage.getItem('jnp2_install_x') === '1'; } catch (e) { }
+    if (JNP.isApp() || hidden) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const how = () => { $('instHow').innerHTML = ios ? 'In Safari tap <b>Share ⬆️</b> → <b>Add to Home Screen</b> → Add' : 'Tap the browser menu <b>⋮</b> → <b>Add to Home screen</b> (or <b>Install app</b>)'; };
+    $('instBtn').onclick = async () => {
+      const ev = window.__jnpInstall;
+      if (ev) { ev.prompt(); const r = await ev.userChoice.catch(() => ({})); if (r && r.outcome === 'accepted') card.classList.add('hidden'); window.__jnpInstall = null; }
+      else how();
+    };
+    $('instX').onclick = () => { card.classList.add('hidden'); try { localStorage.setItem('jnp2_install_x', '1'); } catch (e) { } };
+    if (ios) $('instBtn').textContent = 'How?';
+  }
+  document.addEventListener('jnp-installable', () => { if (!$('homeView').classList.contains('hidden')) installCard(); });
+
   async function showHome() {
     $('loginView').classList.add('hidden'); $('homeView').classList.remove('hidden');
     JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
-    render();
+    render(); installCard();
     try { await JNP.refreshMe(); render(); } catch (e) { JNP.toast(e.message, 'warn'); }
     JNP.masters().then(render).catch(() => { });
+    if (JNP.rights('TSK-01').length) JNP.call('taskCount', {}).then(o => { TASKS = o; render(); }).catch(() => { });   // my open tasks → badge on the Tasks tile
   }
+  let TASKS = {};
   $('logoutBtn').onclick = () => { if (confirm('Logout from this phone?')) JNP.logout(); };
   const s = JNP.session();
   if (s && s.token) showHome(); else showLogin();

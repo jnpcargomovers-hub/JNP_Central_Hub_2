@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Portal Sync · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .steps { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.55; } .steps b { color: var(--navy); }
+    .tiles4 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .tiles4 div { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 10px 8px; text-align: center; border-top: 3px solid var(--c, var(--blue)); }
+    .tiles4 b { display: block; font-size: 22px; color: var(--navy); } .tiles4 span { font-size: 11.5px; font-weight: 700; color: var(--muted); line-height: 1.2; display: block; }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; } .tbl th { text-align: left; font-size: 11px; color: var(--muted); padding: 5px 4px; border-bottom: 1px solid var(--line); }
+    .tbl td { padding: 6px 4px; border-bottom: 1px solid #EEF1F5; vertical-align: top; } .tbl td.n { font-weight: 800; white-space: nowrap; } .tbl td.r { text-align: right; white-space: nowrap; }
+    .old { color: var(--red); text-decoration: line-through; } .new { color: #12804A; font-weight: 800; }
+    details.card summary { cursor: pointer; font-weight: 800; color: var(--navy); } details.card summary small { color: var(--muted); font-weight: 600; }
+    .scroll { overflow-x: auto; margin-top: 8px; }
+    .prep { position: fixed; left: -10000px; top: 0; width: 520px; background: #fff; padding: 18px; font-family: Barlow, Arial, sans-serif; color: #1B2430; }
+    .prep .h { display: flex; align-items: center; gap: 12px; } .prep .h img { height: 36px; } .prep .h b { display: block; font-size: 20px; color: #022A5B; } .prep .h span { font-size: 12.5px; color: #5D6877; }
+    .prep .st { display: flex; height: 4px; margin: 10px 0; } .prep .st i { flex: 1; }
+    .prep table { width: 100%; border-collapse: collapse; font-size: 12px; } .prep th { text-align: left; font-size: 10.5px; color: #5D6877; border-bottom: 1px solid #DCE3EE; padding: 4px 3px; } .prep td { padding: 4px 3px; border-bottom: 1px solid #EEF1F5; }
+    .prep td.age { font-weight: 800; color: #B91C1C; text-align: right; } .prep .f { margin-top: 10px; font-size: 11px; color: #7A8596; text-align: right; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <h3 class="cardh"><span>How to update · कैसे करें</span></h3>
+      <ol class="steps">
+        <li>Download the <b>dispatch report</b> (Transporter Portal, from the start of the month / year till today) → in <b>JNP_Finance_DB › Portal_Loading</b> click <b>A1</b> and paste the <b>whole file</b> over the old one.</li>
+        <li>Download the <b>Daily DI Follow-up</b> → in <b>Daily Paste</b> click <b>A1</b> and paste the whole file. The pending LR list on the dashboard updates by itself.</li>
+        <li>Come back here → check → tap <b>Apply</b> to correct the Loader entries.</li>
+      </ol>
+    </div>
+    <div id="sum"><div class="card muted">Checking the portal data…</div></div>
+    <div id="act"></div>
+    <div id="lists"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'UTCL Portal Sync', 'पोर्टल मिलान · LR ↔ DI', { sync: () => load() });
+  await JNP.requireModule(['FIN-05']);
+  let P = null;
+  const lbl = { Truck_No: 'Truck', Destination: 'Destination' };
+  async function load() {
+    $('sum').innerHTML = '<div class="card muted">Checking the portal data…</div>'; $('act').innerHTML = ''; $('lists').innerHTML = '';
+    try { P = await JNP.call('portalPreview', {}); draw(); }
+    catch (e) { $('sum').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
+  }
+  function draw() {
+    const c = P.counts;
+    $('sum').innerHTML = '<div class="tiles4">' +
+      [['Portal LRs', c.loading, 'var(--blue)'], ['Matched to Loader', c.matched, '#12804A'], ['To update', c.toUpdate, 'var(--orange)'],
+       ['Corrections', c.corrections, 'var(--red)'], ['On portal, no Loader entry', P.missingLoader.length, '#7C3AED'], ['Pending LRs', P.pending.length, 'var(--red)']]
+        .map(x => '<div style="--c:' + x[2] + '"><b>' + x[1] + '</b><span>' + x[0] + '</span></div>').join('') + '</div>';
+    $('act').innerHTML = P.canApply && c.toUpdate ? '<div class="card"><button class="btn green" type="button" id="apply">✅ Apply ' + c.toUpdate + ' LRs to Loader entries & truck status</button>' +
+      '<div class="hint" style="margin-top:8px">Fills DI, party, actual MT, grade, PGI, EPOD and freight. ' + (c.corrections ? '<b>' + c.corrections + ' Loader entries will be corrected</b> to the portal truck / destination — each change is logged.' : 'No truck / destination corrections needed.') + '</div><div id="aerr" class="err hidden"></div></div>'
+      : '<div class="card muted" style="margin-top:12px">' + (c.toUpdate ? 'View only — Finance applies the portal data.' : '✓ Everything on the portal is already in the Loader entries.') + '</div>';
+    if ($('apply')) $('apply').onclick = () => JNP.submit($('apply'), $('aerr'), async () => {
+      const o = await JNP.call('portalApply', {});
+      JNP.toast(o.updated + ' LRs updated · ' + o.corrected + ' corrected · ' + o.moved + ' trucks moved on the board', 'ok', 6000); await load();
+    });
+    const sec = (title, sub, open, body) => '<details class="card"' + (open ? ' open' : '') + '><summary>' + title + ' <small>' + sub + '</small></summary>' + body + '</details>';
+    $('lists').innerHTML =
+      (P.corrections.length ? sec('✏️ Corrections · सुधार', P.corrections.length + ' Loader entries differ from the portal', true,
+        '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Field</th><th>Loader</th><th>Portal (actual)</th></tr>' +
+        P.corrections.map(x => x.fix.map((f, i) => '<tr><td class="n">' + (i ? '' : E(x.lr)) + '</td><td>' + E(lbl[f[0]] || f[0]) + '</td><td class="old">' + E(f[1] || '—') + '</td><td class="new">' + E(f[2]) + '</td></tr>').join('')).join('') + '</table></div>') : '') +
+      sec('⏳ Pending LRs · बकाया', P.pending.length + ' older than 5 days · no bill · EPOD not received', true,
+        (P.pending.length ? '<button class="btn light" type="button" id="pShare" style="margin:10px 0">📷 Share pending LR list</button><div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination · Party</th><th>MT</th><th>Age</th></tr>' +
+          P.pending.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '<br><small class="hint">' + E(x.party) + (x.remark ? ' · ' + E(x.remark) : '') + '</small></td><td class="r">' + E(x.qty) + '</td><td class="r"><b>' + E(x.age) + ' d</b></td></tr>').join('') + '</table></div>'
+          : '<div class="hint" style="margin-top:8px">None 🎉 (or DI_Followup is empty)</div>')) +
+      (P.missingLoader.length ? sec('❓ On portal, no Loader entry', P.missingLoader.length + ' LRs — make or correct the Loader entry', false,
+        '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination</th><th>MT</th><th>PGI</th></tr>' +
+        P.missingLoader.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck) + '</td><td>' + E(x.dest) + '</td><td class="r">' + E(x.qty) + '</td><td>' + E(JNP.dmy(String(x.pgi).slice(0, 16))) + '</td></tr>').join('') + '</table></div>') : '') +
+      (P.notOnPortal.length ? sec('🔎 Loader entries not on the portal', P.notOnPortal.length + ' older than a day', false,
+        '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination</th><th>Entered</th></tr>' +
+        P.notOnPortal.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck) + '</td><td>' + E(x.dest) + '</td><td>' + E(JNP.dmy(String(x.at).slice(0, 16))) + '</td></tr>').join('') + '</table></div>') : '');
+    if ($('pShare')) $('pShare').onclick = sharePending;
+  }
+  async function sharePending() {
+    const now = JNP.nowText(), box = document.createElement('div'); box.className = 'prep';
+    const mt = P.pending.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    box.innerHTML = '<div class="h"><img src="' + JNP.CONFIG.LOGO + '" alt=""><div><b>Pending LR follow-up</b><span>' + now + ' · ' + P.pending.length + ' LRs · ' + Math.round(mt) + ' MT · older than 5 days, no bill, EPOD not received</span></div></div>' +
+      '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
+      '<table><tr><th>LR</th><th>Truck</th><th>Destination</th><th>Party</th><th>MT</th><th>Age</th></tr>' +
+      P.pending.map(x => '<tr><td><b>' + E(x.lr) + '</b></td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '</td><td>' + E(x.party) + '</td><td>' + E(x.qty) + '</td><td class="age">' + E(x.age) + ' d</td></tr>').join('') + '</table>' +
+      '<div class="f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + now + '</div>';
+    document.body.appendChild(box);
+    try { JNP.busy(true, 'Making image…'); await new Promise(r => setTimeout(r, 150)); JNP.busy(false); await JNP.shareImage(box, 'JNP_Pending_LR_' + JNP.todayISO() + '.png', '*Pending LR follow-up · ' + now + '*\n' + P.pending.length + ' LRs · ' + Math.round(mt) + ' MT'); }
+    catch (e) { JNP.busy(false); JNP.toast(e.message, 'bad'); } finally { box.remove(); }
+  }
+  await load();
+})();
+</script>
+</body>
+</html>

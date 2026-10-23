@@ -33,7 +33,7 @@
   JNP.header($('hdr'), 'Attendance', 'हाज़िरी · सेल्फी + लोकेशन');
   const ctx = await JNP.requireModule('ATT-01');
   let type = 'IN', selfie = null, stream = null;
-  const needSelfie = String((JNP.M().settings || {}).Attendance_Selfie || 'Yes').toLowerCase() !== 'no';
+  const needSelfie = String((JNP.M().settings || {}).Attendance_Selfie || '').toLowerCase() === 'must';   // photos are optional unless Settings says Must
   function setType() {
     const c = JNP.session().counts || {}; type = c.punchedIn ? 'OUT' : 'IN';
     $('punchBtn').textContent = type === 'IN' ? '✅ Punch IN · ड्यूटी शुरू' : '🏁 Punch OUT · ड्यूटी खत्म';

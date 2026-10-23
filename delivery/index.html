@@ -48,7 +48,7 @@
     { k: 'Qty_Delivered_MT', label: 'Delivered quantity (MT)', hi: 'डिलीवर मात्रा', type: 'dec', req: true, ph: 'e.g. 33.960' },
     { k: 'Shortage_Reason', label: 'Shortage reason', hi: 'कमी का कारण', type: 'select', list: 'Shortage_Reason', req: true, show: v => shortKg(v) > 0 },
     { k: 'POD_Status', label: 'POD', hi: 'पीओडी', type: 'select', list: 'POD_Status', req: true, value: 'Received - Hard Copy' },
-    { k: 'POD_Photo_URL', label: 'POD photo', hi: 'पीओडी फोटो', type: 'photo', req: v => /^Received/.test(v.POD_Status) },
+    { k: 'POD_Photo_URL', label: 'POD photo', hi: 'पीओडी फोटो', type: 'photo' },
     { k: 'Unloaded_At', label: 'Unloaded at', hi: 'खाली हुआ', type: 'datetime', hint: 'Leave blank = now' },
     { k: 'Remark', label: 'Remark' },
   ], { module: 'OPS-02' });

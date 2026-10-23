@@ -157,7 +157,7 @@
   const thumb = u => JNP.driveThumb(u);
 
   // ---------------- checklist (cached on the phone, refreshed every visit)
-  let CL = (JNP.store.get(CKEY) || {}).items || [], CFG = (JNP.store.get(CKEY) || {}).cfg || { photoOnIssue: true, dueDays: 30, types: ['Routine', 'Pre-trip', 'After repair', 'Monthly', 'Handover'] };
+  let CL = (JNP.store.get(CKEY) || {}).items || [], CFG = (JNP.store.get(CKEY) || {}).cfg || { photoOnIssue: false, dueDays: 30, types: ['Routine', 'Pre-trip', 'After repair', 'Monthly', 'Handover'] };
   async function loadChecklist() {
     try { const o = await JNP.call('inspChecklist'); CL = o.items; CFG = { photoOnIssue: o.photoOnIssue, dueDays: o.dueDays, types: o.types }; JNP.store.set(CKEY, { items: CL, cfg: CFG, at: Date.now() }); }
     catch (e) { if (!CL.length) throw e; JNP.toast('Offline — using saved checklist', 'warn'); }
@@ -186,7 +186,7 @@
     { k: 'Location', label: 'Location', hi: 'जगह', ph: 'e.g. Dhule yard / धुले यार्ड' },
   ], { module: 'RM-08' });
   const P = JNP.form($('photos'), [
-    { k: 'Truck_Photo_URLs', label: 'Truck photos (front, back, both sides)', hi: 'गाड़ी के फोटो – आगे, पीछे, दोनों साइड', type: 'photo', multiple: true, req: true },
+    { k: 'Truck_Photo_URLs', label: 'Truck photos (front, back, both sides)', hi: 'गाड़ी के फोटो – आगे, पीछे, दोनों साइड', type: 'photo', multiple: true },
     { k: 'Odometer_Photo_URL', label: 'Odometer photo', hi: 'मीटर का फोटो', type: 'photo' },
     { k: 'Remark', label: 'Remark', hi: 'टिप्पणी', type: 'textarea', ph: 'Anything else / और कुछ बताना हो तो' },
   ], { module: 'RM-08' });

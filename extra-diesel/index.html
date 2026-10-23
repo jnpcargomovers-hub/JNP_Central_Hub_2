@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Extra Diesel · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .sumbar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; } .sumbar div { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 10px 6px; text-align: center; }
+    .sumbar b { display: block; font-size: 19px; color: var(--navy); } .sumbar span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div id="tabs"></div>
+    <div id="newView" class="hidden">
+      <form id="f" class="card" autocomplete="off" novalidate>
+        <h3 class="cardh"><span>Extra diesel given · अतिरिक्त डीज़ल</span></h3>
+        <div class="hint" style="margin:-4px 0 10px">Diesel outside a trip — repair runs, shifting, breakdown recovery… It counts in the truck's diesel and KMPL.</div>
+        <div id="fields"></div>
+        <div id="err" class="err hidden"></div>
+        <button id="saveBtn" class="btn orange" type="submit">⛽ Save · सेव करें</button>
+      </form>
+      <div id="doneCard" class="card hidden"></div>
+    </div>
+    <div id="listView" class="hidden">
+      <div class="sumbar" id="sum"></div>
+      <div class="card list"><div id="rows" class="muted">Loading…</div></div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  const CODE = 'ADM-02';
+  JNP.header($('hdr'), 'Extra Diesel', 'अतिरिक्त डीज़ल · रिपेयर / शिफ्टिंग');
+  const ctx = await JNP.requireModule(CODE);
+  await JNP.masters().catch(() => { });
+  const rate = Number((JNP.M().settings || {}).Diesel_Rate) || '';
+  let clientReqId = JNP.uid();
+  const REASONS = [['Repair / workshop trip', 'रिपेयर के लिए'], ['Breakdown recovery / towing', 'ब्रेकडाउन रिकवरी'], ['Shifting to depot / yard', 'डिपो / यार्ड शिफ्टिंग'], ['Waiting / idling at plant', 'प्लांट पर इंतज़ार'], ['Market truck support', 'मार्केट गाड़ी'], ['Other', 'अन्य']];
+  const F = JNP.form($('fields'), [
+    { k: 'Diesel_Date', label: 'Date', hi: 'तारीख', type: 'date', value: JNP.todayISO(), half: true },
+    { k: 'Litres', label: 'Litres', hi: 'लीटर', type: 'dec', req: true, half: true },
+    { k: 'Truck_No', label: 'Truck', hi: 'गाड़ी', type: 'truck', req: true, allowNew: false },
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver' },
+    { k: 'Reason', label: 'Why?', hi: 'कारण', type: 'select', req: true, options: REASONS.map(x => ({ v: x[0], t: x[0] + ' · ' + x[1] })) },
+    { k: 'Rate', label: 'Rate ₹ / litre', type: 'dec', value: rate, half: true },
+    { k: 'Odometer_KM', label: 'Odometer KM', type: 'num', half: true, ph: 'optional' },
+    { k: 'Pump_Vendor', label: 'Pump / given by', hi: 'पंप', ph: 'e.g. Depot tank, HP Songir' },
+    { k: 'Photo_URL', label: 'Slip photo (optional)', hi: 'पर्ची फोटो', type: 'photo' },
+    { k: 'Remark', label: 'Remark', hi: 'टिप्पणी' },
+  ], { module: CODE });
+  F.on(k => {
+    if (k === 'Truck_No') { const t = JNP.findTruck(F.val('Truck_No')); if (t && t.driver && !F.val('Driver_Name')) F.set('Driver_Name', t.driver); }
+    if (k === 'Litres' || k === 'Rate') { const l = Number(F.val('Litres')), r = Number(F.val('Rate')); F.info('Litres', l && r ? '<span class="hint">= ' + JNP.inr(Math.round(l * r)) + '</span>' : ''); }
+  });
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    JNP.submit($('saveBtn'), $('err'), async () => {
+      const bad = F.check(); if (bad) throw new Error(bad);
+      const out = await JNP.call('save', { module: CODE, clientReqId: clientReqId, data: F.values() }), r = out.record;
+      const msg = JNP.waText('⛽ EXTRA DIESEL · ' + r.Truck_No + ' · ' + r.Litres + ' L', [['Why', r.Reason], ['Driver', r.Driver_Name], ['Date', JNP.dmy(r.Diesel_Date)], ['Amount', r.Amount ? JNP.inr(r.Amount) : ''],
+        ['Pump', r.Pump_Vendor], ['KM', r.Odometer_KM], ['Remark', r.Remark], ['Photo', r.Photo_URL], ['Ref', r.Record_ID]]);
+      $('f').classList.add('hidden');
+      JNP.done($('doneCard'), { title: 'EXTRA DIESEL SAVED', big: r.Truck_No + ' · ' + r.Litres + ' L', sub: r.Reason + (r.Amount ? ' · ' + JNP.inr(r.Amount) : ''),
+        buttons: [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }],
+        onNew: () => { F.reset(); clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
+    });
+  });
+  async function loadList() {
+    $('rows').innerHTML = 'Loading…';
+    try {
+      const [o, s] = await Promise.all([JNP.call('list', { module: CODE, days: 60, limit: 200 }), JNP.call('admSummary', {}).catch(() => ({}))]);
+      if (s.diesel) $('sum').innerHTML = '<div><b>' + Math.round(s.diesel.litres) + ' L</b><span>This month</span></div><div><b>' + JNP.inr(s.diesel.amount) + '</b><span>Amount</span></div><div><b>' + s.diesel.entries + '</b><span>Entries</span></div>';
+      $('rows').innerHTML = JNP.rowsHtml(o.rows, r => ({ t: E(r.Truck_No + ' · ' + r.Litres + ' L'), s: E([r.Reason, r.Driver_Name, JNP.dmy(r.Diesel_Date), r.Pump_Vendor, r.Amount ? JNP.inr(r.Amount) : '', 'by ' + r.Created_By].filter(Boolean).join(' · ')) }), 'Nothing yet');
+    } catch (e) { $('rows').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
+  }
+  JNP.tabs($('tabs'), (ctx.can('E') ? [{ id: 'new', label: '➕ New entry' }] : []).concat([{ id: 'list', label: '📋 Entries' }]), t => {
+    $('newView').classList.toggle('hidden', t !== 'new'); $('listView').classList.toggle('hidden', t !== 'list'); if (t === 'list') loadList();
+  });
+})();
+</script>
+</body>
+</html>
