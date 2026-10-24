@@ -33,8 +33,10 @@
       <ol class="steps">
         <li>Download the <b>dispatch report</b> (Transporter Portal, from the start of the month / year till today) → in <b>JNP_Finance_DB › Portal_Loading</b> click <b>A1</b> and paste the <b>whole file</b> over the old one.</li>
         <li>Download the <b>Daily DI Follow-up</b> → in <b>Daily Paste</b> click <b>A1</b> and paste the whole file. The pending LR list on the dashboard updates by itself.</li>
-        <li>Come back here → check → tap <b>Apply</b> to correct the Loader entries.</li>
+        <li>Every 30 minutes the app picks up the new paste by itself: actual MT, PGI, EPOD, bill and freight are filled and trucks move on the board.</li>
+        <li><b>Corrections</b> (LR changed, truck or destination different) wait for you: check the list below → tap <b>Apply</b>.</li>
       </ol>
+      <div class="hint" style="margin-top:8px">🔒 Each Loader entry is corrected <b>only once</b>. Pasting the same month again, or 3 months at once, never changes an entry that was already matched — later pastes only add EPOD, bill no. and freight.</div>
     </div>
     <div id="sum"><div class="card muted">Checking the portal data…</div></div>
     <div id="act"></div>
@@ -46,7 +48,9 @@
   JNP.header($('hdr'), 'UTCL Portal Sync', 'पोर्टल मिलान · LR ↔ DI', { sync: () => load() });
   await JNP.requireModule(['FIN-05']);
   let P = null;
-  const lbl = { Truck_No: 'Truck', Destination: 'Destination' };
+  await JNP.masters().catch(() => { });
+  const canMap = JNP.rights('ADM-03').indexOf('E') >= 0 || JNP.session().user.level === 'Level 1';
+  const lbl = { Truck_No: 'Truck', Destination: 'Destination', LR_No: 'LR (actual)' };
   async function load() {
     $('sum').innerHTML = '<div class="card muted">Checking the portal data…</div>'; $('act').innerHTML = ''; $('lists').innerHTML = '';
     try { P = await JNP.call('portalPreview', {}); draw(); }
@@ -56,20 +60,33 @@
     const c = P.counts;
     $('sum').innerHTML = '<div class="tiles4">' +
       [['Portal LRs', c.loading, 'var(--blue)'], ['Matched to Loader', c.matched, '#12804A'], ['To update', c.toUpdate, 'var(--orange)'],
-       ['Corrections', c.corrections, 'var(--red)'], ['On portal, no Loader entry', P.missingLoader.length, '#7C3AED'], ['Pending LRs', P.pending.length, 'var(--red)']]
+       ['Corrections to check', c.corrections, 'var(--red)'], ['LR changed', c.lrChanges || 0, 'var(--red)'], ['Not sure — check by hand', (P.unsure || []).length, '#7C3AED'],
+       ['On portal, no Loader entry', P.missingLoader.length, '#7C3AED'], ['Same LR on 2 entries', (P.dupLR || []).length, '#B45309'], ['Pending LRs', P.pending.length, 'var(--red)']]
         .map(x => '<div style="--c:' + x[2] + '"><b>' + x[1] + '</b><span>' + x[0] + '</span></div>').join('') + '</div>';
     $('act').innerHTML = P.canApply && c.toUpdate ? '<div class="card"><button class="btn green" type="button" id="apply">✅ Apply ' + c.toUpdate + ' LRs to Loader entries & truck status</button>' +
-      '<div class="hint" style="margin-top:8px">Fills DI, party, actual MT, grade, PGI, EPOD and freight. ' + (c.corrections ? '<b>' + c.corrections + ' Loader entries will be corrected</b> to the portal truck / destination — each change is logged.' : 'No truck / destination corrections needed.') + '</div><div id="aerr" class="err hidden"></div></div>'
+      '<div class="hint" style="margin-top:8px">Fills DI, party, actual MT, grade, PGI, EPOD and freight. ' + (c.corrections ? '<b>' + c.corrections + ' Loader entries will be corrected</b> to the portal LR / truck / destination (Builty, Delivery and truck journey follow) — each change is logged, and done only once.' : 'No corrections needed.') + '</div><div id="aerr" class="err hidden"></div></div>'
       : '<div class="card muted" style="margin-top:12px">' + (c.toUpdate ? 'View only — Finance applies the portal data.' : '✓ Everything on the portal is already in the Loader entries.') + '</div>';
+    if (P.lastAuto) $('act').innerHTML += '<div class="hint" style="margin-top:8px">🤖 Last automatic sync ' + E(P.lastAuto.at) + ' · ' + P.lastAuto.updated + ' LRs filled' + (P.lastAuto.waiting ? ' · ' + P.lastAuto.waiting + ' corrections left for you' : '') + '</div>';
     if ($('apply')) $('apply').onclick = () => JNP.submit($('apply'), $('aerr'), async () => {
       const o = await JNP.call('portalApply', {});
-      JNP.toast(o.updated + ' LRs updated · ' + o.corrected + ' corrected · ' + o.moved + ' trucks moved on the board', 'ok', 6000); await load();
+      JNP.toast(o.updated + ' LRs updated · ' + o.corrected + ' corrected (' + (o.renamed || 0) + ' LR changed) · ' + o.moved + ' trucks moved on the board', 'ok', 6000); await load();
     });
     const sec = (title, sub, open, body) => '<details class="card"' + (open ? ' open' : '') + '><summary>' + title + ' <small>' + sub + '</small></summary>' + body + '</details>';
     $('lists').innerHTML =
       (P.corrections.length ? sec('✏️ Corrections · सुधार', P.corrections.length + ' Loader entries differ from the portal', true,
         '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Field</th><th>Loader</th><th>Portal (actual)</th></tr>' +
-        P.corrections.map(x => x.fix.map((f, i) => '<tr><td class="n">' + (i ? '' : E(x.lr)) + '</td><td>' + E(lbl[f[0]] || f[0]) + '</td><td class="old">' + E(f[1] || '—') + '</td><td class="new">' + E(f[2]) + '</td></tr>').join('')).join('') + '</table></div>') : '') +
+        P.corrections.map(x => x.fix.map((f, i) => '<tr><td class="n">' + (i ? '' : E(x.lr)) + '</td><td>' + E(lbl[f[0]] || f[0]) + '</td><td class="old">' + E(f[1] || '—') + '</td><td class="new">' + E(f[2]) + '</td></tr>').join('') +
+          (x.hold ? '<tr><td></td><td colspan="3" class="err">⛔ ' + E(x.hold) + '</td></tr>' : '')).join('') + '</table></div>') : '') +
+      ((P.unsure || []).length ? sec('🤔 Not sure — check by hand', P.unsure.length + ' portal LRs with more than one possible Loader entry · nothing is changed', true,
+        '<div class="scroll"><table class="tbl"><tr><th>Portal LR</th><th>Truck · destination</th><th>Could be</th></tr>' +
+        P.unsure.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck) + '<br><small class="hint">' + E(x.dest) + ' · PGI ' + E(JNP.dmy(String(x.pgi).slice(0, 16))) + '</small></td><td>' + x.options.map(E).join('<br>') + '</td></tr>').join('') + '</table></div>' +
+        '<div class="hint" style="margin-top:6px">Open the right Loader entry and correct its LR / truck by hand.</div>') : '') +
+      ((P.newDest || []).length ? sec('📍 Portal destination names not in your list', P.newDest.length + ' names · map each once, then the portal fills the right destination by itself', true,
+        P.newDest.map((x, k) => '<div class="nd" style="padding:8px 0;border-top:1px solid #EEF1F5"><b>' + E(x.portal) + '</b><div class="hint">our Loader entries call it: ' + E(x.ours.join(' · ') || '—') + '</div>' +
+          (canMap ? '<div style="display:flex;gap:6px;margin-top:6px"><input class="input upper" list="destNames" data-k="' + k + '" value="' + E(x.ours[0] || '') + '" style="flex:1" placeholder="same as which destination?"><button class="mini" type="button" data-map="' + k + '">✓ Same place</button></div><div class="err hidden" data-e="' + k + '"></div>' : '') + '</div>').join('') +
+        '<datalist id="destNames">' + ((JNP.M().destinations || []).map(d => '<option value="' + E(d.name) + '">').join('')) + '</datalist>') : '') +
+      ((P.dupLR || []).length ? sec('⚠️ Same LR on two Loader entries', P.dupLR.length + ' LRs · the portal decides which one is right', false,
+        '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Entries</th></tr>' + P.dupLR.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + x.trucks.map(E).join('<br>') + '</td></tr>').join('') + '</table></div>') : '') +
       sec('⏳ Pending LRs · बकाया', P.pending.length + ' older than 5 days · no bill · EPOD not received', true,
         (P.pending.length ? '<button class="btn light" type="button" id="pShare" style="margin:10px 0">📷 Share pending LR list</button><div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination · Party</th><th>MT</th><th>Age</th></tr>' +
           P.pending.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '<br><small class="hint">' + E(x.party) + (x.remark ? ' · ' + E(x.remark) : '') + '</small></td><td class="r">' + E(x.qty) + '</td><td class="r"><b>' + E(x.age) + ' d</b></td></tr>').join('') + '</table></div>'
@@ -81,6 +98,14 @@
         '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination</th><th>Entered</th></tr>' +
         P.notOnPortal.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck) + '</td><td>' + E(x.dest) + '</td><td>' + E(JNP.dmy(String(x.at).slice(0, 16))) + '</td></tr>').join('') + '</table></div>') : '');
     if ($('pShare')) $('pShare').onclick = sharePending;
+    document.querySelectorAll('[data-map]').forEach(btn => btn.onclick = () => {
+      const k = btn.dataset.map, x = P.newDest[Number(k)], to = document.querySelector('input[data-k="' + k + '"]').value.trim();
+      JNP.submit(btn, document.querySelector('[data-e="' + k + '"]'), async () => {
+        if (!to) throw new Error('Type which destination it is');
+        await JNP.call('cleanMerge', { kind: 'dest', groups: [{ to: to, from: [x.portal] }] });
+        JNP.toast(x.portal + ' → ' + to.toUpperCase(), 'ok'); await load();
+      });
+    });
   }
   async function sharePending() {
     const now = JNP.nowText(), box = document.createElement('div'); box.className = 'prep';

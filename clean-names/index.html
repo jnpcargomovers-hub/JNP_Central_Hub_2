@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Clean names · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .intro { font-size: 13.5px; line-height: 1.5; margin: 0; }
+    .bulk { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+    .grp { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 12px; margin-top: 12px; border-left: 5px solid var(--blue); }
+    .grp.same { border-left-color: #12804A; } .grp.warn { border-left-color: var(--orange); } .grp.done { border-left-color: #12804A; opacity: .75; }
+    .grp h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 700; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .tag { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 2px 8px; background: #E8F0FB; color: var(--navy); }
+    .tag.g { background: #E6F6EC; color: #12804A; } .tag.o { background: #FFF1E3; color: #B45309; }
+    .mem { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; padding: 7px 0; border-top: 1px solid #EEF1F5; }
+    .mem:first-of-type { border-top: 0; }
+    .mem input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--navy); }
+    .mem .nm { font-weight: 700; font-size: 15px; word-break: break-word; } .mem .nm small { display: block; color: var(--muted); font-weight: 600; font-size: 11.5px; }
+    .mem .n { font-weight: 800; color: var(--navy); font-size: 14px; white-space: nowrap; text-align: right; }
+    .mem.off .nm { color: #9AA5B4; text-decoration: line-through; }
+    .right { margin-top: 8px; } .right label { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .right select, .right input { width: 100%; border: 1.5px solid #D7DEE8; border-radius: 10px; padding: 9px 10px; font-size: 15px; font-weight: 700; margin-top: 4px; background: #fff; }
+    .acts { display: flex; gap: 8px; margin-top: 10px; } .acts .btn { flex: 1; }
+    .warnline { color: #B45309; font-size: 12.5px; font-weight: 700; margin: 4px 0; }
+    .addrow { display: flex; gap: 6px; margin-top: 6px; } .addrow input { flex: 1; border: 1.5px dashed #C9D3E0; border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+    .ok { color: #12804A; font-weight: 800; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <p class="intro">The same driver or destination written in different ways splits every report (<b>TRIMBKESWAR · TRAMBAKESHWAR</b>, <b>MEHAMOOD KHAN · Mahmood Khan</b>). Pick the right name for each group and tap <b>Merge</b>:</p>
+      <ul class="intro" style="padding-left:18px;margin:6px 0 0">
+        <li>all old records are changed to the right name (Loader, Builty, Delivery, journeys, breakdowns, advances, ledger…)</li>
+        <li>the wrong spellings are remembered — anyone typing them later, and the UTCL portal, get the right name by itself</li>
+        <li>untick a name if it is a <b>different</b> person / place. Same mobile number = same driver.</li>
+      </ul>
+    </div>
+    <div id="tabs"></div>
+    <div id="bulk"></div>
+    <div id="list"><div class="card muted">Looking through all sheets…</div></div>
+  </div>
+  <datalist id="allNames"></datalist>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Clean names', 'नाम सुधार · ड्राइवर · डेस्टिनेशन', { sync: () => load() });
+  const ctx = await JNP.requireModule('ADM-03');
+  let S = null, kind = 'dest', canEdit = false;
+  const SKIP_KEY = 'jnp2_clean_skip';
+  const skipped = () => { try { return JSON.parse(localStorage.getItem(SKIP_KEY) || '{}'); } catch (e) { return {}; } };
+  const gid = g => kind + ':' + g.members.map(m => m.name).sort().join('|');
+  const style = s => kind === 'dest' ? String(s).replace(/\s+/g, ' ').trim().toUpperCase() : JNP.titleCase(String(s).replace(/\s+/g, ' ').trim());
+  async function load() {
+    $('list').innerHTML = '<div class="card muted">Looking through all sheets…</div>'; $('bulk').innerHTML = '';
+    try { S = await JNP.call('cleanScan', {}); canEdit = S.canEdit; draw(); }
+    catch (e) { $('list').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
+  }
+  function draw() {
+    const D = S[kind], sk = skipped(), groups = D.groups.filter(g => !sk[gid(g)]);
+    $('allNames').innerHTML = D.names.map(x => '<option value="' + E(x.name) + '">').join('');
+    const same = groups.filter(g => g.sameLetters);
+    $('bulk').innerHTML = same.length && canEdit ? '<div class="card"><div class="bulk"><div style="flex:1"><b>' + same.length + ' groups differ only in CAPITALS / spaces</b><div class="hint">e.g. ' + E(same[0].members.map(m => m.name).join(' · ')) + '</div></div>' +
+      '<button class="btn green" type="button" id="bulkGo" style="width:auto;padding:10px 14px">✓ Fix all</button></div><div id="bulkMsg" class="err hidden"></div></div>' : '';
+    if ($('bulkGo')) $('bulkGo').onclick = () => JNP.submit($('bulkGo'), $('bulkMsg'), async () => {
+      const o = await JNP.call('cleanMerge', { kind: kind, groups: same.map(g => ({ to: g.suggest, from: g.members.map(m => m.name) })) });
+      JNP.toast(o.groups + ' names fixed · ' + o.records + ' records changed', 'ok', 6000); await load();
+    });
+    $('list').innerHTML = groups.length ? groups.map((g, i) => card(g, D.groups.indexOf(g))).join('') : '<div class="card"><span class="ok">✓ No look-alike ' + (kind === 'dest' ? 'destinations' : 'driver names') + ' left.</span></div>';
+    const hid = Object.keys(sk).filter(k => k.indexOf(kind + ':') === 0).length;
+    if (hid) $('list').innerHTML += '<div class="hint" style="margin-top:10px;text-align:center"><a href="#" id="unskip">Show ' + hid + ' group' + (hid > 1 ? 's' : '') + ' marked "not the same"</a></div>';
+    if ($('unskip')) $('unskip').onclick = e => { e.preventDefault(); const s2 = skipped(); Object.keys(s2).forEach(k => { if (k.indexOf(kind + ':') === 0) delete s2[k]; }); try { localStorage.setItem(SKIP_KEY, JSON.stringify(s2)); } catch (x) { } draw(); };
+  }
+  function card(g, i) {
+    const names = Array.from(new Set([g.suggest].concat(g.members.map(m => style(m.name)))));
+    return '<div class="grp ' + (g.sameLetters ? 'same' : g.warn ? 'warn' : '') + '" data-i="' + i + '"><h4>' + g.records + ' records' + (g.sameLetters ? ' <span class="tag g">only capitals / spaces</span>' : ' <span class="tag">look-alike spelling</span>') + (g.members.some(m => m.master) ? ' <span class="tag">in master</span>' : '') + '</h4>' +
+      (g.warn ? '<div class="warnline">⚠️ ' + E(g.warn) + '</div>' : '') +
+      '<div class="mems">' + g.members.map((m, k) => mem(m, k)).join('') + '</div>' +
+      (canEdit ? '<div class="addrow"><input list="allNames" placeholder="➕ add another spelling of the same ' + (kind === 'dest' ? 'place' : 'driver') + '" data-a="addIn"><button class="mini" type="button" data-a="add">Add</button></div>' +
+        '<div class="right"><label>Right name · सही नाम</label><select data-a="to">' + names.map(n => '<option' + (n === g.suggest ? ' selected' : '') + '>' + E(n) + '</option>').join('') + '<option value="__type">✏️ Type a different name…</option></select>' +
+        '<input data-a="toTyped" class="hidden" placeholder="Type the right name"></div>' +
+        '<div class="acts"><button class="btn green" type="button" data-a="merge">✓ Merge</button><button class="btn light" type="button" data-a="skip">Not the same</button></div><div class="msg err hidden"></div>' : '') + '</div>';
+  }
+  function mem(m, k) {
+    return '<label class="mem' + (m.tick ? '' : ' off') + '"><input type="checkbox" data-k="' + k + '"' + (m.tick ? ' checked' : '') + (canEdit ? '' : ' disabled') + '><span class="nm">' + E(m.name) +
+      '<small>' + [m.master ? 'master' : '', m.mobile ? '📞 …' + m.mobile.slice(-4) : '', m.portal ? 'UTCL portal ×' + m.portal : '', (m.where || []).filter(w => w !== 'Master').slice(0, 3).join(', ')].filter(Boolean).map(E).join(' · ') + '</small></span><span class="n">' + m.n + '</span></label>';
+  }
+  $('list').addEventListener('change', e => {
+    const box = e.target.closest('.grp'); if (!box) return;
+    if (e.target.type === 'checkbox') e.target.closest('.mem').classList.toggle('off', !e.target.checked);
+    if (e.target.dataset.a === 'to') box.querySelector('[data-a=toTyped]').classList.toggle('hidden', e.target.value !== '__type');
+  });
+  $('list').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-a]'); if (!b) return;
+    const box = b.closest('.grp'), g = S[kind].groups[Number(box.dataset.i)], msg = box.querySelector('.msg');
+    if (b.dataset.a === 'skip') { const s2 = skipped(); s2[gid(g)] = 1; try { localStorage.setItem(SKIP_KEY, JSON.stringify(s2)); } catch (x) { } box.remove(); return; }
+    if (b.dataset.a === 'add') {
+      const inp = box.querySelector('[data-a=addIn]'), v = inp.value.trim(); if (!v) return;
+      if (g.members.some(m => m.name === v)) { inp.value = ''; return; }
+      const hit = S[kind].names.find(x => x.name === v) || { name: v, n: 0 };
+      g.members.push({ name: hit.name, n: hit.n, tick: true, where: [] }); g.records += hit.n;
+      box.outerHTML = card(g, Number(box.dataset.i)); return;
+    }
+    if (b.dataset.a === 'merge') {
+      const sel = box.querySelector('[data-a=to]').value, to = sel === '__type' ? box.querySelector('[data-a=toTyped]').value.trim() : sel;
+      const from = Array.from(box.querySelectorAll('.mem input:checked')).map(c => g.members[Number(c.dataset.k)].name);
+      JNP.submit(b, msg, async () => {
+        if (!to) throw new Error('Pick or type the right name');
+        if (from.length < 1 || (from.length === 1 && style(from[0]) === style(to))) throw new Error('Tick at least one other spelling');
+        const o = await JNP.call('cleanMerge', { kind: kind, groups: [{ to: to, from: from }] });
+        box.classList.add('done');
+        box.innerHTML = '<span class="ok">✓ ' + E(from.filter(x => x !== to).join(' · ')) + ' → ' + E(style(to)) + '</span><div class="hint">' + o.records + ' records changed' + (Object.keys(o.where).length ? ' · ' + E(Object.keys(o.where).map(k => k + ' ' + o.where[k]).join(', ')) : '') + '</div>';
+      });
+    }
+  });
+  JNP.tabs($('tabs'), [{ id: 'dest', label: '📍 Destinations' }, { id: 'driver', label: '👤 Drivers' }], t => { kind = t; if (S) draw(); });
+  await load();
+})();
+</script>
+</body>
+</html>

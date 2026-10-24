@@ -57,7 +57,7 @@
   const F = JNP.form($('fields'), [
     { k: 'Title', label: 'What needs to be done?', hi: 'क्या करना है', req: true, ph: 'e.g. Get fitness renewed for 2748' },
     { k: 'Details', label: 'Details', hi: 'पूरी जानकारी', type: 'textarea', ph: 'optional' },
-    { k: 'Assigned_To', label: 'Give to', hi: 'किसको', type: 'select', req: true, options: () => users().map(u => ({ v: u.name, t: u.name + ' · ' + u.role })) },
+    { k: 'Assigned_To', label: 'Give to', hi: 'किसको', type: 'select', req: true, options: () => users().map(u => ({ v: u.name, t: u.name })) },
     { k: 'Due_Date', label: 'By when', hi: 'कब तक', type: 'date', half: true },
     { k: 'Priority', label: 'Priority', type: 'seg', options: [{ v: 'High', t: '🔴 High' }, { v: 'Normal', t: 'Normal' }, { v: 'Low', t: 'Low' }], value: 'Normal', half: true },
     { k: 'Truck_No', label: 'Truck (if any)', type: 'truck', allowNew: false },
@@ -127,7 +127,7 @@
     const R = JNP.form($('rfields'), [
       { k: 'note', label: 'Reply / note', hi: 'जवाब', type: 'textarea', ph: 'e.g. Called RTO, documents submitted' },
       { k: 'photo', label: 'Photo (optional)', type: 'photo' },
-      { k: 'to', label: 'Give to', hi: 'किसको', type: 'select', options: () => users().filter(u => u.name !== r.Assigned_To).map(u => ({ v: u.name, t: u.name + ' · ' + u.role })), show: () => mode === 'reassign' },
+      { k: 'to', label: 'Give to', hi: 'किसको', type: 'select', options: () => users().filter(u => u.name !== r.Assigned_To).map(u => ({ v: u.name, t: u.name })), show: () => mode === 'reassign' },
       { k: 'due', label: 'New due date', hi: 'नई तारीख', type: 'date', show: () => mode === 'due' },
     ], { module: 'TSK-01' });
     const showOnly = a => { mode = a; R.refresh(); };

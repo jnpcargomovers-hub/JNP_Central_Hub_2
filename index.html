@@ -46,12 +46,6 @@
         <div class="stats" id="stats"></div>
       </div>
       <a class="punch hidden" id="punch" href="attendance/"><span class="dot"></span><span><b id="pT">Attendance</b><small id="pS"></small></span><span class="go" id="pGo">Punch IN</span></a>
-      <div id="installCard" class="card hidden" style="display:flex;gap:12px;align-items:center;border:1.5px solid #CFE0F7;background:#F3F8FF">
-        <img src="icon-192.png" alt="" style="width:46px;height:46px;border-radius:11px;flex:none">
-        <div style="flex:1;min-width:0"><b style="color:#022A5B">Put JNP Hub on your home screen</b><div class="hint" id="instHow" style="margin-top:2px">Opens like an app — no link to search · होम स्क्रीन पर ऐप की तरह</div></div>
-        <button class="mini orange" type="button" id="instBtn">📲 Install</button>
-        <button class="mini" type="button" id="instX" aria-label="Hide" style="padding:6px 8px">✕</button>
-      </div>
       <div id="sections"></div>
       <p class="footnote">J N P Cargo Movers Pvt Ltd · Built on Trust, Driven with Purpose</p>
     </div>
@@ -133,7 +127,7 @@
     const order = Object.keys(JNP.MODULES);
     const seen = {};
     JNP.TILES.forEach(dept => {
-      const codes = order.filter(cd => cd.indexOf(dept.prefix) === 0 && s.access[cd] && JNP.rights(cd).length);
+      const codes = order.filter(cd => cd.indexOf(dept.prefix) === 0 && !JNP.MODULES[cd].hidden && s.access[cd] && JNP.rights(cd).length);
       if (!codes.length) return;
       html += '<div class="section"><h2 style="color:' + dept.color + '"><span class="dot" style="background:' + dept.color + '"></span>' + JNP.esc(dept.name) + ' <small>' + dept.hindi + '</small></h2><div class="tiles">' +
         codes.map(cd => { if (cd === 'OPS-06' || cd === 'RM-01') return offTile(dept.color); const m = MERGE[cd]; if (!m) return tileHtml(cd, dept.color); if (seen[m]) return ''; seen[m] = 1; return mergedHtml(m, dept.color); }).join('') + '</div></div>';
@@ -155,25 +149,47 @@
 
   // ---------- "Install app" card: hidden once installed or dismissed
   function installCard() {
-    const card = $('installCard'), ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const card = $('installCard'), ua = navigator.userAgent, ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
     let hidden = false; try { hidden = localStorage.getItem('jnp2_install_x') === '1'; } catch (e) { }
     if (JNP.isApp() || hidden) { card.classList.add('hidden'); return; }
     card.classList.remove('hidden');
-    const how = () => { $('instHow').innerHTML = ios ? 'In Safari tap <b>Share ⬆️</b> → <b>Add to Home Screen</b> → Add' : 'Tap the browser menu <b>⋮</b> → <b>Add to Home screen</b> (or <b>Install app</b>)'; };
     $('instBtn').onclick = async () => {
       const ev = window.__jnpInstall;
-      if (ev) { ev.prompt(); const r = await ev.userChoice.catch(() => ({})); if (r && r.outcome === 'accepted') card.classList.add('hidden'); window.__jnpInstall = null; }
-      else how();
+      if (ev) {                         // Chrome / Edge on Android or computer: the real install box
+        try { ev.prompt(); const r = await ev.userChoice; window.__jnpInstall = null; if (r && r.outcome === 'accepted') { card.classList.add('hidden'); JNP.toast('Installed ✓ — find "JNP Hub" on your home screen', 'ok', 6000); return; } }
+        catch (e) { window.__jnpInstall = null; }
+      }
+      installHelp(ios, ua);
     };
     $('instX').onclick = () => { card.classList.add('hidden'); try { localStorage.setItem('jnp2_install_x', '1'); } catch (e) { } };
-    if (ios) $('instBtn').textContent = 'How?';
   }
-  document.addEventListener('jnp-installable', () => { if (!$('homeView').classList.contains('hidden')) installCard(); });
+  // step-by-step help, in a sheet that is easy to see (the browser did not offer its own install box)
+  function installHelp(ios, ua) {
+    const inApp = /WhatsApp|FBAN|FBAV|Instagram|Line\/|; wv\)|GSA\//i.test(ua), samsung = /SamsungBrowser/i.test(ua), iosOther = ios && /CriOS|FxiOS|EdgiOS/i.test(ua);
+    const step = (n, t) => '<div style="display:flex;gap:10px;align-items:flex-start;margin:10px 0"><b style="flex:none;width:26px;height:26px;border-radius:50%;background:#022A5B;color:#fff;display:grid;place-items:center;font-size:13px">' + n + '</b><div style="font-size:15px;line-height:1.4">' + t + '</div></div>';
+    let body;
+    if (inApp) body = '<p style="margin:0 0 6px">This page is open <b>inside WhatsApp</b> (or another app). It can be put on the home screen only from ' + (ios ? 'Safari' : 'Chrome') + '.</p>' +
+      step(1, 'Tap <b>Copy link</b> below') + step(2, 'Open <b>' + (ios ? 'Safari' : 'Chrome') + '</b> → paste the link in the address bar → open it') + step(3, 'Log in, then tap <b>📲 Install</b> again') +
+      '<button class="btn orange" type="button" id="cpLink" style="margin-top:6px">📋 Copy link</button>' + (!ios ? '<a class="btn light" style="margin-top:8px" href="intent://' + location.href.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end">Open in Chrome</a>' : '');
+    else if (iosOther) body = '<p style="margin:0 0 6px">On iPhone only <b>Safari</b> can add it to the home screen.</p>' + step(1, 'Tap <b>Copy link</b>, open <b>Safari</b>, paste and open') + step(2, 'Tap <b>Share ⬆️</b> (bottom middle)') + step(3, 'Scroll down → <b>Add to Home Screen</b> → <b>Add</b>') + '<button class="btn orange" type="button" id="cpLink" style="margin-top:6px">📋 Copy link</button>';
+    else if (ios) body = step(1, 'Tap the <b>Share</b> button <b>⬆️</b> at the bottom of Safari') + step(2, 'Scroll down and tap <b>Add to Home Screen</b> ➕') + step(3, 'Tap <b>Add</b> (top right). The <b>JNP Hub</b> icon appears on your home screen');
+    else if (samsung) body = step(1, 'Tap the menu <b>☰</b> at the bottom right') + step(2, 'Tap <b>Add page to</b> → <b>Home screen</b>') + step(3, 'Tap <b>Add</b>. The <b>JNP Hub</b> icon appears on your home screen');
+    else body = step(1, 'Tap the <b>⋮</b> menu (top right of Chrome)') + step(2, 'Tap <b>Add to Home screen</b> or <b>Install app</b>') + step(3, 'Tap <b>Install</b> / <b>Add</b>. The <b>JNP Hub</b> icon appears on your home screen');
+    const bg = document.createElement('div');
+    bg.style.cssText = 'position:fixed;inset:0;background:rgba(2,20,45,.5);z-index:80;display:flex;align-items:flex-end;justify-content:center';
+    bg.innerHTML = '<div style="background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto">' +
+      '<div style="display:flex;gap:12px;align-items:center;margin-bottom:6px"><img src="icon-192.png" alt="" style="width:44px;height:44px;border-radius:10px"><div><b style="font-size:17px;color:#022A5B">Put JNP Hub on your home screen</b><div class="hint">होम स्क्रीन पर ऐप की तरह</div></div></div>' +
+      body + '<button class="btn light" type="button" id="instClose" style="margin-top:12px">OK · ठीक है</button></div>';
+    document.body.appendChild(bg);
+    bg.onclick = e => { if (e.target === bg || e.target.id === 'instClose') bg.remove(); };
+    const cp = bg.querySelector('#cpLink');
+    if (cp) cp.onclick = async () => { const link = location.origin + location.pathname; try { await navigator.clipboard.writeText(link); cp.textContent = '✓ Link copied'; } catch (e) { prompt('Copy this link', link); } };
+  }
 
   async function showHome() {
     $('loginView').classList.add('hidden'); $('homeView').classList.remove('hidden');
     JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
-    render(); installCard();
+    render();
     try { await JNP.refreshMe(); render(); } catch (e) { JNP.toast(e.message, 'warn'); }
     JNP.masters().then(render).catch(() => { });
     if (JNP.rights('TSK-01').length) JNP.call('taskCount', {}).then(o => { TASKS = o; render(); }).catch(() => { });   // my open tasks → badge on the Tasks tile

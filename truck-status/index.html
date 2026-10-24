@@ -61,14 +61,14 @@
   let DATA = null, ROWS = [], filt = JNP.param('stage') || 'All', M = null, redrawLater = false;
   const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
   const S = k => JNP.stageOf(k);
-  const ORDER = ['UNSET', 'WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'];
+  const ORDER = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING'];
   const PICK = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'];
   const mtOf = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0));
   const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.id !== 'q'; };
 
   async function load(fresh) {
     try {
-      if (!M || fresh) M = await JNP.masters(!!fresh);
+      if (!M || fresh) M = (await JNP.masters(!!fresh).catch(() => null)) || JNP.M();
       DATA = await JNP.call('board', {});
       ROWS = JNP.truckStages(DATA, (M.trucks || []).filter(own));
       ROWS.forEach(r => { if (r.cap) return; const t = (M.trucks || []).find(x => x.no === r.no); if (!t) return;   // market / inactive trucks on a trip
@@ -83,9 +83,9 @@
     const cnt = {}; ROWS.forEach(r => cnt[r.st] = (cnt[r.st] || 0) + 1);
     $('chips').innerHTML = '<button type="button" data-f="All" class="' + (filt === 'All' ? 'on' : '') + '">All<b>' + ROWS.length + '</b></button>' +
       ORDER.concat('OFF').filter(k => cnt[k]).map(k => '<button type="button" data-f="' + k + '" class="' + (filt === k ? 'on' : '') + '">' + S(k).icon + ' ' + E(S(k).short) + '<b>' + cnt[k] + '</b></button>').join('');
-    const lt = ROWS.filter(late), unset = ROWS.filter(r => r.st === 'UNSET');
+    const lt = ROWS.filter(late), unset = ROWS.filter(r => r.st === 'WAIT_LOADER' && r.hrs > 24);
     $('alerts').innerHTML = (lt.length ? '<div class="alert red" data-f="UNLOADING">⚠️ ' + lt.length + ' truck' + (lt.length > 1 ? 's' : '') + ' at party over ' + DATA.escalateHrs + ' h — escalate · पार्टी पर ज़्यादा देर</div>' : '') +
-      (unset.length ? '<div class="alert purple" data-f="UNSET">❓ ' + unset.length + ' truck' + (unset.length > 1 ? 's' : '') + ' loaded before — pick where they are now · स्थिति चुनें</div>' : '');
+      (unset.length ? '<div class="alert purple" data-f="WAIT_LOADER">❓ ' + unset.length + ' order' + (unset.length > 1 ? 's' : '') + ' older than a day still "waiting for loader" — please update · स्थिति अपडेट करें</div>' : '');
     const q = $('q').value.trim().toUpperCase().replace(/\s/g, '');
     const show = ROWS.filter(r => (filt === 'All' || r.st === filt) && (!q || r.no.indexOf(q) >= 0));
     $('lanes').innerHTML = ORDER.map(k => {
@@ -102,14 +102,13 @@
   }
   function rowHtml(r) {
     const L = S(r.st), t = r.trip, lateNow = late(r);
-    const opts = (r.st === 'UNSET' ? '<option value="">— choose where it is now · स्थिति चुनें —</option>' : '') +
-      PICK.map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + S(k).icon + ' ' + E(k === 'LOADED' && r.dest ? 'Loaded – to ' + r.dest : S(k).en) + '</option>').join('');
-    const where = r.st === 'LOADED' ? '→ ' + r.dest : r.st === 'RETURNING' ? r.dest + ' → depot' : r.st === 'UNLOADING' ? r.dest + (t && t.Party ? ' · ' + t.Party : '') : r.st === 'WAIT_LOADER' || r.st === 'UNSET' ? 'LR ' + ((t || r.pend || {}).LR_No || '') + ' → ' + r.dest : '';
+    const opts = PICK.map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + S(k).icon + ' ' + E(k === 'LOADED' && r.dest ? 'Loaded – to ' + r.dest : S(k).en) + '</option>').join('');
+    const where = r.st === 'LOADED' ? '→ ' + r.dest : r.st === 'RETURNING' ? r.dest + ' → depot' : r.st === 'UNLOADING' ? r.dest + (t && t.Party ? ' · ' + t.Party : '') : r.st === 'WAIT_LOADER' ? 'LR ' + ((t || r.pend || {}).LR_No || '') + ' → ' + r.dest + (r.hrs > 24 ? ' · old order — update' : '') : '';
     const age = isNaN(r.hrs) ? '' : r.st === 'UNLOADING' ? 'Day-' + (Math.floor(r.hrs / 24) + 1) + ' · ' + JNP.ago(r.hrs) : JNP.ago(r.hrs);
     return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + (r.cap ? ' · ' + r.cap + 'T' : '') + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
-        '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'LOADED' || r.st === 'RETURNING' ? (t && t.Location && !/^On the way|^Returning from/.test(t.Location) ? t.Location : '') : r.place) + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>' +
+        '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.pend ? '' : r.st === 'LOADED' || r.st === 'RETURNING' ? (t && t.Location && !/^On the way|^Returning from/.test(t.Location) ? t.Location : '') : r.place) + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>' +
         '<div class="msg"></div><div class="acts">' + (lateNow || (r.st === 'UNLOADING' && Number(t && t.Escalations)) ? '<button type="button" class="mini red" data-a="esc">⚠️ Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ')' : '') + '</button>' : '') + '</div>'
         : '<div class="ro">' + L.icon + ' ' + E(L.en) + (r.place ? ' · ' + E(r.place) : '') + (r.remark ? ' · ' + E(r.remark) : '') + '</div>') + '</div>';
   }
@@ -126,10 +125,10 @@
       const to = el.value; if (!to) return; el.disabled = true; msg.innerHTML = '<span class="hint">Saving…</span>';
       try {
         await JNP.call('tripSet', { truck: r.no, to: to, lr: r.pend ? r.pend.LR_No : '' });
-        msg.innerHTML = '<span class="okline">✓ Saved · ' + E(S(to).short) + '</span>';
+        msg.innerHTML = '<span class="okline">✓ Saved · ' + E(to === 'RETURNING' ? 'moved to Waiting for order' : S(to).short) + '</span>';
         setTimeout(() => load(), 700);
       } catch (x) {
-        el.disabled = false; el.value = r.st === 'UNSET' ? '' : r.st;
+        el.disabled = false; el.value = r.st;
         msg.innerHTML = '<span class="err">' + E(x.message) + '</span>' + (/Loader entry/.test(x.message) ? ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>' : '');
       }
     } else if (a === 'loc' || a === 'rem') {

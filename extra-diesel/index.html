@@ -63,8 +63,8 @@
     JNP.submit($('saveBtn'), $('err'), async () => {
       const bad = F.check(); if (bad) throw new Error(bad);
       const out = await JNP.call('save', { module: CODE, clientReqId: clientReqId, data: F.values() }), r = out.record;
-      const msg = JNP.waText('⛽ EXTRA DIESEL · ' + r.Truck_No + ' · ' + r.Litres + ' L', [['Why', r.Reason], ['Driver', r.Driver_Name], ['Date', JNP.dmy(r.Diesel_Date)], ['Amount', r.Amount ? JNP.inr(r.Amount) : ''],
-        ['Pump', r.Pump_Vendor], ['KM', r.Odometer_KM], ['Remark', r.Remark], ['Photo', r.Photo_URL], ['Ref', r.Record_ID]]);
+      const msg = ['*⛽ EXTRA DIESEL*', '*' + r.Truck_No + '*', '*' + r.Litres + ' L*', 'Why: ' + r.Reason]
+        .concat(r.Odometer_KM ? ['KM: ' + r.Odometer_KM] : [], r.Remark ? ['Remark: ' + r.Remark] : []).join('\n');   // short on purpose — date, amount, pump, ref stay in the sheet
       $('f').classList.add('hidden');
       JNP.done($('doneCard'), { title: 'EXTRA DIESEL SAVED', big: r.Truck_No + ' · ' + r.Litres + ' L', sub: r.Reason + (r.Amount ? ' · ' + JNP.inr(r.Amount) : ''),
         buttons: [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }],

@@ -193,6 +193,7 @@
     .dm-l { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; margin-top: 4px; align-items: flex-start; }
     .dm-l i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; } .dm-l small { color: #7A8596; }
     .money-h { margin: 22px 2px 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: .4px; color: #B9061E; text-transform: uppercase; } .money-h small { font: 600 12.5px Barlow, sans-serif; color: #7A8596; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+    .opsrep .or-note { font-size: 11px; color: #5D6877; margin-top: 4px; }
     .opsrep { position: fixed; left: -10000px; top: 0; width: 440px; background: #fff; padding: 18px; font-family: Barlow, sans-serif; color: #1B2430; }
     .or-h { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
     .or-stripe { display: flex; height: 4px; } .or-stripe i { flex: 1; }
@@ -338,7 +339,8 @@
       return { lr: r.LR_No, at: at, day: String(r.Trip_Date || r.Created_At).slice(0, 10), truck: r.Truck_No, driver: r.Driver_Name, dest: r.Destination, km0: n0(r.Start_KM),
         diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(n0(r.Actual_Qty_MT) || (b && n0(b.Qty_MT))), portal: !!n0(r.Actual_Qty_MT), frPortal: !!fr,
         rev: fr || n0(r.Rate) * mt, consignee: r.Party || (b ? b.Consignee : ''), unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
-        targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By };
+        targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By, hasDoc: !!(b || i), bAt: b && b.Created_At ? D(b.Created_At) : null,
+        pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null };
     }).sort((a, b) => a.at - b.at);
     // rotation / km / idle need the sequence per truck and per driver (includes 35 days before the range)
     const byTruck = {}, byDriver = {};
@@ -348,6 +350,7 @@
       x.rot = p ? hrs(p.at, x.at) : NaN; if (x.rot > 15 * 24) x.rot = NaN;                 // gap > 15 days = parked, not rotation
       x.km = nx && nx.km0 > x.km0 && nx.km0 - x.km0 < 3000 ? nx.km0 - x.km0 : NaN;          // this trip's km = next loading's start KM − this one
       x.busy = nx ? Math.min(hrs(x.at, nx.at), 96) : Math.min(hrs(x.at, end), 96);            // days this load kept the truck busy (max 4)
+      x.hasNext = !!nx;
       x.rotNext = nx ? hrs(x.at, nx.at) : NaN; if (x.rotNext > 15 * 24) x.rotNext = NaN;      // this trip's full cycle: loading → next loading
       x.truckIdle = p && p.unload ? hrs(p.unload, x.at) : NaN;                                  // waiting after last unload
     }));
@@ -387,8 +390,10 @@
     const status = {};
     fleet.concat(market).forEach(t => {
       const lastL = (byTruck[t.no] || []).filter(x => x.at <= asOf).slice(-1)[0];
-      const ob = bds.filter(b => b.Truck_No === t.no && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf) && !(lastL && b.start && lastL.at > b.start)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];   // loaded after it went off road → it is on road
-      if (ob) { status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: ob.Symptom, loc: ob.Location, since: ob.start, daysDown: ob.start ? (now - ob.start) / 864e5 : NaN, rec: ob }; return; }
+      const ob = bds.filter(b => b.Truck_No === t.no && !(!b.Back_On_Road_At && /Resolved|Closed/i.test(b.Breakdown_Status || '')) && (!b.start || b.start <= asOf) && (!b.Back_On_Road_At || b.endAt > asOf)).sort((p, q) => (q.start || 0) - (p.start || 0))[0];   // loaded after it went off road → it is on road
+      // an OPEN off-road record always wins (same rule as the Truck Status board); if the truck was loaded after it, say so — someone forgot to close it
+      if (ob) { const stale = lastL && ob.start && lastL.at > ob.start;
+        status[t.no] = { st: 'off', why: ob.Off_Road_Type || 'Breakdown', note: (ob.Symptom || '') + (stale ? ' · ⚠️ loaded on ' + JNP.dmy(iso(lastL.at)).slice(0, 5) + ' after this — close the off-road entry if it is back' : ''), loc: ob.Location, since: ob.start, daysDown: ob.start ? (now - ob.start) / 864e5 : NaN, rec: ob }; return; }
       if (isNow && OFF_STAT[t.status] && !(lastL && now - lastL.at < 3 * 864e5)) { status[t.no] = { st: 'off', why: OFF_STAT[t.status], note: t.status + ' (Truck_Master)', loc: '', since: null }; return; }
       const a = byTruck[t.no] ? byTruck[t.no].filter(x => x.at <= asOf) : [], L = a[a.length - 1];
       if (!L) { status[t.no] = { st: 'wait', note: 'no loading in the last ' + (M_DAYS_BACK) + ' days' }; return; }
@@ -408,8 +413,18 @@
       if (o) status[t.no] = { st: ST_LANE[o.Stage] || 'load', real: 1, trip: o, since: D(o.Stage_At || o.Order_At), place: o.Location, el: hrs(D(o.Stage_At || o.Order_At) || now, now) };
       else if (d && D(d.Returned_At) && !(lastL && lastL.at > D(d.Returned_At))) status[t.no] = { st: 'wait', real: 1, trip: d, since: D(d.Returned_At), place: 'Depot', el: hrs(D(d.Returned_At), now) };
     });
+    // booked (loader entry = order, at truck capacity) vs dispatched (UTCL PGI date, actual MT); latest portal update
+    // LOADED: UTCL portal PGI when the dispatch file has it, else the moment the truck was set to "Loaded" on the Truck Status board
+    const jByLR = {}; jr.forEach(j => { if (j.LR_No) jByLR[String(j.LR_No).toUpperCase()] = j; });
+    all.forEach(x => { if (x.pgi && isNaN(x.pgi)) x.pgi = null; x.pgiDay = x.pgi ? iso(x.pgi) : ''; x.bookMt = n0(x.cap) || x.mt;
+      const j = jByLR[String(x.lr || '').toUpperCase()], jl = j ? D(j.Loaded_At) : null;
+      // no portal / board time, but the trip clearly went (builty or delivery made, a later loading, or the journey moved on) → builty time, else its order day
+      const went = !x.pgi && !jl && (x.hasDoc || x.hasNext || (j && ['LOADED', 'UNLOADING', 'RETURNING', 'DONE'].indexOf(j.Stage) >= 0));
+      x.loadAt = x.pgi || jl || (went ? (x.bAt && !isNaN(x.bAt) ? x.bAt : x.at) : null); x.loadSrc = x.pgi ? 'portal' : jl ? 'board' : went ? 'est' : ''; x.loadDay = x.loadAt ? iso(x.loadAt) : '';
+      x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; });
+    const portalInfo = { lastPgi: all.reduce((m, x) => x.pgi && (!m || x.pgi > m) ? x.pgi : m, null), lastSync: all.reduce((m, x) => x.synced && !isNaN(x.synced) && (!m || x.synced > m) ? x.synced : m, null) };
     const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
-    return { R, from, to, end, days, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
+    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
   }
 
   // ---------- filtering (load type + class)
@@ -665,6 +680,16 @@
       return { key: k, label: DIM[dim].lab ? DIM[dim].lab(k) : k, value: v, text: isNaN(v) ? '—' : MET[met].t(v),
         sub: [DIM[dim].sub ? DIM[dim].sub(k) : '', MET[met].add && tot ? pct(v / tot) : (met !== 'trips' ? a.trips + ' trips' : '')].filter(Boolean).join(' · ') }; }).filter(x => !isNaN(x.value));
   }
+  // look-alike names (TRIMBKESWAR · TRAMBAKESHWAR, MEHAMOOD · Mahmood) split these bars — HO / Ops Head can merge them from here
+  let CLEANC = null;
+  function cleanBanner() {
+    if (!JNP.rights('ADM-03').length) return '';
+    if (CLEANC === null) { CLEANC = false; JNP.call('cleanCount', {}).then(o => { CLEANC = o; if (tab === 'explore' && !prof) render(); }).catch(() => { }); return ''; }
+    if (!CLEANC || !(CLEANC.dest + CLEANC.driver)) return '';
+    return '<a class="card" href="../clean-names/" style="display:flex;gap:10px;align-items:center;text-decoration:none;border:1.5px solid #F6D3A8;background:#FFF8EF;margin-bottom:12px">' +
+      '<span style="font-size:24px">🧹</span><span style="flex:1;color:#1B2430"><b>Same name, different spellings</b><br><small style="color:#5D6877">' +
+      [CLEANC.dest ? CLEANC.dest + ' destination' + (CLEANC.dest > 1 ? 's' : '') : '', CLEANC.driver ? CLEANC.driver + ' driver' + (CLEANC.driver > 1 ? 's' : '') : ''].filter(Boolean).join(' · ') + ' are split into look-alike names — tap to clean</small></span><b style="color:#B45309">›</b></a>';
+  }
   function explore(T) {
     if (prof) return profile(T, prof.dim, prof.key);
     const mets = Object.keys(MET).filter(k => MONEY() || !MET[k].money), dims = Object.keys(DIM);
@@ -683,7 +708,7 @@
       if (box) box.onclick = e => { const r = e.target.closest('.tap'); if (r && d.prof) { prof = { dim: xDim, key: r.dataset.k }; profBack = null; render(); window.scrollTo(0, 0); } };
     }, 0);
     const sorted = items.slice().sort((p, q) => asc ? p.value - q.value : q.value - p.value);
-    return sec('Explore', 'pick what to measure and how to split it',
+    return cleanBanner() + sec('Explore', 'pick what to measure and how to split it',
       '<div class="xbar"><label class="sel"><span>Measure</span><select id="xMet">' + mets.map(k => '<option value="' + k + '"' + (k === xMet ? ' selected' : '') + '>' + MET[k].l + '</option>').join('') + '</select></label>' +
       '<label class="sel"><span>Split by</span><select id="xDim">' + dims.map(k => '<option value="' + k + '"' + (k === xDim ? ' selected' : '') + '>' + DIM[k].l + '</option>').join('') + '</select></label>' +
       (d.time ? '' : '<div class="seg2" id="xOrd"><button type="button" data-v="best" class="' + (!xLow ? 'on' : '') + '">' + (m.low ? 'Lowest' : 'Highest') + ' first</button><button type="button" data-v="low" class="' + (xLow ? 'on' : '') + '">' + (m.low ? 'Highest' : 'Lowest') + ' first</button></div>') + '</div>' +
@@ -816,6 +841,26 @@
     const items = CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips + ' trips', value: g.rot / 24, color: CLASS_COLOR[c], text: isNaN(g.rot) ? '—' : fmt(g.rot / 24, 1) + ' d' }; }).filter(x => !isNaN(x.value));
     return items.length ? sec('Avg rotation by size', 'days from loading to next loading', hbar(items, { asc: true })) : '';
   }
+  // ---------- orders booked (loader entry, truck capacity) vs dispatched (UTCL portal PGI date, actual MT)
+  function bookDisp(from, to) {
+    const B = M.all.filter(x => keepT(x) && x.day >= from && x.day <= to), Dd = M.all.filter(x => keepT(x) && x.loadDay && x.loadDay >= from && x.loadDay <= to);
+    const waiting = B.filter(x => !x.loadAt), port = Dd.filter(x => x.loadSrc === 'portal');
+    return { bT: B.length, bMt: sum(B, x => x.bookMt), dT: Dd.length, dMt: sum(Dd, x => x.loadMt), pT: port.length, bdT: Dd.filter(x => x.loadSrc === 'board').length, eT: Dd.filter(x => x.loadSrc === 'est').length, wT: waiting.length, wMt: sum(waiting, x => x.bookMt) };
+  }
+  function portalNote() {
+    const p = M.portalInfo || {}, t = d => d ? JNP.dmy(iso(d)) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '';
+    return p.lastPgi ? 'Actual loading (UTCL portal) updated till ' + t(p.lastPgi).replace(/ \d\d:\d\d$/, ' ' + String(p.lastPgi.getHours()).padStart(2, '0') + ':00') + (p.lastSync ? ' · last sync ' + t(p.lastSync) : '') + ' · portal file is pasted ~9 am and ~7 pm · after that, loading comes from the Truck Status board (truck set to Loaded)'
+      : 'UTCL portal not synced yet — loading comes from the Truck Status board (truck set to Loaded) until Finance pastes the dispatch file';
+  }
+  function bookDispCard() {
+    const r = bookDisp(RAW.from, RAW.to), today = iso(new Date()), td = RAW.to === today && RAW.from !== today ? bookDisp(today, today) : null;
+    SHARE.kpBD = { title: 'Orders booked vs loaded', fn: 'kpis' };
+    return '<div class="kwrap"><div class="khead"><b>Orders booked vs loaded</b><button type="button" class="shr" data-s="kpBD">📲 Share</button></div><div class="kpis">' +
+      kpi('Orders booked', fmt(r.bMt, 0) + ' MT', r.bT + ' trips · loader entry · truck capacity' + (td ? ' · today ' + fmt(td.bMt, 0) + ' MT' : ''), 'var(--blue)') +
+      kpi('Loaded', fmt(r.dMt, 0) + ' MT', r.dT + ' trips · by loading date' + (td ? ' · today ' + fmt(td.dMt, 0) + ' MT (' + td.dT + ')' : '') + '<br>' + r.pT + ' UTCL portal · ' + r.bdT + ' Truck Status board' + (r.eT ? ' · ' + r.eT + ' older trips (builty / delivery)' : ''), '#12804A') +
+      kpi('Booked, not loaded yet', fmt(r.wMt, 0) + ' MT', r.wT + ' trips · still waiting for loader', 'var(--orange)') +
+      '</div><div class="muted2" style="margin-top:8px">🕘 ' + E(portalNote()) + '</div></div>';
+  }
   function overview0(T) {
     const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no));
     const bds = M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), downH = sum(bds, b => b.inHrs);
@@ -835,6 +880,7 @@
       sec('Trips', 'Bulk vs Bag · Own vs Market', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
       sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + '<div class="muted2" style="margin-top:6px">' + (a.portal ? '✓ ' + a.portal + ' of ' + a.trips + ' trips confirmed on UTCL portal' : 'Not yet synced with UTCL portal') + (a.est ? ' · ' + a.est + ' trips use truck capacity (no portal / builty yet)' : '') + '</div>', () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
       '</div>' +
+      bookDispCard() +
       '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
       kpi('Fleet utilisation', pct(u.u), u.trips + ' of ' + fmt(u.target, 0) + ' expected trips', 'var(--navy)') +
       kpi('Avg rotation', dd(a.rot), 'loading → next loading', 'var(--blue)') +
@@ -908,10 +954,17 @@
       box.innerHTML = '<div class="or-h"><img src="' + JNP.CONFIG.LOGO + '" alt=""><div><b>Operations report</b><span>' + JNP.dmy(day) + (filt ? ' · ' + E(filt) : '') + '</span></div></div>' +
         '<div class="or-stripe"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
         '<div class="or-band">' +
-          '<div><small>' + (day === iso(new Date()) ? 'Today' : 'On ' + JNP.dmy(day).slice(0, 5)) + '</small><b>' + fmt(d1.mt, 0) + ' MT</b><span>' + d1.trips + ' trips</span></div>' +
-          '<div><small>' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</small><b>' + fmt(a.mt, 0) + ' MT</b><span>' + a.trips + ' trips</span></div>' +
+          (() => { const k = bookDisp(day, day), lb = day === iso(new Date()) ? ' today' : ' ' + JNP.dmy(day).slice(0, 5);
+            return '<div><small>Orders' + lb + '</small><b>' + fmt(k.bMt, 0) + ' MT</b><span>' + k.bT + ' trucks</span></div>' +
+              '<div><small>Loaded' + lb + '</small><b>' + fmt(k.dMt, 0) + ' MT</b><span>' + k.dT + ' trucks</span></div>'; })() +
           '<div><small>Utilisation</small><b>' + pct(u.u) + '</b><span>' + u.trips + ' / ' + fmt(u.target, 0) + ' trips</span></div>' +
           '<div><small>Avg rotation</small><b>' + dd(a.rot) + '</b><span>loading → loading</span></div></div>' +
+        (() => { const r = bookDisp(RAW.from, RAW.to), t1 = bookDisp(day, day);
+          return '<div class="or-sec">Orders booked vs loaded</div><table class="or-t sm"><tr><th></th><th>' + (day === iso(new Date()) ? 'Today' : JNP.dmy(day).slice(0, 5)) + '</th><th>' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</th></tr>' +
+            '<tr><td><b>Orders booked</b> · loader entry</td><td>' + t1.bT + ' · ' + fmt(t1.bMt, 0) + ' MT</td><td>' + r.bT + ' · ' + fmt(r.bMt, 0) + ' MT</td></tr>' +
+            '<tr><td><b>Loaded</b> · portal / board</td><td>' + t1.dT + ' · ' + fmt(t1.dMt, 0) + ' MT</td><td>' + r.dT + ' · ' + fmt(r.dMt, 0) + ' MT</td></tr>' +
+            '<tr><td>Booked, not loaded yet</td><td>' + t1.wT + ' · ' + fmt(t1.wMt, 0) + ' MT</td><td>' + r.wT + ' · ' + fmt(r.wMt, 0) + ' MT</td></tr></table>' +
+            '<div class="or-note">' + E(portalNote()) + '</div>'; })() +
         '<div class="or-sec">MT lifted · ' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</div>' +
         bar([{ l: 'Bulk', v: pc('load', 'BULK'), c: '#1565D8' }, { l: 'Bag', v: pc('load', 'BAG'), c: '#F7821A' }]) +
         bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
@@ -927,8 +980,8 @@
       document.body.appendChild(box);
       await new Promise(r => setTimeout(r, 120));
       const blob = await snap(box);
-      const cap = '*JNP Operations report · ' + JNP.dmy(day) + '*\n' + (day === iso(new Date()) ? 'Today' : JNP.dmy(day).slice(0, 5)) + ': ' + fmt(d1.mt, 0) + ' MT · ' + d1.trips + ' trips\n' +
-        JNP.dmy(RAW.from).slice(0, 5) + '–' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + fmt(a.mt, 0) + ' MT · ' + a.trips + ' trips · utilisation ' + pct(u.u) + ' · rotation ' + dd(a.rot) + '\nOff road: ' + lo.n + ' trucks · ' + fmt(lo.days, 0) + ' truck-days lost';
+      const k1 = bookDisp(day, day), cap = '*JNP Operations report · ' + JNP.dmy(day) + '*\n' + (day === iso(new Date()) ? 'Today' : JNP.dmy(day).slice(0, 5)) + ': orders ' + fmt(k1.bMt, 0) + ' MT (' + k1.bT + ') · loaded ' + fmt(k1.dMt, 0) + ' MT (' + k1.dT + ')\n' +
+        JNP.dmy(RAW.from).slice(0, 5) + '–' + JNP.dmy(RAW.to).slice(0, 5) + ': ' + fmt(a.mt, 0) + ' MT · ' + a.trips + ' trips · utilisation ' + pct(u.u) + ' · rotation ' + dd(a.rot) + '\nBooked ' + fmt(bookDisp(RAW.from, RAW.to).bMt, 0) + ' MT · loaded ' + fmt(bookDisp(RAW.from, RAW.to).dMt, 0) + ' MT\nOff road: ' + lo.n + ' trucks · ' + fmt(lo.days, 0) + ' truck-days lost';
       JNP.busy(false);
       await sendImage(blob, 'JNP_Ops_Report_' + day + '.png', cap);
     } catch (e) { JNP.busy(false); JNP.toast(e.message, 'bad'); }
@@ -950,15 +1003,11 @@
     if (M.market.length) L.push('🚛 Market: ' + M.market.filter(t => keepTruck(t.no)).length + ' attached · ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on a trip');
     const why = {}; off.forEach(t => why[st(t).why] = (why[st(t).why] || 0) + 1);
     L.push('⚠️ Off road: ' + off.length + (off.length ? '  (' + Object.keys(why).map(k => k + ' ' + why[k]).join(' · ') + ')' : ''));
-    if (off.length) {
-      L.push(''); L.push('⚠️ *VEHICLES NOT ON ROAD*');
-      const grp = {}; off.forEach(t => { const k = (t.cap ? classOf(t.cap) : 'Size not known') + ' ' + (t.cargo || 'BAG'); (grp[k] = grp[k] || []).push(t); });
-      Object.keys(grp).sort((p, q) => (parseInt(p) || 999) - (parseInt(q) || 999)).forEach(k => {
-        L.push(''); L.push('*' + k + ' (' + grp[k].length + ') · ' + fmt(tons(grp[k])) + ' T*');
-        grp[k].forEach(t => { const s0 = st(t); L.push(' ' + short(t.no) + ' – ' + (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.note && s0.note.indexOf('Truck_Master') < 0 ? ' – ' + s0.note : '') + (s0.loc ? ' – ' + s0.loc : '') + (s0.since ? ' – since ' + d2(s0.since) + ' (' + dayTxt(s0.daysDown) + ')' : '')); });
-      });
-      const nc = off.filter(t => !t.cap); if (nc.length) L.push('(capacity missing in Truck_Master: ' + nc.map(t => short(t.no)).join(', ') + ')');
-      L.push(''); L.push('Total down: ' + off.length + ' trucks · Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' T · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ' T');
+    if (off.length) {          // reason-wise only — which reason is holding how much capacity (no truck list)
+      L.push(''); L.push('⚠️ *OFF ROAD · BY REASON*');
+      const grp = {}; off.forEach(t => { const w = st(t).why === 'Driver not available' ? 'No driver' : (st(t).why || 'Other'); (grp[w] = grp[w] || []).push(t); });
+      Object.keys(grp).sort((p, q) => tons(grp[q]) - tons(grp[p]) || grp[q].length - grp[p].length).forEach(k => L.push(' ' + k + ': ' + grp[k].length + ' truck' + (grp[k].length > 1 ? 's' : '') + ' · ' + fmt(tons(grp[k])) + ' T'));
+      L.push(''); L.push('Total down: ' + off.length + ' trucks · ' + fmt(tons(off)) + ' T (Bag ' + fmt(tons(off.filter(t => (t.cargo || 'BAG') === 'BAG'))) + ' · Bulk ' + fmt(tons(off.filter(t => t.cargo === 'BULK'))) + ')');
     }
     if (fleetOnly) return L.slice(1).filter(x => x !== '————————' || true).join('\n').replace(/^————————\n/, '');
     L.push('————————');

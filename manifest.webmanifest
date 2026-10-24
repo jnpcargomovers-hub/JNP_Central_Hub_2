@@ -1,0 +1,22 @@
+{
+  "name": "JNP Central Hub",
+  "short_name": "JNP Hub",
+  "description": "JNP Cargo Movers — operations, R&M and finance",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#022A5B",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Truck Status", "short_name": "Truck Status", "url": "truck-status/", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Loader Entry", "short_name": "Loader", "url": "loader/", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Off-Road", "short_name": "Off-Road", "url": "breakdown/", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Attendance", "short_name": "Attendance", "url": "attendance/", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}

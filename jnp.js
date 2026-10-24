@@ -15,6 +15,7 @@
       ops:  'https://script.google.com/macros/s/AKfycbylaAIfLfS3V3ColhDQvgaHSMHiSJhmyqbWoxkwaQuNQkKIVF31C0lkc-dPTS8UoDGTCw/exec',   // JNP_Ops_DB
       rm:   'https://script.google.com/macros/s/AKfycbxUndHEEBkajWBV8XnE0ySHvnWqjsXg9ndIsfDf2TmiLBchD1v6LfNPpaels6PE4cbmGw/exec',   // JNP_RM_DB
       fin:  'https://script.google.com/macros/s/AKfycbxbeUlvrn-rtMmluAyVbO482_Hjw78tMWH61ra7RFEKOAo9qS_fylRcAKNFTQMgY2qR/exec',   // JNP_Finance_DB
+      adm:  'https://script.google.com/macros/s/AKfycbxvvJIQe5WQphAP8NCCuF4ukGNcSxbYGxr_D8-xTqO_zM09JjHN2_oux8BWGI3ictf2/exec',   // JNP_Admin_DB (Tasks, Challans, Extra Diesel)
     },
     HUB: BASE,
     LOGO: BASE + 'logo.png',
@@ -25,7 +26,7 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm',
+    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core',
     board: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
@@ -67,6 +68,7 @@
     'TSK-01': { icon: '📋', path: 'tasks/' },
     'ADM-01': { icon: '🚨', path: 'challan/' },
     'ADM-02': { icon: '⛽', path: 'extra-diesel/' },
+    'ADM-03': { icon: '🧹', path: 'clean-names/', hidden: true },     // no tile: opened from Dashboard › Explore
   };
   const TILES = [
     { name: 'Operations', hindi: 'ऑपरेशन्स', color: 'var(--ops)', prefix: 'OPS-' },
@@ -259,7 +261,8 @@
   function waText(title, pairs, footer) {
     const s = session(), u = s && s.user;
     const lines = ['*' + title + '*'];
-    pairs.forEach(p => { if (p && p[1] !== '' && p[1] !== undefined && p[1] !== null) lines.push(p[0] ? p[0] + ': ' + p[1] : String(p[1])); });
+    const isRef = p => /^(Ref|Record|ID)$/i.test(String(p[0] || '')) || /^[A-Z]{2,4}-\d{6}-\d{6}-[A-Z0-9]{3}$/.test(String(p[1]).trim());   // reference numbers stay in the sheet, not in WhatsApp
+    pairs.forEach(p => { if (p && p[1] !== '' && p[1] !== undefined && p[1] !== null && !isRef(p)) lines.push(p[0] ? p[0] + ': ' + p[1] : String(p[1])); });
     if (footer) lines.push(footer);
     lines.push('— ' + (u ? u.name : '') + ' · ' + nowText());
     return lines.join('\n');
@@ -559,6 +562,7 @@
       const s0 = tDate(since), h = s0 ? Math.max(0, (now - s0) / 36e5) : NaN;
       return { no: t.no, cap: Number(t.capacity || t.cap) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
         trip: tr || null, off: o || null, pend: p || null, place: place || '', dest: (tr && tr.Destination) || (p && p.Destination) || '',
+        why: o ? (o.Off_Road_Type === 'Driver not available' ? 'No driver' : o.Off_Road_Type || 'Breakdown') : '',
         remark: tr ? (tr.Remark || '') : (!o && !p && loc ? loc.note || '' : ''), mt: Number(tr && tr.Qty_MT) || Number(t.capacity || t.cap) || 0 };
     });
   }
@@ -625,10 +629,10 @@
           (r.remark ? '<tr><td></td><td colspan="3" class="rm">' + esc(r.remark) + '</td></tr>' : '');
       }).join('') + '</table>';
     };
-    const off = by.OFF || [], sizes = {};
-    off.forEach(r => { const c = cls(r) || '?'; (sizes[c] = sizes[c] || []).push(r); });
+    const off = by.OFF || [], why = {};          // off road: by reason — how much capacity each reason is holding (no truck list)
+    off.forEach(r => { const c = r.why || 'Other'; (why[c] = why[c] || []).push(r); });
     const offHtml = off.length ? '<div class="sec" style="--c:#B91C1C"><span>Off road</span><span>' + off.length + ' trucks · ' + mt(off) + ' MT</span></div><table>' +
-      Object.keys(sizes).sort((a, b) => (parseInt(b) || 0) - (parseInt(a) || 0)).map(c => '<tr><td class="n">' + c + '</td><td>' + sizes[c].length + ' truck' + (sizes[c].length === 1 ? '' : 's') + '</td><td class="r">' + mt(sizes[c]) + ' MT</td></tr>').join('') + '</table>' : '';
+      Object.keys(why).sort((a, b) => mt(why[b]) - mt(why[a])).map(c => '<tr><td class="n">' + esc(c) + '</td><td>' + why[c].length + ' truck' + (why[c].length === 1 ? '' : 's') + '</td><td class="r">' + mt(why[c]) + ' MT</td></tr>').join('') + '</table>' : '';
     const box = document.createElement('div'); box.className = 'srep';
     box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>' + esc(opt.title || 'Truck status') + '</b><span>' + stamp + '</span></div></div>' +
       '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
