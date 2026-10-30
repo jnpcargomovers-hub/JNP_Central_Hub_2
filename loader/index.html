@@ -272,7 +272,7 @@
     $('msg1').classList.remove('done'); $('msg2').classList.add('hidden'); $('msg2').classList.remove('done');
     $('msg1').innerHTML = '📲 1. Share Msg 1 (Pump Format)';
     window.scrollTo(0, 0);
-    JNP.toast('Saved — LR ' + last.LR_No, 'ok');
+    JNP.toast('Saved — LR ' + last.LR_No + (last.Off_Road_Note ? ' · ' + last.Off_Road_Note : ''), 'ok', last.Off_Road_Note ? 7000 : 3000);
   }
 
   // Message formats exactly as the original Loader app

@@ -66,7 +66,7 @@
   let calc = null, clientReqId = JNP.uid();
   const F = JNP.form($('fields'), [
     { k: 'Driver_Name', label: 'Driver', type: 'driver', req: true, allowNew: false, half: true },
-    { k: 'Month', label: 'Month', type: 'month', req: true, value: () => JNP.monthISO(), half: true },
+    { k: 'Month', label: 'Salary cycle ending in', type: 'month', req: true, value: () => JNP.monthISO(), half: true, hint: 'Cycle = 23rd → 22nd (e.g. Nov = 23 Oct – 22 Nov)' },
     { k: 'Days_Override', label: 'Days on duty (blank = auto)', type: 'num', noSend: true, half: true },
     { k: 'Bhatta', label: 'Bhatta ₹', type: 'num', half: true },
     { k: 'Incentive', label: 'Incentive ₹', type: 'num' },
@@ -83,7 +83,7 @@
       calc = await JNP.call('settlementPreview', { driver: v.Driver_Name, month: v.Month, days: v.Days_Override });
       const net = Math.round(calc.earned + (Number(v.Bhatta) || 0) + (Number(v.Incentive) || 0) - calc.advances - calc.tripAdvances - calc.debits);
       F.F.calc.set(!calc.salary ? '<div class="err">Monthly_Salary not set for this driver in Driver_Master</div>' :
-        '<div class="kv">' + [['Days on duty', calc.days], ['Salary / month', JNP.inr(calc.salary)], ['Earned', JNP.inr(calc.earned)], ['+ Bhatta / incentive', JNP.inr((Number(v.Bhatta) || 0) + (Number(v.Incentive) || 0))],
+        '<div class="kv">' + [['Cycle', JNP.dmy(calc.cycleFrom).slice(0, 5) + ' → ' + JNP.dmy(calc.cycleTo).slice(0, 5)], ['Days on duty', calc.days + ' (from loadings)'], ['Salary / month', JNP.inr(calc.salary)], ['Earned', JNP.inr(calc.earned)], ['+ Bhatta / incentive', JNP.inr((Number(v.Bhatta) || 0) + (Number(v.Incentive) || 0))],
           ['− Advances', JNP.inr(calc.advances)], ['− Trip advances', JNP.inr(calc.tripAdvances)], ['− Debits', JNP.inr(calc.debits)]].map(x => '<span>' + x[0] + '</span><b>' + x[1] + '</b>').join('') + '</div>' +
         '<div class="nums" style="grid-template-columns:1fr"><div class="num ' + (net < 0 ? 'bad' : 'ok') + '"><b>' + JNP.inr(net) + '</b><span>Net payable</span></div></div>');
       F.setFire('_net', net);

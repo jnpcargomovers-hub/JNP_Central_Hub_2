@@ -26,7 +26,7 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core',
+    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
     board: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
@@ -288,9 +288,9 @@
       img.src = url;
     });
   }
-  async function uploadPhoto(file, module, label) {
+  async function uploadPhoto(file, module, label, priv) {
     const dataUrl = await compress(file);
-    const out = await call('upload', { dataUrl: dataUrl, module: module, label: label });
+    const out = await call('upload', { dataUrl: dataUrl, module: module, label: label, private: !!priv });   // private = ID documents: no share link
     return { url: out.url, thumb: out.thumb, preview: dataUrl };
   }
   function geo() {
@@ -423,7 +423,7 @@
           const src = this && this.files ? this : s, files = [...src.files]; src.value = '';
           for (const file of files) {
             photosBusy[f.k] = (photosBusy[f.k] || 0) + 1; info(f.k, '<span class="warnline">Uploading photo…</span>');
-            try { const up = await uploadPhoto(file, opts.module || 'GEN', f.k); if (f.multiple) urls.push(up); else urls = [up]; draw(); info(f.k, ''); fire(f.k); }
+            try { const up = await uploadPhoto(file, opts.module || 'GEN', f.k, f.private); if (f.multiple) urls.push(up); else urls = [up]; draw(); info(f.k, ''); fire(f.k); }
             catch (e) { info(f.k, '<span class="err">' + esc(e.message) + '</span>'); }
             finally { photosBusy[f.k]--; }
           }
@@ -560,7 +560,8 @@
       else if (p) { st = 'WAIT_LOADER'; since = p.Created_At; place = 'Order LR ' + p.LR_No; }
       else { st = 'WAIT_ORDER'; since = (loc && loc.at) || (dn && dn.Returned_At) || ''; place = (loc && loc.loc) || 'Depot'; }
       const s0 = tDate(since), h = s0 ? Math.max(0, (now - s0) / 36e5) : NaN;
-      return { no: t.no, cap: Number(t.capacity || t.cap) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
+      const ft = t.cargo !== undefined ? t : (() => { try { return findTruck(t.no) || {}; } catch (e) { return {}; } })();
+      return { no: t.no, cargo: /BULK/i.test(ft.cargo || '') ? 'BULK' : 'BAG', cap: Number(t.capacity || t.cap || ft.capacity) || '', own: /MARKET|HIRE|ATTACH/i.test(t.ownership || t.own || '') ? 'MARKET' : 'OWN', st: st, since: since, hrs: h,
         trip: tr || null, off: o || null, pend: p || null, place: place || '', dest: (tr && tr.Destination) || (p && p.Destination) || '',
         why: o ? (o.Off_Road_Type === 'Driver not available' ? 'No driver' : o.Off_Road_Type || 'Breakdown') : '',
         remark: tr ? (tr.Remark || '') : (!o && !p && loc ? loc.note || '' : ''), mt: Number(tr && tr.Qty_MT) || Number(t.capacity || t.cap) || 0 };
@@ -603,6 +604,34 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
     toast('Image downloaded — attach it in WhatsApp', 'warn', 6000);
   }
+  // ---- PENDING LR (one look everywhere: dashboard card, Portal Sync, the shared image) ----------
+  const PL_CSS = '.pl-t{width:100%;border-collapse:collapse;font-size:13px}.pl-t th{text-align:left;font-size:10.5px;color:#5D6877;border-bottom:1px solid #DCE3EE;padding:5px 3px;font-weight:700}' +
+    '.pl-t td{padding:6px 3px;border-bottom:1px solid #EEF1F5;vertical-align:top}.pl-t td.n{font-weight:800;white-space:nowrap}.pl-t td.r{text-align:right;white-space:nowrap}' +
+    '.pl-t td.age{font-weight:800;color:#B91C1C;text-align:right;white-space:nowrap}.pl-t small{display:block;color:#5D6877;font-size:11px;font-weight:600}' +
+    '.pl-t a.call{display:inline-block;text-decoration:none;background:#E8F5EE;border-radius:9px;padding:5px 7px;font-size:15px}' +
+    '.plimg{position:fixed;left:-10000px;top:0;width:520px;background:#fff;padding:18px;font-family:Barlow,Arial,sans-serif;color:#1B2430}' +
+    '.plimg .h{display:flex;align-items:center;gap:12px}.plimg .h img{height:36px}.plimg .h b{display:block;font-size:20px;color:#022A5B}.plimg .h span{font-size:12.5px;color:#5D6877}' +
+    '.plimg .st{display:flex;height:4px;margin:10px 0}.plimg .st i{flex:1}.plimg .f{margin-top:10px;font-size:11px;color:#7A8596;text-align:right}';
+  function plCss() { if (!document.getElementById('plCss')) { const st = document.createElement('style'); st.id = 'plCss'; st.textContent = PL_CSS; document.head.appendChild(st); } }
+  const plSub = P => P.length + ' LRs · ' + Math.round(P.reduce((s, x) => s + (Number(x.qty) || 0), 0)) + ' MT · older than 5 days, no bill, EPOD not received';
+  /** the table: LR · Truck · Destination / Party · MT · Age (+ 📞 call button on screen) */
+  function pendingLRTable(P, opt) {
+    plCss(); opt = opt || {};
+    return '<table class="pl-t"><tr><th>LR</th><th>Truck</th><th>Destination · Party</th><th style="text-align:right">MT</th><th style="text-align:right">Age</th>' + (opt.call ? '<th></th>' : '') + '</tr>' +
+      P.map(x => '<tr><td class="n">' + esc(x.lr) + '</td><td>' + esc(String(x.truck || '').slice(-4)) + '</td><td>' + esc(x.dest) + '<small>' + esc(x.party) + (x.remark ? ' · ' + esc(x.remark) : '') + '</small></td><td class="r">' + esc(x.qty) + '</td><td class="age">' + esc(x.age) + ' d</td>' +
+        (opt.call ? '<td class="r">' + (x.phone ? '<a class="call" href="tel:' + esc(x.phone) + '">📞</a>' : '') + '</td>' : '') + '</tr>').join('') + '</table>';
+  }
+  async function sharePendingLR(P) {
+    plCss();
+    const now = nowText(), box = document.createElement('div'); box.className = 'plimg';
+    box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>Pending LR follow-up</b><span>' + now + ' · ' + plSub(P) + '</span></div></div>' +
+      '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' + pendingLRTable(P) +
+      '<div class="f">JNP Cargo Movers · ' + esc((session() || {}).user ? session().user.name : '') + ' · ' + now + '</div>';
+    document.body.appendChild(box);
+    try { busy(true, 'Making image…'); await new Promise(r => setTimeout(r, 150)); busy(false);
+      await shareImage(box, 'JNP_Pending_LR_' + todayISO() + '.png', '*Pending LR follow-up · ' + now + '*\n' + plSub(P)); }
+    catch (e) { busy(false); toast(e.message, 'bad'); } finally { box.remove(); }
+  }
   const SR_CSS = '.srep{position:fixed;left:-10000px;top:0;width:460px;background:#fff;padding:18px;font-family:Barlow,Arial,sans-serif;color:#1B2430}' +
     '.srep .h{display:flex;align-items:center;gap:12px;padding-bottom:10px}.srep .h img{height:38px}.srep .h b{display:block;font:800 21px "Barlow Condensed",Arial,sans-serif;color:#022A5B}.srep .h span{font-size:13px;color:#5D6877}' +
     '.srep .st{display:flex;height:4px}.srep .st i{flex:1}.srep .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}' +
@@ -610,7 +639,8 @@
     '.srep .kp b{display:block;font:800 19px "Barlow Condensed",Arial,sans-serif;color:#022A5B}.srep .kp span{font-size:11px;color:#334155;font-weight:700}' +
     '.srep .sec{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--c);display:flex;justify-content:space-between;border-bottom:2px solid var(--c);padding-bottom:3px}' +
     '.srep table{width:100%;border-collapse:collapse;font-size:12.5px}.srep td{padding:4px 3px;border-bottom:1px solid #EEF1F5;vertical-align:top}.srep td.n{font-weight:800;white-space:nowrap}.srep td.r{text-align:right;white-space:nowrap;color:#5D6877}.srep td.rm{color:#7C2D12;font-style:italic}.srep td.late{color:#B91C1C;font-weight:800}' +
-    '.srep .f{margin-top:12px;font-size:11px;color:#7A8596;text-align:right}';
+    '.srep .f{margin-top:12px;font-size:11px;color:#7A8596;text-align:right}.srep b.bk{color:#1565D8;font-size:11px}.srep span.bg{color:#C2610C;font-size:11px;font-weight:700}' +
+    '.srep tr.cg td{font-size:11px;font-weight:800;color:#334155;background:#F3F6FB;padding:3px 6px;letter-spacing:.3px}.srep .kp em{display:block;font-style:normal;font-size:10px;color:#5D6877;font-weight:700;margin-top:1px}';
   /** Builds the status report element: totals for heads on top, one table per stage, off road as a size summary at the bottom. */
   function statusReportEl(rows, opt) {
     opt = opt || {};
@@ -618,16 +648,19 @@
     const by = {}; rows.forEach(r => (by[r.st] = by[r.st] || []).push(r));
     const mt = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0)), n = k => (by[k] || []).length;
     const now = new Date(), p2 = v => String(v).padStart(2, '0'), stamp = p2(now.getDate()) + '-' + p2(now.getMonth() + 1) + '-' + now.getFullYear() + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
-    const kp = (k, label) => { const s = stageOf(k), a = by[k] || []; return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span></div>'; };
-    const cls = r => r.cap ? Math.round(r.cap) + 'T' : '';
+    const bb = a => { const k = a.filter(r => r.cargo === 'BULK'); return k.length && k.length < a.length ? '<em>Bulk ' + k.length + ' · Bag ' + (a.length - k.length) + '</em>' : k.length ? '<em>all Bulk</em>' : a.length ? '<em>all Bag</em>' : ''; };
+    const kp = (k, label) => { const s = stageOf(k), a = by[k] || []; return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span>' + bb(a) + '</div>'; };
+    const cls = r => (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? '<b class="bk">Bulk</b>' : '<span class="bg">Bag</span>');
     const sect = k => {
-      const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
-      return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + (a.length === 1 ? ' truck · ' : ' trucks · ') + mt(a) + ' MT</span></div><table>' + a.map(r => {
+      const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (x.cargo === y.cargo ? 0 : x.cargo === 'BULK' ? -1 : 1) || (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
+      const both = a.some(r => r.cargo === 'BULK') && a.some(r => r.cargo !== 'BULK');
+      const sub = (r, i) => both && (i === 0 || a[i - 1].cargo !== r.cargo) ? (() => { const g = a.filter(x => x.cargo === r.cargo); return '<tr class="cg"><td colspan="4">' + (r.cargo === 'BULK' ? '🔵 BULK' : '🟠 BAG') + ' · ' + g.length + ' truck' + (g.length === 1 ? '' : 's') + ' · ' + mt(g) + ' MT</td></tr>'; })() : '';
+      return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + (a.length === 1 ? ' truck · ' : ' trucks · ') + mt(a) + ' MT</span></div><table>' + a.map((r, i) => sub(r, i) + (() => {
         const late = k === 'UNLOADING' && (r.hrs || 0) >= (opt.escHrs || 4);
         const where = k === 'WAIT_LOADER' ? 'LR ' + ((r.trip || r.pend || {}).LR_No || '') + ' → ' + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') : k === 'RETURNING' ? (r.dest || '') + ' → depot' : k === 'UNLOADING' ? (r.dest || r.place) + (r.trip && r.trip.Party ? ' · ' + r.trip.Party : '') : (r.place || '');
         return '<tr><td class="n">' + esc(r.no.slice(-4)) + (r.est ? '~' : '') + '</td><td>' + cls(r) + '</td><td>' + esc(where) + '</td><td class="' + (late ? 'late' : 'r') + '">' + (isNaN(r.hrs) ? '' : (k === 'UNLOADING' ? 'Day-' + (Math.floor((r.hrs || 0) / 24) + 1) + (late ? ' ⚠️' : '') : ago(r.hrs))) + '</td></tr>' +
           (r.remark ? '<tr><td></td><td colspan="3" class="rm">' + esc(r.remark) + '</td></tr>' : '');
-      }).join('') + '</table>';
+      })()).join('') + '</table>';
     };
     const off = by.OFF || [], why = {};          // off road: by reason — how much capacity each reason is holding (no truck list)
     off.forEach(r => { const c = r.why || 'Other'; (why[c] = why[c] || []).push(r); });
@@ -658,6 +691,7 @@
     CONFIG, MODULES, TILES, api, call, session, login, logout, goLogin, rights, can, requireModule, refreshMe, masters, M, list,
     findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
+    pendingLRTable, sharePendingLR, plSub,
     isApp, STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };

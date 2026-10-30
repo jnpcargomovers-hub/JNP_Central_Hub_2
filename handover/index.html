@@ -75,6 +75,8 @@
     { k: 'Odometer_Photo_URL', label: 'Odometer', type: 'photo' },
     { k: 'Fuel_Gauge_Photo_URL', label: 'Fuel gauge', type: 'photo' },
     { k: 'Signed_Sheet_Photo_URL', label: 'Signed handover sheet', type: 'photo' },
+    { k: 'Driver_Aadhaar_Photo_URL', label: 'Driver Aadhaar card · optional', hi: 'आधार कार्ड', type: 'photo', private: true, hint: '🔒 Kept private in the office folder — never shared on WhatsApp' },
+    { k: 'Driver_Licence_Photo_URL', label: 'Driver licence · optional', hi: 'ड्राइविंग लाइसेंस', type: 'photo', private: true },
   ], { module: 'OPS-04' });
 
   const D = JNP.form($('debit'), [

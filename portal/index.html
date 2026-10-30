@@ -88,8 +88,7 @@
       ((P.dupLR || []).length ? sec('⚠️ Same LR on two Loader entries', P.dupLR.length + ' LRs · the portal decides which one is right', false,
         '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Entries</th></tr>' + P.dupLR.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + x.trucks.map(E).join('<br>') + '</td></tr>').join('') + '</table></div>') : '') +
       sec('⏳ Pending LRs · बकाया', P.pending.length + ' older than 5 days · no bill · EPOD not received', true,
-        (P.pending.length ? '<button class="btn light" type="button" id="pShare" style="margin:10px 0">📷 Share pending LR list</button><div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination · Party</th><th>MT</th><th>Age</th></tr>' +
-          P.pending.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '<br><small class="hint">' + E(x.party) + (x.remark ? ' · ' + E(x.remark) : '') + '</small></td><td class="r">' + E(x.qty) + '</td><td class="r"><b>' + E(x.age) + ' d</b></td></tr>').join('') + '</table></div>'
+        (P.pending.length ? '<button class="btn light" type="button" id="pShare" style="margin:10px 0">📷 Share pending LR list</button><div class="scroll">' + JNP.pendingLRTable(P.pending, { call: true }) + '</div>'
           : '<div class="hint" style="margin-top:8px">None 🎉 (or DI_Followup is empty)</div>')) +
       (P.missingLoader.length ? sec('❓ On portal, no Loader entry', P.missingLoader.length + ' LRs — make or correct the Loader entry', false,
         '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination</th><th>MT</th><th>PGI</th></tr>' +
@@ -107,18 +106,7 @@
       });
     });
   }
-  async function sharePending() {
-    const now = JNP.nowText(), box = document.createElement('div'); box.className = 'prep';
-    const mt = P.pending.reduce((s, x) => s + (Number(x.qty) || 0), 0);
-    box.innerHTML = '<div class="h"><img src="' + JNP.CONFIG.LOGO + '" alt=""><div><b>Pending LR follow-up</b><span>' + now + ' · ' + P.pending.length + ' LRs · ' + Math.round(mt) + ' MT · older than 5 days, no bill, EPOD not received</span></div></div>' +
-      '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
-      '<table><tr><th>LR</th><th>Truck</th><th>Destination</th><th>Party</th><th>MT</th><th>Age</th></tr>' +
-      P.pending.map(x => '<tr><td><b>' + E(x.lr) + '</b></td><td>' + E(x.truck.slice(-4)) + '</td><td>' + E(x.dest) + '</td><td>' + E(x.party) + '</td><td>' + E(x.qty) + '</td><td class="age">' + E(x.age) + ' d</td></tr>').join('') + '</table>' +
-      '<div class="f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + now + '</div>';
-    document.body.appendChild(box);
-    try { JNP.busy(true, 'Making image…'); await new Promise(r => setTimeout(r, 150)); JNP.busy(false); await JNP.shareImage(box, 'JNP_Pending_LR_' + JNP.todayISO() + '.png', '*Pending LR follow-up · ' + now + '*\n' + P.pending.length + ' LRs · ' + Math.round(mt) + ' MT'); }
-    catch (e) { JNP.busy(false); JNP.toast(e.message, 'bad'); } finally { box.remove(); }
-  }
+  function sharePending() { return JNP.sharePendingLR(P.pending); }
   await load();
 })();
 </script>
