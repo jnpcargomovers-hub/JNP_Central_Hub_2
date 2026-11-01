@@ -652,7 +652,7 @@
   const cleanDest = d => String(d || '').replace(/_[0-9][0-9A-Z-]*$/i, '');     // "STATION-DUMP_6325-2522" → "STATION-DUMP"
   function whereTxt(r0) {
     const r = Object.assign({}, r0, { dest: cleanDest(r0.dest) }), k = r.st, lr = (r.trip || r.pend || {}).LR_No || '';
-    return k === 'WAIT_LOADER' ? (lr ? 'LR ' + lr + ' → ' : '→ ') + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '')
+    return k === 'WAIT_LOADER' ? (lr ? 'LR ' + lr + ' → ' : '→ ') + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') + (r.place && !/^On the way|^Loading point/i.test(r.place) ? ' · now at ' + r.place : '')
       : k === 'UNLOADING' || k === 'UNLOAD_START' ? (r.dest || r.place || '') : k === 'RETURNING' ? 'now at ' + (r.place || '?') : (r.place || 'Depot');
   }
   function statusReportEl(rows, opt) {

@@ -119,7 +119,7 @@
     return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + ' · <span style="color:' + (r.cargo === 'BULK' ? '#1565D8' : '#C2610C') + ';font-weight:800">' + E(JNP.vehicleType(r)) + '</span>' + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
-        (r.st === 'OFF' ? '' : '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>') +
+        (r.st === 'OFF' ? '' : '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' || (r.st === 'LOADED' && !/^On the way/i.test(r.place || '')) ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>') +
         '<div class="msg"></div><div class="acts">' + (lateNow ? '<button type="button" class="mini red" data-a="esc">📣 Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ' done)' : '') + '</button>' : '') + '</div>'
         : '<div class="ro">' + L.icon + ' ' + E(L.en) + (r.place ? ' · ' + E(r.place) : '') + (r.remark ? ' · ' + E(r.remark) : '') + '</div>') + '</div>';
   }
@@ -170,9 +170,11 @@
     sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
       '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
       '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
-      (needLoc || to === 'DONE' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '"></div>' : '') +
+      (needLoc || to === 'DONE' || to === 'LOADED' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc || to === 'LOADED' ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : to === 'LOADED' ? 'e.g. waiting at depot, Songir — leave blank if on the way' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '">' +
+        (to === 'LOADED' ? '<div class="btnrow" style="margin-top:6px">' + ['WAITING AT DEPOT', 'AT PLANT', 'ON THE WAY'].map(x => '<button type="button" class="mini" data-l="' + x + '">' + x.charAt(0) + x.slice(1).toLowerCase() + '</button>').join('') + '</div>' : '') + '</div>' : '') +
       '<div id="sErr" class="err hidden"></div><button class="btn green" type="button" id="sGo">✓ Save · सेव करें</button>');
     $('sheet').querySelectorAll('[data-h]').forEach(b => b.onclick = () => { $('sWhen').value = localISO(new Date(Date.now() - Number(b.dataset.h) * 36e5)); });
+    $('sheet').querySelectorAll('[data-l]').forEach(b => b.onclick = () => { $('sLoc').value = b.dataset.l === 'ON THE WAY' ? '' : b.dataset.l; });
     $('sGo').onclick = () => JNP.submit($('sGo'), $('sErr'), async () => {
       const at = $('sWhen').value ? new Date($('sWhen').value) : new Date(), loc = $('sLoc') ? $('sLoc').value.trim() : '';
       if (needLoc && loc.length < 3) throw new Error('Write where the truck is now · गाड़ी अभी कहाँ है');
