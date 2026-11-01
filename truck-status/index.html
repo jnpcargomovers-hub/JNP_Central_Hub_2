@@ -28,6 +28,7 @@
     .tr .two input.ok { border-color: #12804A; background: #F2FBF5; }
     .tr .msg { font-size: 12.5px; margin-top: 5px; } .tr .msg a { font-weight: 800; }
     .tr .acts { display: flex; gap: 6px; margin-top: 6px; } .tr .acts:empty { display: none; }
+    .lane .grp { display: block; width: 100%; margin: 6px 0 2px; background: var(--red); color: #fff; border-color: transparent; padding: 8px; font-weight: 800; }
     .tr .acts .mini.red { background: var(--red); color: #fff; border-color: transparent; }
     .ro { margin-top: 6px; font-size: 13px; color: var(--char); font-weight: 600; }
     .offsum { background: #FDE8EB; border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
@@ -62,11 +63,14 @@
   let DATA = null, ROWS = [], filt = JNP.param('stage') || 'All', M = null, redrawLater = false, cargoF = 'All';
   const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
   const S = k => JNP.stageOf(k);
-  const ORDER = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING'];
-  const PICK = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'];
+  const ORDER = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'];
+  // dropdown per stage: what can come next (or a correction back)
+  const PICK = { WAIT_ORDER: ['WAIT_ORDER', 'WAIT_LOADER'], WAIT_LOADER: ['WAIT_LOADER', 'LOADED', 'WAIT_ORDER'], LOADED: ['LOADED', 'UNLOADING', 'UNLOAD_START', 'WAIT_LOADER'],
+    UNLOADING: ['UNLOADING', 'UNLOAD_START', 'RETURNING', 'LOADED'], UNLOAD_START: ['UNLOAD_START', 'RETURNING', 'UNLOADING'], RETURNING: ['RETURNING', 'DONE', 'UNLOAD_START'], UNSET: ['WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'] };
+  const LABEL = { WAIT_ORDER: '🅿️ At depot – waiting for order', WAIT_LOADER: '⏳ Order given – waiting for loader', LOADED: '🚚 Loaded – to destination', UNLOADING: '📍 Reached – waiting for unloading',
+    UNLOAD_START: '⬇️ Unloading started', RETURNING: '↩️ Unloaded – returning to depot', DONE: '🏠 Reached depot – waiting for order' };
   const mtOf = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0));
   const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.id !== 'q'; };
-
   async function load(fresh) {
     try {
       if (!M || fresh) M = (await JNP.masters(!!fresh).catch(() => null)) || JNP.M();
@@ -78,22 +82,25 @@
       $('upd').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' · ' + ROWS.length + ' trucks · changes save by themselves';
     } catch (e) { $('lanes').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
   }
-  const late = r => r.st === 'UNLOADING' && r.hrs >= (DATA.escalateHrs || 4);
+  const escH = () => (DATA && DATA.escalateHrs) || 4;
+  const late = r => !!S(r.st).esc && r.hrs >= escH() && !(r.st === 'WAIT_ORDER' && r.own === 'MARKET');
   function draw() {
     redrawLater = false;
     const cnt = {}; ROWS.forEach(r => cnt[r.st] = (cnt[r.st] || 0) + 1);
     $('cchips').innerHTML = ['All', 'BULK', 'BAG'].map(c => '<button type="button" data-c="' + c + '" class="' + (cargoF === c ? 'on' : '') + '">' + (c === 'All' ? 'Bulk + Bag' : c === 'BULK' ? '🔵 Bulk' : '🟠 Bag') + '<b>' + (c === 'All' ? ROWS.length : ROWS.filter(r => r.cargo === c).length) + '</b></button>').join('');
     $('chips').innerHTML = '<button type="button" data-f="All" class="' + (filt === 'All' ? 'on' : '') + '">All<b>' + ROWS.length + '</b></button>' +
       ORDER.concat('OFF').filter(k => cnt[k]).map(k => '<button type="button" data-f="' + k + '" class="' + (filt === k ? 'on' : '') + '">' + S(k).icon + ' ' + E(S(k).short) + '<b>' + cnt[k] + '</b></button>').join('');
-    const lt = ROWS.filter(late), unset = ROWS.filter(r => r.st === 'WAIT_LOADER' && r.hrs > 24);
-    $('alerts').innerHTML = (lt.length ? '<div class="alert red" data-f="UNLOADING">⚠️ ' + lt.length + ' truck' + (lt.length > 1 ? 's' : '') + ' at party over ' + DATA.escalateHrs + ' h — escalate · पार्टी पर ज़्यादा देर</div>' : '') +
+    const lt = ROWS.filter(late), unset = ROWS.filter(r => r.st === 'WAIT_LOADER' && r.hrs > 24), lk = {}; lt.forEach(r => lk[r.st] = (lk[r.st] || 0) + 1);
+    $('alerts').innerHTML = Object.keys(lk).map(k => '<div class="alert red" data-f="' + k + '">⚠️ ' + lk[k] + ' truck' + (lk[k] > 1 ? 's' : '') + ' ' + E(S(k).short.toLowerCase()) + ' over ' + escH() + ' h — escalate · ज़्यादा देर</div>').join('') +
       (unset.length ? '<div class="alert purple" data-f="WAIT_LOADER">❓ ' + unset.length + ' order' + (unset.length > 1 ? 's' : '') + ' older than a day still "waiting for loader" — please update · स्थिति अपडेट करें</div>' : '');
     const q = $('q').value.trim().toUpperCase().replace(/\s/g, '');
     const show = ROWS.filter(r => (filt === 'All' || r.st === filt) && (cargoF === 'All' || r.cargo === cargoF) && (!q || r.no.indexOf(q) >= 0));
     $('lanes').innerHTML = ORDER.map(k => {
       const a = show.filter(r => r.st === k).sort((x, y) => (x.cargo === y.cargo ? 0 : x.cargo === 'BULK' ? -1 : 1) || (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
       const L = S(k);
-      return '<div class="lane" style="--c:' + L.c + '"><h3>' + L.icon + ' ' + E(L.en) + '<span class="n">' + a.length + ' · ' + mtOf(a) + ' MT</span><small>' + L.hi + '</small></h3>' + a.map(rowHtml).join('') + '</div>';
+      const lateA = a.filter(late), kb = a.filter(r => r.cargo === 'BULK').length;
+      return '<div class="lane" style="--c:' + L.c + '"><h3>' + L.icon + ' ' + E(L.en) + '<span class="n">' + a.length + ' · ' + mtOf(a) + ' MT</span><small>' + L.hi + ' · Bulk ' + kb + ' · Bag ' + (a.length - kb) + '</small></h3>' +
+        (DATA.canMove && lateA.length > 1 ? '<button type="button" class="mini red grp" data-g="' + k + '">📣 Escalate all ' + lateA.length + ' (' + mtOf(lateA) + ' MT) waiting over ' + escH() + ' h</button>' : '') + a.map(rowHtml).join('') + '</div>';
     }).join('') || (filt === 'OFF' ? '' : '<div class="card muted">No trucks here.</div>');
     // off road: only a size-wise summary, at the bottom
     const off = ROWS.filter(r => r.st === 'OFF' && (!q || r.no.indexOf(q) >= 0)), sz = {};
@@ -104,14 +111,14 @@
   }
   function rowHtml(r) {
     const L = S(r.st), t = r.trip, lateNow = late(r);
-    const opts = PICK.map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + S(k).icon + ' ' + E(k === 'LOADED' && r.dest ? 'Loaded – to ' + r.dest : S(k).en) + '</option>').join('');
-    const where = r.st === 'LOADED' ? '→ ' + r.dest : r.st === 'RETURNING' ? r.dest + ' → depot' : r.st === 'UNLOADING' ? r.dest + (t && t.Party ? ' · ' + t.Party : '') : r.st === 'WAIT_LOADER' ? 'LR ' + ((t || r.pend || {}).LR_No || '') + ' → ' + r.dest + (r.hrs > 24 ? ' · old order — update' : '') : '';
-    const age = isNaN(r.hrs) ? '' : r.st === 'UNLOADING' ? 'Day-' + (Math.floor(r.hrs / 24) + 1) + ' · ' + JNP.ago(r.hrs) : JNP.ago(r.hrs);
-    return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + (r.cap ? ' · ' + r.cap + 'T' : '') + ' · ' + (r.cargo === 'BULK' ? '<span style="color:#1565D8;font-weight:800">Bulk</span>' : '<span style="color:#C2610C;font-weight:800">Bag</span>') + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
+    const opts = (PICK[r.st] || PICK.UNSET).map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + E(k === 'LOADED' && r.dest ? '🚚 Loaded – to ' + r.dest : LABEL[k]) + '</option>').join('');
+    const where = JNP.whereTxt(r) + (r.st === 'WAIT_LOADER' && r.hrs > 24 ? ' · old order — update' : '') + ((r.st === 'UNLOADING' || r.st === 'UNLOAD_START') && t && t.Party && JNP.keyOf(t.Party) !== JNP.keyOf(r.dest) ? ' · ' + t.Party : '');
+    const age = isNaN(r.hrs) ? '' : (r.since ? 'since ' + JNP.sinceTxt(r.since) + ' · ' : '') + Math.floor(r.hrs) + ' h';
+    return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + ' · <span style="color:' + (r.cargo === 'BULK' ? '#1565D8' : '#C2610C') + ';font-weight:800">' + E(JNP.vehicleType(r)) + '</span>' + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
-        '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.pend ? '' : r.st === 'LOADED' || r.st === 'RETURNING' ? (t && t.Location && !/^On the way|^Returning from/.test(t.Location) ? t.Location : '') : r.place) + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>' +
-        '<div class="msg"></div><div class="acts">' + (lateNow || (r.st === 'UNLOADING' && Number(t && t.Escalations)) ? '<button type="button" class="mini red" data-a="esc">⚠️ Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ')' : '') + '</button>' : '') + '</div>'
+        '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>' +
+        '<div class="msg"></div><div class="acts">' + (lateNow ? '<button type="button" class="mini red" data-a="esc">📣 Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ' done)' : '') + '</button>' : '') + '</div>'
         : '<div class="ro">' + L.icon + ' ' + E(L.en) + (r.place ? ' · ' + E(r.place) : '') + (r.remark ? ' · ' + E(r.remark) : '') + '</div>') + '</div>';
   }
   $('chips').onclick = e => { const b = e.target.closest('button'); if (!b) return; filt = b.dataset.f; draw(); };
@@ -125,15 +132,8 @@
     const el = e.target, { card, r } = rowOf(el); if (!r) return;
     const a = el.dataset.a, msg = card.querySelector('.msg');
     if (a === 'st') {
-      const to = el.value; if (!to) return; el.disabled = true; msg.innerHTML = '<span class="hint">Saving…</span>';
-      try {
-        await JNP.call('tripSet', { truck: r.no, to: to, lr: r.pend ? r.pend.LR_No : '' });
-        msg.innerHTML = '<span class="okline">✓ Saved · ' + E(to === 'RETURNING' ? 'moved to Waiting for order' : S(to).short) + '</span>';
-        setTimeout(() => load(), 700);
-      } catch (x) {
-        el.disabled = false; el.value = r.st;
-        msg.innerHTML = '<span class="err">' + E(x.message) + '</span>' + (/Loader entry/.test(x.message) ? ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>' : '');
-      }
+      const to = el.value; if (!to || to === r.st) return;
+      el.value = r.st; stepSheet(r, to, msg);
     } else if (a === 'loc' || a === 'rem') {
       const p = { truck: r.no }; p[a === 'loc' ? 'location' : 'remark'] = el.value.trim();
       try { await JNP.call('tripInfo', p); flash(el, true); if (a === 'rem') r.remark = el.value.trim(); else r.place = el.value.trim(); }
@@ -143,6 +143,7 @@
   $('lanes').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
   document.addEventListener('focusout', () => setTimeout(() => { if (redrawLater && !typing()) draw(); }, 300));
   $('lanes').addEventListener('click', e => {
+    const g = e.target.closest('button.grp'); if (g) { const k = g.dataset.g; groupSheet(k, ROWS.filter(r => r.st === k && late(r) && (cargoF === 'All' || r.cargo === cargoF))); return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const { r } = rowOf(b); if (!r) return;
     if (b.dataset.a === 'esc') escSheet(r); else if (b.dataset.a === 'open') detail(r);
   });
@@ -151,34 +152,60 @@
   function sheet(html) { $('sheet').innerHTML = '<div class="sheet-bg" id="bg"><div class="sheet">' + html + '<button class="btn light" type="button" id="xCancel" style="margin-top:10px">Close · बंद करें</button></div></div>';
     $('bg').onclick = e => { if (e.target.id === 'bg' || e.target.id === 'xCancel') close(); }; }
   const close = () => { $('sheet').innerHTML = ''; };
-  function escMsg(r, party, dealer, reason) {
-    const t = r.trip || {}, rd = JNP.tDate(t.Reached_At) || new Date(), p2 = n => String(n).padStart(2, '0');
-    const day = Math.floor((Date.now() - rd) / 864e5) + 1, mt = Number(t.Qty_MT) ? Math.round(Number(t.Qty_MT)) : (r.cap || '');
-    return ['*JNP CARGO MOVERS PVT LTD*', '', '*UNLOADING ISSUE*', '', '*' + r.no + '*- *' + mt + 'MT*', '', ' *Day-' + day + '*', '',
-      ' *DATE:' + p2(rd.getDate()) + '/' + p2(rd.getMonth() + 1) + '/' + String(rd.getFullYear()).slice(2) + '*', '', '*DEST -' + String(r.dest).toUpperCase() + '*', '',
-      '*PARTY- ' + String(party || '').toUpperCase() + '*', '', '*DEALER* *' + String(dealer || '').toUpperCase() + '*', '', '*REASON - ' + reason + '*', '', '*Sir please unloading kara dijiye*'].join('\n');
+  // ---------- status change: ask WHEN it happened (default now) and, for returning, WHERE the truck is now
+  const localISO = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 6e4); return z.toISOString().slice(0, 16); };
+  function stepSheet(r, to, msg) {
+    const needLoc = to === 'RETURNING', now = new Date();
+    if (to === 'WAIT_LOADER' && r.st === 'WAIT_ORDER') { location.href = '../loader/?truck=' + encodeURIComponent(r.no); return; }   // order comes from the Loader entry
+    sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
+      '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
+      '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
+      (needLoc || to === 'DONE' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '"></div>' : '') +
+      '<div id="sErr" class="err hidden"></div><button class="btn green" type="button" id="sGo">✓ Save · सेव करें</button>');
+    $('sheet').querySelectorAll('[data-h]').forEach(b => b.onclick = () => { $('sWhen').value = localISO(new Date(Date.now() - Number(b.dataset.h) * 36e5)); });
+    $('sGo').onclick = () => JNP.submit($('sGo'), $('sErr'), async () => {
+      const at = $('sWhen').value ? new Date($('sWhen').value) : new Date(), loc = $('sLoc') ? $('sLoc').value.trim() : '';
+      if (needLoc && loc.length < 3) throw new Error('Write where the truck is now · गाड़ी अभी कहाँ है');
+      if (at > new Date(Date.now() + 6e4)) throw new Error('Time cannot be in the future');
+      await JNP.call('tripSet', { truck: r.no, to: to === 'DONE' ? 'WAIT_ORDER' : to, lr: r.pend ? r.pend.LR_No : '', at: at.toISOString(), location: loc });
+      close(); msg.innerHTML = '<span class="okline">✓ Saved · ' + E(LABEL[to]) + '</span>'; setTimeout(() => load(), 500);
+    }).then(() => { const er = $('sErr'); if (er && !er.classList.contains('hidden') && /Loader entry|लोडर/.test(er.textContent)) er.innerHTML += ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>'; });
+  }
+  // ---------- escalation messages (after Settings › Escalate_Hrs, default 4 h)
+  const veh = r => (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? 'bulker' : 'bag truck') + ' (' + r.no + ')';
+  const CTX = { order: ['waiting for order', 'help us get an order'], loader: ['waiting for loading at the plant', 'help us get it loaded'], unload: ['waiting for unloading', 'help us get it unloaded'] };
+  function escText(r) {
+    const k = S(r.st).esc, c = CTX[k], h = Math.floor(r.hrs), t = r.trip || r.pend || {};
+    const extra = k === 'loader' && t.LR_No ? ' (LR ' + t.LR_No + (r.dest ? ', ' + r.dest : '') + ')' : k === 'unload' ? ' at ' + (r.dest || '') + (t.Party && JNP.keyOf(t.Party) !== JNP.keyOf(r.dest) ? ' (' + t.Party + ')' : '') : '';
+    return 'Dear Sir,\n\nOur ' + veh(r) + ' is ' + c[0] + extra + ' for the last ' + h + ' hours. Requesting your support to please ' + c[1] + '.\n\nRegards,\nJNP Cargo Movers';
+  }
+  function groupText(k, a) {
+    const c = CTX[S(k).esc], mt = mtOf(a), minH = Math.floor(Math.min.apply(null, a.map(r => r.hrs))), g = {};
+    a.forEach(r => { const key = (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? 'bulker' : 'bag'); (g[key] = g[key] || []).push(r.no.slice(-4)); });
+    return 'Dear Sir,\n\nWe are holding ' + mt + ' MT of capacity ' + c[0] + ' for the last ' + minH + '+ hours:\n' +
+      Object.keys(g).sort((p, q) => parseInt(q) - parseInt(p)).map(key => '• ' + key + ' × ' + g[key].length + ' (' + g[key].join(', ') + ')').join('\n') +
+      '\n\nRequesting your support to please ' + c[1].replace(' it ', ' them ').replace('an order', 'orders') + '.\n\nRegards,\nJNP Cargo Movers';
   }
   function escSheet(r) {
     const t = r.trip || {};
-    sheet('<h3>⚠️ Unloading issue · ' + E(r.no) + '</h3><div class="sub">At ' + E(r.dest) + ' for ' + JNP.ago(r.hrs) + (Number(t.Escalations) ? ' · escalated ' + t.Escalations + '× before' : '') + '</div>' +
-      '<div class="field"><label>Party <span class="hi">· पार्टी</span></label><input id="eP" class="input upper" value="' + E(t.Party || '') + '"></div>' +
-      '<div class="field"><label>Dealer <span class="hi">· डीलर</span></label><input id="eD" class="input upper" value="' + E(t.Dealer || '') + '"></div>' +
-      '<div class="field"><label class="req">Reason <span class="hi">· कारण</span></label><textarea id="eR" class="input" rows="2" placeholder="e.g. सुबह 7 बजे से खड़ी है, एक भी बैग नहीं उतरा">' + E(t.Escalation_Note || r.remark || '') + '</textarea></div>' +
-      '<div class="preview" id="ePrev"></div><button class="btn red" type="button" id="eGo">📲 Save & share in UTCL group</button>');
-    const pv = () => $('ePrev').textContent = escMsg(r, $('eP').value, $('eD').value, $('eR').value.trim());
-    ['eP', 'eD', 'eR'].forEach(id => $(id).oninput = pv); pv();
-    $('eGo').onclick = async () => {
-      const b = $('eGo'); b.disabled = true;
-      try { const msg = escMsg(r, $('eP').value, $('eD').value, $('eR').value.trim()); await JNP.call('tripEscalate', { id: t.Trip_ID, party: $('eP').value.trim(), dealer: $('eD').value.trim(), reason: $('eR').value.trim() }); JNP.whatsapp(msg); close(); load(); }
-      catch (e) { JNP.toast(e.message, 'bad', 5000); b.disabled = false; }
-    };
+    sheet('<h3>📣 Escalate · ' + E(r.no.slice(-4)) + '</h3><div class="sub">' + E(S(r.st).en) + ' for ' + Math.floor(r.hrs) + ' h' + (Number(t.Escalations) ? ' · escalated ' + t.Escalations + '× before' : '') + '</div>' +
+      '<div class="field"><label>Message (you can change it)</label><textarea id="eT" class="input" rows="9">' + E(escText(r)) + '</textarea></div>' +
+      '<button class="btn red" type="button" id="eGo">📲 Share on WhatsApp</button>');
+    $('eGo').onclick = async () => { const txt = $('eT').value; try { await JNP.call('tripEscalate', { trucks: [r.no], stage: r.st, text: txt }); } catch (e) { } JNP.whatsapp(txt); close(); load(); };
+  }
+  function groupSheet(k, a) {
+    if (!a.length) return;
+    sheet('<h3>📣 Escalate ' + a.length + ' trucks · ' + E(S(k).short) + '</h3><div class="sub">' + mtOf(a) + ' MT waiting over ' + escH() + ' h</div>' +
+      '<div class="field"><label>Message (you can change it)</label><textarea id="eT" class="input" rows="11">' + E(groupText(k, a)) + '</textarea></div>' +
+      '<button class="btn red" type="button" id="eGo">📲 Share on WhatsApp</button>');
+    $('eGo').onclick = async () => { const txt = $('eT').value; try { await JNP.call('tripEscalate', { trucks: a.map(r => r.no), stage: k, text: txt }); } catch (e) { } JNP.whatsapp(txt); close(); load(); };
   }
   function detail(r) {
     const t = r.trip, L = S(r.st), drv = t ? t.Driver_Name : r.pend ? r.pend.Driver_Name : '', mob = t ? t.Driver_Mobile : r.pend ? r.pend.Driver_Mobile : '';
     const rowT = (k, v, h) => '<div><span>' + k + '</span><b>' + (v ? E(JNP.dmy(String(v).slice(0, 16))) + (h !== '' && h !== undefined && h !== null ? ' · ' + h + ' h' : '') : '—') + '</b></div>';
     sheet('<h3>' + L.icon + ' ' + E(r.no) + (r.cap ? ' · ' + r.cap + 'T' : '') + '</h3><div class="sub">' + E(L.en) + (isNaN(r.hrs) ? '' : ' · since ' + JNP.ago(r.hrs)) + '</div>' +
       (t ? '<div class="kv"><span>LR</span><b>' + E(t.LR_No) + '</b><span>Destination</span><b>' + E(t.Destination) + '</b>' + (t.Party ? '<span>Party</span><b>' + E(t.Party) + '</b>' : '') + '<span>Driver</span><b>' + E(drv || '—') + '</b></div>' +
-        '<div class="tl">' + rowT('Order · ऑर्डर', t.Order_At) + rowT('Loaded · लोड', t.Loaded_At, t.Wait_Loader_Hrs) + rowT('At party · पार्टी', t.Reached_At, t.Travel_Hrs) + rowT('Unloaded · खाली', t.Unloaded_At, t.Unload_Hrs) + '</div>' +
+        '<div class="tl">' + rowT('Order · ऑर्डर', t.Order_At) + rowT('Loaded · लोड', t.Loaded_At, t.Wait_Loader_Hrs) + rowT('Reached · पहुँचा', t.Reached_At, t.Travel_Hrs) + rowT('Unloading started · उतराई', t.Unload_Start_At, t.Wait_Unload_Hrs) + rowT('Unloaded · खाली', t.Unloaded_At, t.Unload_Hrs) + '</div>' +
         (t.Skipped_Steps ? '<div class="warnline">Skipped: ' + E(t.Skipped_Steps) + '</div>' : '') : '<div class="kv"><span>Place</span><b>' + E(r.place || '—') + '</b></div>') +
       (mob ? '<a class="btn light" style="margin-top:12px" href="tel:' + E(mob) + '">📞 Call driver ' + E(drv || '') + '</a>' : '') +
       (r.st === 'WAIT_ORDER' && DATA.canMove ? '<a class="btn light" style="margin-top:10px" href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 New order · Loader entry</a>' : ''));

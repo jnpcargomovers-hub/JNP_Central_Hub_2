@@ -530,11 +530,12 @@
   function inr(n) { if (n === '' || n === null || n === undefined || isNaN(Number(n))) return ''; return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
   // ---- TRUCK JOURNEY (shared by Truck Status board and Dashboard) --------------
   const STAGES = [
-    { k: 'WAIT_ORDER', icon: '🅿️', en: 'At depot – waiting for order', short: 'Waiting for order', hi: 'डिपो पर – ऑर्डर का इंतज़ार', wa: 'AT DEPOT · WAITING FOR ORDER', c: '#64748B' },
-    { k: 'WAIT_LOADER', icon: '⏳', en: 'At depot – waiting for loader', short: 'Waiting for loader', hi: 'डिपो पर – लोडिंग का इंतज़ार', wa: 'AT DEPOT · WAITING FOR LOADER', c: '#B45309', next: 'LOADED' },
-    { k: 'LOADED', icon: '🚚', en: 'Loaded – to destination', short: 'Loaded', hi: 'माल भरा – रास्ते में', wa: 'LOADED · TO DESTINATION', c: '#1D4ED8', next: 'UNLOADING' },
-    { k: 'UNLOADING', icon: '📍', en: 'At party – unloading / waiting', short: 'At party', hi: 'पार्टी पर – खाली होना बाकी', wa: 'AT PARTY · UNLOADING / WAITING', c: '#7C3AED', next: 'RETURNING' },
-    { k: 'RETURNING', icon: '↩️', en: 'Unloaded – returning (→ waiting for order)', short: 'Returning', hi: 'खाली – वापसी', wa: 'UNLOADED · RETURNING', c: '#0F766E', next: 'DONE' },
+    { k: 'WAIT_ORDER', icon: '🅿️', en: 'At depot – waiting for order', short: 'Waiting for order', hi: 'डिपो पर – ऑर्डर का इंतज़ार', wa: 'AT DEPOT · WAITING FOR ORDER', c: '#64748B', esc: 'order' },
+    { k: 'WAIT_LOADER', icon: '⏳', en: 'Order given – waiting for loader', short: 'Waiting for loader', hi: 'ऑर्डर मिला – लोडिंग का इंतज़ार', wa: 'WAITING FOR LOADER', c: '#B45309', next: 'LOADED', esc: 'loader' },
+    { k: 'LOADED', icon: '🚚', en: 'Loaded – to destination', short: 'To destination', hi: 'माल भरा – रास्ते में', wa: 'LOADED · TO DESTINATION', c: '#1D4ED8', next: 'UNLOADING' },
+    { k: 'UNLOADING', icon: '📍', en: 'At destination – waiting for unloading', short: 'Waiting to unload', hi: 'पार्टी पर – खाली होने का इंतज़ार', wa: 'AT DESTINATION · WAITING FOR UNLOADING', c: '#7C3AED', next: 'UNLOAD_START', esc: 'unload' },
+    { k: 'UNLOAD_START', icon: '⬇️', en: 'Unloading', short: 'Unloading', hi: 'माल उतर रहा है', wa: 'UNLOADING', c: '#9333EA', next: 'RETURNING', esc: 'unload' },
+    { k: 'RETURNING', icon: '↩️', en: 'Returning to depot', short: 'Returning', hi: 'खाली – डिपो वापसी', wa: 'RETURNING TO DEPOT', c: '#0F766E', next: 'DONE' },
     { k: 'OFF', icon: '🔧', en: 'Off road', short: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
     { k: 'UNSET', icon: '❓', en: 'Status not set', short: 'Not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
   ];
@@ -639,42 +640,51 @@
     '.srep .kp b{display:block;font:800 19px "Barlow Condensed",Arial,sans-serif;color:#022A5B}.srep .kp span{font-size:11px;color:#334155;font-weight:700}' +
     '.srep .sec{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--c);display:flex;justify-content:space-between;border-bottom:2px solid var(--c);padding-bottom:3px}' +
     '.srep table{width:100%;border-collapse:collapse;font-size:12.5px}.srep td{padding:4px 3px;border-bottom:1px solid #EEF1F5;vertical-align:top}.srep td.n{font-weight:800;white-space:nowrap}.srep td.r{text-align:right;white-space:nowrap;color:#5D6877}.srep td.rm{color:#7C2D12;font-style:italic}.srep td.late{color:#B91C1C;font-weight:800}' +
+    '.srep tr.th td{font-size:10px;color:#7A8596;font-weight:700;border-bottom:1px solid #DCE3EE}.srep td.ty{white-space:nowrap;font-size:11px;font-weight:800}.srep td.ty.bk{color:#1565D8}.srep td.ty.bg{color:#C2610C}' +
+    '.srep td.tm{white-space:nowrap;color:#334155;font-size:11.5px}.srep .tot{margin-top:8px;font-size:12px;font-weight:700;color:#334155;text-align:center}' +
     '.srep .f{margin-top:12px;font-size:11px;color:#7A8596;text-align:right}.srep b.bk{color:#1565D8;font-size:11px}.srep span.bg{color:#C2610C;font-size:11px;font-weight:700}' +
     '.srep tr.cg td{font-size:11px;font-weight:800;color:#334155;background:#F3F6FB;padding:3px 6px;letter-spacing:.3px}.srep .kp em{display:block;font-style:normal;font-size:10px;color:#5D6877;font-weight:700;margin-top:1px}';
   /** Builds the status report element: totals for heads on top, one table per stage, off road as a size summary at the bottom. */
+  /** Status report image: totals on top, then one simple table per stage — truck · size/type · where · since (time) · hours. */
+  const p2_ = v => String(v).padStart(2, '0');
+  function sinceTxt(v) { const d = tDate(v); if (!d) return ''; const t = new Date(), same = d.toDateString() === t.toDateString(); return (same ? '' : p2_(d.getDate()) + '-' + p2_(d.getMonth() + 1) + ' ') + p2_(d.getHours()) + ':' + p2_(d.getMinutes()); }
+  function vehicleType(r) { return (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? 'Bulk' : 'Bag'); }
+  const cleanDest = d => String(d || '').replace(/_[0-9][0-9A-Z-]*$/i, '');     // "STATION-DUMP_6325-2522" → "STATION-DUMP"
+  function whereTxt(r0) {
+    const r = Object.assign({}, r0, { dest: cleanDest(r0.dest) }), k = r.st, lr = (r.trip || r.pend || {}).LR_No || '';
+    return k === 'WAIT_LOADER' ? (lr ? 'LR ' + lr + ' → ' : '→ ') + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '')
+      : k === 'UNLOADING' || k === 'UNLOAD_START' ? (r.dest || r.place || '') : k === 'RETURNING' ? 'now at ' + (r.place || '?') : (r.place || 'Depot');
+  }
   function statusReportEl(rows, opt) {
     opt = opt || {};
     if (!document.getElementById('srepCss')) { const st = document.createElement('style'); st.id = 'srepCss'; st.textContent = SR_CSS; document.head.appendChild(st); }
-    const by = {}; rows.forEach(r => (by[r.st] = by[r.st] || []).push(r));
+    const esc0 = opt.escHrs || 4, by = {}; rows.forEach(r => (by[r.st] = by[r.st] || []).push(r));
     const mt = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0)), n = k => (by[k] || []).length;
-    const now = new Date(), p2 = v => String(v).padStart(2, '0'), stamp = p2(now.getDate()) + '-' + p2(now.getMonth() + 1) + '-' + now.getFullYear() + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
-    const bb = a => { const k = a.filter(r => r.cargo === 'BULK'); return k.length && k.length < a.length ? '<em>Bulk ' + k.length + ' · Bag ' + (a.length - k.length) + '</em>' : k.length ? '<em>all Bulk</em>' : a.length ? '<em>all Bag</em>' : ''; };
+    const now = new Date(), stamp = p2_(now.getDate()) + '-' + p2_(now.getMonth() + 1) + '-' + now.getFullYear() + ' ' + p2_(now.getHours()) + ':' + p2_(now.getMinutes());
+    const bb = a => { const k = a.filter(r => r.cargo === 'BULK').length; return a.length ? '<em>Bulk ' + k + ' · Bag ' + (a.length - k) + '</em>' : ''; };
     const kp = (k, label) => { const s = stageOf(k), a = by[k] || []; return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span>' + bb(a) + '</div>'; };
-    const cls = r => (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? '<b class="bk">Bulk</b>' : '<span class="bg">Bag</span>');
     const sect = k => {
-      const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (x.cargo === y.cargo ? 0 : x.cargo === 'BULK' ? -1 : 1) || (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
-      const both = a.some(r => r.cargo === 'BULK') && a.some(r => r.cargo !== 'BULK');
-      const sub = (r, i) => both && (i === 0 || a[i - 1].cargo !== r.cargo) ? (() => { const g = a.filter(x => x.cargo === r.cargo); return '<tr class="cg"><td colspan="4">' + (r.cargo === 'BULK' ? '🔵 BULK' : '🟠 BAG') + ' · ' + g.length + ' truck' + (g.length === 1 ? '' : 's') + ' · ' + mt(g) + ' MT</td></tr>'; })() : '';
-      return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + (a.length === 1 ? ' truck · ' : ' trucks · ') + mt(a) + ' MT</span></div><table>' + a.map((r, i) => sub(r, i) + (() => {
-        const late = k === 'UNLOADING' && (r.hrs || 0) >= (opt.escHrs || 4);
-        const where = k === 'WAIT_LOADER' ? 'LR ' + ((r.trip || r.pend || {}).LR_No || '') + ' → ' + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') : k === 'RETURNING' ? (r.dest || '') + ' → depot' : k === 'UNLOADING' ? (r.dest || r.place) + (r.trip && r.trip.Party ? ' · ' + r.trip.Party : '') : (r.place || '');
-        return '<tr><td class="n">' + esc(r.no.slice(-4)) + (r.est ? '~' : '') + '</td><td>' + cls(r) + '</td><td>' + esc(where) + '</td><td class="' + (late ? 'late' : 'r') + '">' + (isNaN(r.hrs) ? '' : (k === 'UNLOADING' ? 'Day-' + (Math.floor((r.hrs || 0) / 24) + 1) + (late ? ' ⚠️' : '') : ago(r.hrs))) + '</td></tr>' +
-          (r.remark ? '<tr><td></td><td colspan="3" class="rm">' + esc(r.remark) + '</td></tr>' : '');
-      })()).join('') + '</table>';
+      const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
+      return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + ' · ' + mt(a) + ' MT</span></div><table><tr class="th"><td>Truck</td><td>Type</td><td>Where</td><td>Since</td><td class="r">Hrs</td></tr>' + a.map(r => {
+        const late = s.esc && (r.hrs || 0) >= esc0;
+        return '<tr><td class="n">' + esc(r.no.slice(-4)) + (r.est ? '~' : '') + '</td><td class="ty ' + (r.cargo === 'BULK' ? 'bk' : 'bg') + '">' + esc(vehicleType(r)) + '</td><td>' + esc(whereTxt(r)) + '</td><td class="tm">' + esc(sinceTxt(r.since)) + '</td><td class="' + (late ? 'late' : 'r') + '">' + (isNaN(r.hrs) ? '' : Math.floor(r.hrs) + (late ? ' ⚠' : '')) + '</td></tr>';
+      }).join('') + '</table>';
     };
-    const off = by.OFF || [], why = {};          // off road: by reason — how much capacity each reason is holding (no truck list)
+    const off = by.OFF || [], why = {};
     off.forEach(r => { const c = r.why || 'Other'; (why[c] = why[c] || []).push(r); });
-    const offHtml = off.length ? '<div class="sec" style="--c:#B91C1C"><span>Off road</span><span>' + off.length + ' trucks · ' + mt(off) + ' MT</span></div><table>' +
+    const offHtml = off.length ? '<div class="sec" style="--c:#B91C1C"><span>Off road</span><span>' + off.length + ' · ' + mt(off) + ' MT</span></div><table>' +
       Object.keys(why).sort((a, b) => mt(why[b]) - mt(why[a])).map(c => '<tr><td class="n">' + esc(c) + '</td><td>' + why[c].length + ' truck' + (why[c].length === 1 ? '' : 's') + '</td><td class="r">' + mt(why[c]) + ' MT</td></tr>').join('') + '</table>' : '';
     const box = document.createElement('div'); box.className = 'srep';
     box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>' + esc(opt.title || 'Truck status') + '</b><span>' + stamp + '</span></div></div>' +
       '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
-      '<div class="kp">' + kp('WAIT_LOADER', 'Order received<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') + kp('UNLOADING', 'At party<br>unloading') +
-        kp('WAIT_ORDER', 'At depot<br>waiting for order') + '<div style="--c:#022A5B"><small>Fleet<br>total</small><b>' + mt(rows) + ' MT</b><span>' + rows.length + ' trucks</span></div>' + '<div style="--c:#B91C1C"><small>Off road</small><b>' + mt(off) + ' MT</b><span>' + off.length + ' trucks</span></div></div>' +
-      ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
-      (rows.some(r => r.est) ? '<div class="f" style="text-align:left">~ = estimate (not yet updated on the Truck Status board)</div>' : '') +
+      '<div class="kp">' + kp('WAIT_ORDER', 'At depot<br>waiting for order') + kp('WAIT_LOADER', 'Order given<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') +
+        kp('UNLOADING', 'At destination<br>waiting to unload') + kp('UNLOAD_START', 'Unloading<br>&nbsp;') + kp('RETURNING', 'Returning<br>to depot') + '</div>' +
+      '<div class="tot">Fleet ' + rows.length + ' trucks · ' + mt(rows) + ' MT · Off road ' + off.length + ' · ' + mt(off) + ' MT</div>' +
+      ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
+      '<div class="f" style="text-align:left">Since = time the truck reached this stage · Hrs = hours in it · ⚠ = over ' + esc0 + ' h' + (rows.some(r => r.est) ? ' · ~ = estimate' : '') + '</div>' +
       '<div class="f">JNP Cargo Movers · ' + esc((session() || { user: {} }).user.name || '') + ' · ' + stamp + '</div>';
-    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*\nOrder received (waiting for loader): ' + n('WAIT_LOADER') + ' trucks · ' + mt(by.WAIT_LOADER || []) + ' MT\nLoaded (to destination): ' + n('LOADED') + ' trucks · ' + mt(by.LOADED || []) + ' MT\nAt party: ' + n('UNLOADING') + ' · Waiting for order: ' + n('WAIT_ORDER') + ' · Off road: ' + off.length;
+    const line = k => n(k) ? '\n' + stageOf(k).short + ': ' + n(k) + ' · ' + mt(by[k]) + ' MT' : '';
+    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*' + ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].map(line).join('') + '\nOff road: ' + off.length + ' · ' + mt(off) + ' MT';
     return { el: box, caption: cap };
   }
   async function shareStatusImage(rows, opt) {
@@ -692,6 +702,7 @@
     findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
     pendingLRTable, sharePendingLR, plSub,
+    vehicleType, sinceTxt, whereTxt,
     isApp, STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };

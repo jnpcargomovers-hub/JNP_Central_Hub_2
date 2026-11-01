@@ -66,7 +66,7 @@
   let calc = null, clientReqId = JNP.uid();
   const F = JNP.form($('fields'), [
     { k: 'Driver_Name', label: 'Driver', type: 'driver', req: true, allowNew: false, half: true },
-    { k: 'Month', label: 'Salary cycle ending in', type: 'month', req: true, value: () => JNP.monthISO(), half: true, hint: 'Cycle = 23rd → 22nd (e.g. Nov = 23 Oct – 22 Nov)' },
+    { k: 'Month', label: 'Month', type: 'month', req: true, value: () => JNP.monthISO(), half: true },
     { k: 'Days_Override', label: 'Days on duty (blank = auto)', type: 'num', noSend: true, half: true },
     { k: 'Bhatta', label: 'Bhatta ₹', type: 'num', half: true },
     { k: 'Incentive', label: 'Incentive ₹', type: 'num' },

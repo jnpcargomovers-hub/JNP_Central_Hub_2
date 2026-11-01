@@ -10,6 +10,17 @@
   <script src="../jnp.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="../builty.js"></script>
+  <style>
+    .bp { border: 1.5px solid #CFD8E6; border-radius: 12px; overflow: hidden; margin-top: 4px; }
+    .bp .bh { background: #022A5B; color: #fff; padding: 8px 12px; display: flex; justify-content: space-between; font-weight: 800; letter-spacing: .3px; }
+    .bp .g { display: grid; grid-template-columns: 1fr 1fr; } .bp .g > div { padding: 7px 10px; border-top: 1px solid #E3E8EF; border-right: 1px solid #E3E8EF; min-width: 0; }
+    .bp .g > div:nth-child(2n) { border-right: 0; } .bp .g > div.w { grid-column: 1 / -1; border-right: 0; }
+    .bp small { display: block; font-size: 10.5px; color: #5D6877; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .bp b { font-size: 14.5px; color: #1B2430; word-break: break-word; } .bp .addr { font-size: 12.5px; color: #334155; font-weight: 600; display: block; }
+    .bp .miss { color: #B45309; font-weight: 700; font-size: 13px; }
+    .src { font-size: 12px; font-weight: 700; padding: 6px 10px; border-radius: 9px; margin: 8px 0; }
+    .src.ok { background: #E6F6EC; color: #12804A; } .src.warn { background: #FFF5E6; color: #B45309; }
+  </style>
 </head>
 <body>
   <div id="hdr"></div>
@@ -19,21 +30,21 @@
       <div class="field">
         <label class="req" for="lr">LR Number · एलआर नंबर</label>
         <div class="btnrow"><input id="lr" class="input upper" placeholder="e.g. A21306" style="font-weight:800;font-size:18px"><button class="btn" style="width:auto;padding:0 18px" type="submit">Find</button></div>
-        <div class="hint">Truck, driver, date and destination come from the Loader entry.</div>
+        <div class="hint">Truck and driver come from the Loader entry. Party, DI, grade and quantity come from the dispatch details pasted in <b>JNP_Finance_DB › Portal_Loading</b>.</div>
       </div>
       <div id="findErr" class="err hidden"></div>
     </form>
 
-    <div id="lrCard" class="card hidden">
-      <h3 class="cardh"><span id="lrTitle"></span><span class="pill blue">From Loader</span></h3>
-      <div class="kv" id="lrKV"></div>
+    <div id="view" class="card hidden"></div>
+
+    <div id="editCard" class="card hidden">
+      <h3 class="cardh"><span id="editTitle">Edit builty</span></h3>
       <form id="f" autocomplete="off" novalidate><div id="fields"></div>
         <div id="err" class="err hidden"></div>
-        <button id="saveBtn" class="btn orange" type="submit">Save Builty · सेव करें</button>
+        <button id="saveBtn" class="btn orange" type="submit">⬇ Save & download PDF</button>
+        <button id="cancelEdit" class="btn light" type="button" style="margin-top:8px">Cancel</button>
       </form>
     </div>
-
-    <div id="doneCard" class="card hidden"></div>
 
     <div class="card list">
       <h3 class="cardh"><span>Loaded, builty pending</span><button class="mini" id="reload" type="button">↻</button></h3>
@@ -42,80 +53,117 @@
   </div>
 <script>
 (async function () {
-  const $ = id => document.getElementById(id);
+  const $ = id => document.getElementById(id), E = JNP.esc;
   JNP.header($('hdr'), 'Builty (LR PDF)', 'बिल्टी');
   const ctx = await JNP.requireModule('OPS-03');
   await JNP.masters(true).catch(e => JNP.toast(e.message, 'bad'));   // always fresh: company / consignor details come from Settings
-  let loader = null, clientReqId = JNP.uid();
+  let L = null, D = null, B = null, draft = null, clientReqId = JNP.uid();
+  const st = () => JNP.M().settings || {};
 
   const F = JNP.form($('fields'), [
     { k: 'DI_No', label: 'DI Number', hi: 'डीआई नंबर', type: 'num', req: true, ph: '10 digits' },
-    { k: 'Invoice_No', label: 'Invoice No.', hi: 'इनवॉइस', ph: 'optional' },
+    { k: 'Invoice_No', label: 'Invoice No.', hi: 'इनवॉइस', ph: 'optional', half: true },
+    { k: 'Freight_Type', label: 'Freight', type: 'select', options: JNP.list('Freight_Payment').length ? JNP.list('Freight_Payment') : ['To Be Billed (TBB)', 'To Pay', 'Paid'], value: 'To Be Billed (TBB)', half: true },
     { k: 'Consignee', label: 'Consignee (Party)', hi: 'पार्टी', type: 'party', req: true },
-    { k: 'Grade', label: 'Grade', hi: 'ग्रेड', type: 'select', list: 'Cement_Grade', req: true, half: true },
+    { k: 'Consignee_Address', label: 'Consignee address', hi: 'पता', type: 'textarea', ph: 'Village / town, taluka, district — remembered for next time' },
+    { k: 'Party_Contact', label: 'Party phone', type: 'num', half: true },
+    { k: 'Grade', label: 'Grade', hi: 'ग्रेड', req: true, half: true, ph: 'e.g. PPC-HP, O53-LC' },
     { k: 'Load_Type', label: 'Load', type: 'seg', options: ['BAG', 'BULK'], req: true, value: 'BAG', half: true },
     { k: 'Qty_MT', label: 'Quantity (MT)', hi: 'मात्रा', type: 'dec', req: true, ph: 'e.g. 34.120', half: true },
     { k: 'Bags', label: 'Bags', type: 'num', ph: 'auto MT × 20', half: true, show: v => v.Load_Type !== 'BULK' },
-    { k: 'Freight_Type', label: 'Freight', type: 'seg', options: JNP.list('Freight_Payment').length ? JNP.list('Freight_Payment') : ['To Pay', 'Paid', 'To Be Billed (TBB)'], value: 'To Be Billed (TBB)' },
+    { k: 'Driver_Name', label: 'Driver', hi: 'ड्राइवर', type: 'driver', half: true },
+    { k: 'Driver_Mobile', label: 'Driver mobile', type: 'num', half: true },
     { k: 'Remark', label: 'Remark' },
   ], { module: 'OPS-03' });
   F.on(k => {
     if (k === 'Qty_MT' || k === 'Load_Type') { const q = Number(F.val('Qty_MT')); F.info('Bags', q > 0 && F.val('Load_Type') === 'BAG' ? 'Auto: <b>' + Math.round(q * 20) + '</b> bags' : ''); if (q > 100) F.info('Qty_MT', '<span class="badline">Enter MT, not kg</span>'); else F.info('Qty_MT', ''); }
     if (k === 'DI_No') { const d = F.val('DI_No'); F.info('DI_No', d && !/^\d{10}$/.test(d) ? '<span class="warnline">' + d.length + ' digits — DI is 10 digits</span>' : ''); }
+    if (k === 'Consignee') { const p = (JNP.M().parties || []).find(x => JNP.keyOf(x.name) === JNP.keyOf(F.val('Consignee'))); if (p && p.address && !F.val('Consignee_Address')) F.set('Consignee_Address', p.address); }
   });
+
+  // the builty as it will print: loader entry + dispatch details (+ what was edited)
+  const record = () => Object.assign({ Freight_Type: 'To Be Billed (TBB)' }, {
+    LR_No: L.LR_No, Trip_Date: L.Trip_Date, Created_At: L.Created_At, Truck_No: L.Truck_No, Driver_Name: L.Driver_Name, Driver_Mobile: L.Driver_Mobile, Destination: (D && D.found && D.Destination) || L.Destination,
+    Start_KM: L.Start_KM, Diesel_Ltr: L.Diesel_Ltr }, D && D.found ? { DI_No: D.DI_No, Consignee: D.Consignee, Consignee_Address: D.Consignee_Address, Party_Contact: D.Party_Contact, Grade: D.Grade, Load_Type: D.Load_Type,
+    Qty_MT: D.Qty_MT, Bags: D.Load_Type === 'BULK' ? 'Loose' : Math.round(Number(D.Qty_MT) * 20) } : {}, draft || {}, B || {});
 
   const q = JNP.param('lr'); if (q) { $('lr').value = q; find(); }
   $('find').addEventListener('submit', e => { e.preventDefault(); find(); });
   async function find() {
-    $('findErr').classList.add('hidden'); $('lrCard').classList.add('hidden'); $('doneCard').classList.add('hidden');
+    $('findErr').classList.add('hidden'); $('view').classList.add('hidden'); $('editCard').classList.add('hidden');
     const lr = $('lr').value.replace(/\s+/g, '').toUpperCase(); if (!lr) return;
-    JNP.busy(true);
+    JNP.busy(true, 'Reading dispatch details…');
     try {
       const out = await JNP.call('lookupLR', { lr: lr });
-      loader = out.loader;
-      if (out.builty) return showDone(Object.assign({}, out.loader, out.builty), true);
-      $('lrTitle').textContent = 'LR ' + loader.LR_No;
-      $('lrKV').innerHTML = [['Date', JNP.dmy(loader.Trip_Date)], ['Truck', loader.Truck_No], ['Driver', loader.Driver_Name + (loader.Driver_Mobile ? ' · ' + loader.Driver_Mobile : '')], ['Destination', loader.Destination]]
-        .map(r => '<span>' + r[0] + '</span><b>' + JNP.esc(r[1]) + '</b>').join('');
-      F.reset(); clientReqId = JNP.uid();
-      $('lrCard').classList.remove('hidden'); if (ctx.can('E')) F.input('DI_No').focus(); else $('f').classList.add('hidden');
+      L = out.loader; D = out.dispatch || { found: false }; B = out.builty; draft = null; clientReqId = JNP.uid();
+      show();
     } catch (e) { $('findErr').textContent = e.message; $('findErr').classList.remove('hidden'); }
     finally { JNP.busy(false); }
   }
-
+  function show() {
+    const r = record(), can = ctx.can('E');
+    const cell = (lab, v, w) => '<div' + (w ? ' class="w"' : '') + '><small>' + lab + '</small>' + (v !== undefined && v !== null && v !== '' ? '<b>' + E(v) + '</b>' : '<span class="miss">— missing</span>') + '</div>';
+    const src = B ? '<div class="src ok">✓ Builty already made by ' + E(B.Created_By || '') + ' · ' + E(JNP.dmy(String(B.Created_At || '').slice(0, 16))) + '</div>'
+      : D.found ? '<div class="src ok">✓ Filled from the dispatch details (Portal_Loading)' + (D.PGI_At ? ' · PGI ' + E(JNP.dmy(String(D.PGI_At).slice(0, 16))) : '') + '</div>' +
+          (D.truckDiffers ? '<div class="src warn">⚠️ Dispatch says truck <b>' + E(D.Truck_No) + '</b> but the Loader entry has <b>' + E(L.Truck_No) + '</b> — check before printing</div>' : '')
+        : '<div class="src warn">Dispatch details for LR ' + E(L.LR_No) + ' are not in <b>JNP_Finance_DB › Portal_Loading</b> yet.<br>Paste the latest dispatch report there (click A1, paste the whole file) and tap <b>Check again</b> — or fill it by hand.</div>';
+    $('view').innerHTML = '<h3 class="cardh"><span>LR ' + E(r.LR_No) + '</span><span class="pill blue">' + (B ? 'Saved' : D.found ? 'Ready' : 'Needs details') + '</span></h3>' + src +
+      '<div class="bp"><div class="bh"><span>LORRY RECEIPT</span><span>' + E(r.LR_No) + '</span></div><div class="g">' +
+        cell('Date', JNP.dmy(String(r.Trip_Date || r.Created_At || '').slice(0, 10))) + cell('Truck', r.Truck_No) + cell('DI No.', r.DI_No) + cell('Invoice', r.Invoice_No || '—') +
+        '<div class="w"><small>Consignee</small>' + (r.Consignee ? '<b>' + E(r.Consignee) + '</b>' + (r.Consignee_Address ? '<span class="addr">' + E(r.Consignee_Address) + '</span>' : '<span class="addr miss">address not added</span>') + (r.Party_Contact ? '<span class="addr">📞 ' + E(r.Party_Contact) + '</span>' : '') : '<span class="miss">— missing</span>') + '</div>' +
+        cell('Destination', r.Destination) + cell('Grade', r.Grade ? JNPBuilty.gradeLabel(r.Grade) + ' · ' + (r.Load_Type === 'BULK' ? 'Bulk' : 'Bag') : '') +
+        cell('Quantity', r.Qty_MT ? Number(r.Qty_MT).toFixed(3) + ' MT' : '') + cell('Bags', r.Load_Type === 'BULK' ? 'Loose (Bulk)' : r.Bags) +
+        cell('Driver', (r.Driver_Name || '') + (r.Driver_Mobile ? ' · ' + r.Driver_Mobile : '')) + cell('Freight', r.Freight_Type) + '</div></div>' +
+      '<div id="vErr" class="err hidden" style="margin-top:8px"></div>' +
+      (B ? '<button class="btn orange" type="button" id="dl" style="margin-top:12px">⬇ Download PDF</button><button class="btn" type="button" id="sh" style="margin-top:8px">🧾 Share PDF on WhatsApp</button>' + (can ? '<button class="btn light" type="button" id="ed" style="margin-top:8px">✏️ Edit details</button>' : '')
+        : can ? (D.found ? '<button class="btn orange" type="button" id="dl" style="margin-top:12px">⬇ Download PDF · डाउनलोड</button><button class="btn light" type="button" id="ed" style="margin-top:8px">✏️ Edit details · बदलें</button>'
+          : '<button class="btn" type="button" id="again" style="margin-top:12px">🔄 Check again</button><button class="btn light" type="button" id="ed" style="margin-top:8px">✏️ Fill by hand</button>') : '');
+    $('view').classList.remove('hidden'); window.scrollTo(0, 0);
+    if ($('again')) $('again').onclick = find;
+    if ($('ed')) $('ed').onclick = openEdit;
+    if ($('sh')) $('sh').onclick = async () => { JNP.busy(true, 'Making PDF…'); try { await JNPBuilty.share(record(), st()); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } };
+    if ($('dl')) $('dl').onclick = () => JNP.submit($('dl'), $('vErr'), async () => {
+      if (!B) await saveNew(record());
+      await JNPBuilty.download(record(), st()); JNP.toast('PDF downloaded — LR ' + r.LR_No, 'ok'); show(); loadPending();
+    });
+  }
+  function openEdit() {
+    const r = record();
+    F.reset();
+    ['DI_No', 'Invoice_No', 'Freight_Type', 'Consignee', 'Consignee_Address', 'Party_Contact', 'Grade', 'Load_Type', 'Qty_MT', 'Bags', 'Driver_Name', 'Driver_Mobile', 'Remark'].forEach(k => { if (r[k] !== undefined && r[k] !== '' && r[k] !== 'Loose') F.set(k, r[k]); });
+    $('editTitle').textContent = (B ? 'Edit builty · ' : 'Builty · ') + r.LR_No;
+    $('editCard').classList.remove('hidden'); $('editCard').scrollIntoView({ behavior: 'smooth' });
+  }
+  $('cancelEdit').onclick = () => $('editCard').classList.add('hidden');
+  async function saveNew(r) {
+    if (!/^\d{10}$/.test(String(r.DI_No || ''))) throw new Error('DI number must be 10 digits — tap Edit details');
+    const keys = ['DI_No', 'Invoice_No', 'Consignee', 'Consignee_Address', 'Party_Contact', 'Grade', 'Load_Type', 'Qty_MT', 'Bags', 'Freight_Type', 'Driver_Name', 'Driver_Mobile', 'Remark', 'Destination'];
+    const data = { LR_No: L.LR_No, From_Dispatch: D && D.found && !draft ? 'Yes' : D && D.found ? 'Edited' : 'Manual' };
+    keys.forEach(k => { if (r[k] !== undefined && r[k] !== 'Loose') data[k] = r[k]; });
+    const out = await JNP.call('save', { module: 'OPS-03', clientReqId: clientReqId, data: data });
+    B = out.record;
+  }
   $('f').addEventListener('submit', e => {
     e.preventDefault();
     JNP.submit($('saveBtn'), $('err'), async () => {
       const bad = F.check(); if (bad) throw new Error(bad);
       if (!/^\d{10}$/.test(F.val('DI_No'))) throw new Error('DI number must be 10 digits');
-      const out = await JNP.call('save', { module: 'OPS-03', clientReqId: clientReqId, data: Object.assign({ LR_No: loader.LR_No }, F.values()) });
-      showDone(Object.assign({}, loader, out.record), false); loadPending();
+      const v = F.values();
+      if (B) { const out = await JNP.call('edit', { module: 'OPS-03', id: B.Record_ID, data: v }); B = out.record; }
+      else { draft = v; await saveNew(record()); }
+      $('editCard').classList.add('hidden');
+      await JNPBuilty.download(record(), st()); JNP.toast('Saved & PDF downloaded', 'ok'); show(); loadPending();
     });
   });
 
-  function showDone(r, existing) {
-    $('lrCard').classList.add('hidden');
-    const st = JNP.M().settings;
-    const msg = JNP.waText('BUILTY · ' + r.LR_No, [['Date', JNP.dmy(r.Trip_Date)], ['Truck', r.Truck_No], ['Driver', r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '')],
-      ['DI', r.DI_No], ['Invoice', r.Invoice_No], ['Party', r.Consignee], ['Destination', r.Destination], ['Grade', r.Grade],
-      ['Qty', r.Qty_MT + ' MT' + (r.Bags && r.Bags !== 'Loose' ? ' · ' + r.Bags + ' bags' : r.Bags === 'Loose' ? ' · Bulk' : '')], ['Freight', r.Freight_Type]]);
-    JNP.done($('doneCard'), { title: existing ? 'BUILTY ALREADY MADE' : 'BUILTY SAVED', big: r.LR_No, sub: r.Truck_No + ' · ' + r.Consignee + ' · ' + r.Qty_MT + ' MT',
-      buttons: [
-        { label: '🧾 Share Builty PDF', cls: 'orange', onClick: async () => { JNP.busy(true, 'Making PDF…'); try { await JNPBuilty.share(r, st); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } },
-        { label: '📲 Share details on WhatsApp', onClick: () => JNP.whatsapp(msg) },
-        { label: '👁 View PDF', cls: 'light', onClick: async () => { const b = await JNPBuilty.make(r, st); window.open(URL.createObjectURL(b), '_blank'); } },
-      ],
-      onNew: () => { $('doneCard').classList.add('hidden'); $('lr').value = ''; $('lr').focus(); window.scrollTo(0, 0); } });
-  }
-
   async function loadPending() {
     try {
-      const [L, B] = await Promise.all([JNP.call('list', { module: 'OPS-01', days: 4, limit: 60 }), JNP.call('list', { module: 'OPS-03', days: 6, limit: 200 })]);
-      const done = {}; B.rows.forEach(b => done[b.LR_No] = 1);
-      const rows = L.rows.filter(r => !done[r.LR_No]);
-      $('pending').innerHTML = JNP.rowsHtml(rows, r => ({ t: JNP.esc(r.LR_No + ' · ' + r.Truck_No), s: JNP.esc(r.Destination + ' · ' + r.Driver_Name + ' · ' + JNP.dmy(r.Created_At)), tag: 'Make', cls: 'warn', click: 1 }), 'All loaded trucks have a builty.');
-      $('pending').onclick = e => { const it = e.target.closest('.item'); if (!it) return; $('lr').value = rows[Number(it.dataset.i)].LR_No; find(); window.scrollTo(0, 0); };
-    } catch (e) { $('pending').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+      const [Lr, Br] = await Promise.all([JNP.call('list', { module: 'OPS-01', days: 4, limit: 60 }), JNP.call('list', { module: 'OPS-03', days: 6, limit: 200 })]);
+      const done = {}; Br.rows.forEach(b => done[b.LR_No] = 1);
+      const rows = Lr.rows.filter(r => !done[r.LR_No]);
+      $('pending').innerHTML = JNP.rowsHtml(rows, r => ({ t: E(r.LR_No + ' · ' + r.Truck_No), s: E(r.Destination + ' · ' + r.Driver_Name + ' · ' + JNP.dmy(r.Created_At)), tag: 'Make', cls: 'warn', click: 1 }), 'All loaded trucks have a builty.');
+      $('pending').onclick = e => { const it = e.target.closest('.item'); if (!it) return; $('lr').value = rows[Number(it.dataset.i)].LR_No; find(); };
+    } catch (e) { $('pending').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
   }
   $('reload').onclick = loadPending; loadPending();
 })();

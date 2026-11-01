@@ -104,11 +104,12 @@
 
     // consignor | invoice + DI + consignee
     const half = IW / 2;
-    box(M, y, half, 27, 'Consignor', [st.Consignor_Name ? String(st.Consignor_Name).toUpperCase() : '', st.Consignor_Address, [st.Consignor_GSTIN ? 'GSTIN: ' + st.Consignor_GSTIN : '', st.Consignor_PAN ? 'PAN: ' + st.Consignor_PAN : ''].filter(Boolean).join('  ')].filter(Boolean).join('\n'), { size: 7.6, bold: false, maxLines: 7 });
-    box(M + half, y, half, 9, 'Invoice No.', r.Invoice_No || '');
-    box(M + half, y + 9, half, 9, 'DI No.', r.DI_No || '');
-    box(M + half, y + 18, half, 9, 'Consignee', r.Consignee || '', { size: 8.5, maxLines: 2 });
-    y += 27;
+    box(M, y, half, 31, 'Consignor', [st.Consignor_Name ? String(st.Consignor_Name).toUpperCase() : '', st.Consignor_Address, [st.Consignor_GSTIN ? 'GSTIN: ' + st.Consignor_GSTIN : '', st.Consignor_PAN ? 'PAN: ' + st.Consignor_PAN : ''].filter(Boolean).join('  ')].filter(Boolean).join('\n'), { size: 7.6, bold: false, maxLines: 7 });
+    box(M + half, y, half, 7.5, 'Invoice No.', r.Invoice_No || '', { size: 8.5 });
+    box(M + half, y + 7.5, half, 7.5, 'DI No.', r.DI_No || '', { size: 8.5 });
+    const cons = [String(r.Consignee || '').toUpperCase(), r.Consignee_Address || '', r.Party_Contact ? 'Ph: ' + r.Party_Contact : ''].filter(Boolean).join('\n');
+    box(M + half, y + 15, half, 16, 'Consignee', cons, { size: r.Consignee_Address ? 7.2 : 8.5, maxLines: 5 });
+    y += 31;
 
     // vehicle | destination
     box(M, y, half, 10, 'Vehicle No.', r.Truck_No, { size: 12 });
@@ -160,5 +161,10 @@
     return JNP.shareFile(blob, name, text);
   }
 
-  w.JNPBuilty = { make, share, gradeLabel };
+  async function download(r, st) {
+    const b = await make(r, st), a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = 'Builty_' + r.LR_No + '_' + r.Truck_No + '.pdf'; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  }
+  w.JNPBuilty = { make, share, download, gradeLabel };
 })(window);

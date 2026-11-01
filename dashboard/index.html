@@ -404,7 +404,7 @@
       else status[t.no] = { st: 'wait', last: L, R: R, el: el };
     });
     // ---- real stages from the Truck Status board (estimates stay only for trucks nobody has tapped yet)
-    const ST_LANE = { WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', RETURNING: 'ret' };
+    const ST_LANE = { WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret' };
     const jr = rows(R.trips).map(j => Object.assign(j, { Truck_No: fixNo(j.Truck_No) })).sort((p, q) => (D(p.Order_At) || 0) - (D(q.Order_At) || 0));
     const jOpen = {}, jDone = {}; jr.forEach(j => { if (j.Stage === 'DONE') jDone[j.Truck_No] = j; else jOpen[j.Truck_No] = j; });
     if (liveEst) fleet.concat(market).forEach(t => {
@@ -419,7 +419,7 @@
     all.forEach(x => { if (x.pgi && isNaN(x.pgi)) x.pgi = null; x.pgiDay = x.pgi ? iso(x.pgi) : ''; x.bookMt = n0(x.cap) || x.mt;
       const j = jByLR[String(x.lr || '').toUpperCase()], jl = j ? D(j.Loaded_At) : null;
       // no portal / board time, but the trip clearly went (builty or delivery made, a later loading, or the journey moved on) → builty time, else its order day
-      const went = !x.pgi && !jl && (x.hasDoc || x.hasNext || (j && ['LOADED', 'UNLOADING', 'RETURNING', 'DONE'].indexOf(j.Stage) >= 0));
+      const went = !x.pgi && !jl && (x.hasDoc || x.hasNext || (j && ['LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'DONE'].indexOf(j.Stage) >= 0));
       x.loadAt = x.pgi || jl || (went ? (x.bAt && !isNaN(x.bAt) ? x.bAt : x.at) : null); x.loadSrc = x.pgi ? 'portal' : jl ? 'board' : went ? 'est' : ''; x.loadDay = x.loadAt ? iso(x.loadAt) : '';
       x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; });
     const portalInfo = { lastPgi: all.reduce((m, x) => x.pgi && (!m || x.pgi > m) ? x.pgi : m, null), lastSync: all.reduce((m, x) => x.synced && !isNaN(x.synced) && (!m || x.synced > m) ? x.synced : m, null) };
@@ -636,7 +636,7 @@
     return M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)).map(t => {
       const s0 = M.status[t.no] || {}, j = s0.trip, L = s0.last;
       const since = s0.st === 'off' ? s0.since : s0.real ? s0.since : L ? L.at : null;
-      return { no: t.no, cargo: /BULK/i.test(t.cargo || '') ? 'BULK' : 'BAG', cap: t.cap, mt: n0(j && s0.st !== 'wait' && j.Qty_MT) || n0(t.cap), remark: j && s0.st !== 'wait' ? j.Remark || '' : '', st: LS[s0.st] || 'WAIT_ORDER', hrs: since ? hrs(since, now) : NaN, trip: j && s0.st !== 'wait' ? j : null,
+      return { no: t.no, cargo: /BULK/i.test(t.cargo || '') ? 'BULK' : 'BAG', cap: t.cap, mt: n0(j && s0.st !== 'wait' && j.Qty_MT) || n0(t.cap), remark: j && s0.st !== 'wait' ? j.Remark || '' : '', st: s0.real && j && s0.st !== 'wait' && j.Stage && j.Stage !== 'DONE' ? j.Stage : LS[s0.st] || 'WAIT_ORDER', hrs: since ? hrs(since, now) : NaN, trip: j && s0.st !== 'wait' ? j : null,
         dest: j && s0.st !== 'wait' ? j.Destination : L ? L.dest : '', est: !s0.real && s0.st !== 'off', place: s0.st === 'off' ? (s0.why === 'Driver not available' ? 'No driver' : s0.why) + (s0.loc ? ' · ' + s0.loc : '') : (s0.place || '') };
     });
   }

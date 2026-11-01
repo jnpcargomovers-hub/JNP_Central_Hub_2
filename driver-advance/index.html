@@ -50,7 +50,7 @@
         lim = await JNP.call('advanceLimit', { driver: lastD });
         F.F.lim.set(lim.max === '' ? '<div class="field"><span class="badline">Monthly salary not set in Driver_Master — any amount goes to HO</span></div>' :
           '<div class="nums"><div class="num"><b>' + lim.days + '</b><span>Days on duty</span></div><div class="num"><b>' + JNP.inr(lim.earned) + '</b><span>Salary due (' + JNP.dmy(lim.cycleFrom).slice(0, 5) + ' → today)</span></div><div class="num warn"><b>' + JNP.inr(lim.advanced) + '</b><span>Already given</span></div></div>' +
-          '<div class="hint" style="margin:-4px 0 8px">₹' + lim.perDay + ' a day (salary ÷ 30) × ' + lim.days + ' days on duty this cycle (23rd → 22nd). On duty = every loading day + the days in between.</div>' +
+          '<div class="hint" style="margin:-4px 0 8px">₹' + lim.perDay + ' a day (salary ÷ 30) × ' + lim.days + ' days on duty this month (from the 1st). On duty = every loading day + the days in between.</div>' +
           '<div class="field"><span class="' + (lim.max > 0 ? 'okline' : 'badline') + '">Can give up to <b>' + JNP.inr(lim.max) + '</b></span></div>');
       } catch (e) { lim = null; F.F.lim.set('<div class="err">' + JNP.esc(e.message) + '</div>'); }
       F.reloadApprovers(); check();
