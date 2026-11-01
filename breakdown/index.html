@@ -106,6 +106,13 @@
     if (t && t.driver && !F.val('Driver_Name')) { F.set('Driver_Name', t.driver); const d = JNP.findDriver(t.driver); if (d && d.mobile) F.set('Driver_Mobile', d.mobile); }
     F.info('Truck_No', t && t.opStatus && t.opStatus !== 'On Road' ? '<span class="warnline">Status now: ' + JNP.esc(t.opStatus) + '</span>' : '');
   });
+  // opened from the Truck Status board: truck / loaded / LR / place come filled in
+  const EMBED = JNP.param('embed') === '1';
+  const toBoard = { label: '⬅ Back to Truck Status · वापस', cls: 'light', onClick: () => window.parent.postMessage({ jnp: 'close' }, '*') };
+  if (JNP.param('truck')) setTimeout(() => {
+    F.set('Truck_No', JNP.param('truck'));
+    if (JNP.param('loaded')) F.set('Loaded', JNP.param('loaded')); if (JNP.param('lr')) F.set('LR_No', JNP.param('lr')); if (JNP.param('loc')) F.set('Location', JNP.param('loc'));
+  }, 0);
   $('gpsBtn').onclick = async () => {
     $('gpsInfo').textContent = 'Getting location…';
     try { pos = await JNP.geo(); $('gpsInfo').innerHTML = '<span class="okline">✓ ' + pos.lat.toFixed(5) + ', ' + pos.lng.toFixed(5) + '</span>'; }
@@ -127,7 +134,8 @@
         ['Driver', r.Driver_Name ? r.Driver_Name + (r.Driver_Mobile ? ' (' + r.Driver_Mobile + ')' : '') : ''], ['Loaded', r.Loaded === 'Yes' ? 'Yes' + (r.LR_No ? ' · LR ' + r.LR_No : '') : r.Loaded],
         ['Photo', (r.Report_Photo_URLs || '').split(' ')[0]], ['Ref', r.Record_ID]], isRm(r.Off_Road_Type) ? 'R&M please acknowledge: ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID : 'Operations: arrange ' + (r.Off_Road_Type === 'Driver not available' ? 'a driver' : 'clearance') + ' — ' + JNP.CONFIG.HUB + 'breakdown/?tab=resolve&id=' + r.Record_ID);
       $('f').classList.add('hidden');
-      const btns = [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }];
+      const btns = [{ label: '📲 Share on WhatsApp · भेजें', onClick: () => JNP.whatsapp(msg) }].concat(EMBED ? [toBoard] : []);
+      if (EMBED) window.parent.postMessage({ jnp: 'saved' }, '*');
       JNP.done($('doneCard'), { title: 'OFF ROAD REPORTED', big: r.Truck_No, sub: r.Off_Road_Type + ' · ' + r.Symptom + ' · ' + r.Location, buttons: btns,
         onNew: () => { F.reset(); pos = null; $('gpsInfo').textContent = ''; clientReqId = JNP.uid(); $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden'); } });
     });
@@ -214,7 +222,8 @@
         : JNP.waText('🔴 OFF ROAD · UPDATE · ' + r.Truck_No, [['Reason', r.Symptom], ['Mechanic', r.Assigned_To], ['Repair at', r.Repair_Location], ['Note', U.val('note')], ['Ref', r.Record_ID]]);
       $('uf').classList.add('hidden');
       JNP.done($('udone'), { title: out.backOnRoad ? 'BACK ON ROAD' : 'UPDATE SAVED', big: r.Truck_No, sub: (out.backOnRoad ? '🟢 On road' : '🔴 Still off road') + (r.Downtime_Hrs ? ' · was off road ' + r.Downtime_Hrs + ' h' : ''),
-        buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }] });
+        buttons: [{ label: '📲 Share on WhatsApp', onClick: () => JNP.whatsapp(msg) }].concat(EMBED ? [toBoard] : []) });
+      if (EMBED) window.parent.postMessage({ jnp: 'saved' }, '*');
       cur = null; loadOpen();
     });
   });

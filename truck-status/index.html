@@ -64,11 +64,10 @@
   const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
   const S = k => JNP.stageOf(k);
   const ORDER = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'];
-  // dropdown per stage: what can come next (or a correction back)
-  const PICK = { WAIT_ORDER: ['WAIT_ORDER', 'WAIT_LOADER'], WAIT_LOADER: ['WAIT_LOADER', 'LOADED', 'WAIT_ORDER'], LOADED: ['LOADED', 'UNLOADING', 'UNLOAD_START', 'WAIT_LOADER'],
-    UNLOADING: ['UNLOADING', 'UNLOAD_START', 'RETURNING', 'LOADED'], UNLOAD_START: ['UNLOAD_START', 'RETURNING', 'UNLOADING'], RETURNING: ['RETURNING', 'DONE', 'UNLOAD_START'], UNSET: ['WAIT_LOADER', 'LOADED', 'UNLOADING', 'RETURNING'] };
+  // one simple dropdown: any status → any status (the app sorts out the steps in between)
+  const ALL = ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'OFF'];
   const LABEL = { WAIT_ORDER: '🅿️ At depot – waiting for order', WAIT_LOADER: '⏳ Order given – waiting for loader', LOADED: '🚚 Loaded – to destination', UNLOADING: '📍 Reached – waiting for unloading',
-    UNLOAD_START: '⬇️ Unloading started', RETURNING: '↩️ Unloaded – returning to depot', DONE: '🏠 Reached depot – waiting for order' };
+    UNLOAD_START: '⬇️ Unloading started', RETURNING: '↩️ Unloaded – returning to depot', DONE: '🏠 Reached depot – waiting for order', OFF: '🔧 Off road – breakdown / no driver / accident' };
   const mtOf = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0));
   const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.id !== 'q'; };
   async function load(fresh) {
@@ -105,19 +104,22 @@
     // off road: only a size-wise summary, at the bottom
     const off = ROWS.filter(r => r.st === 'OFF' && (!q || r.no.indexOf(q) >= 0)), sz = {};
     off.forEach(r => { const c = r.cap ? Math.round(r.cap) + ' MT' : 'Size ?'; (sz[c] = sz[c] || []).push(r); });
-    $('off').innerHTML = off.length && (filt === 'All' || filt === 'OFF') ? '<div class="lane" style="--c:#B91C1C"><h3>🔧 Off road<span class="n">' + off.length + ' · ' + mtOf(off) + ' MT</span><small>गाड़ी बंद · details in Off-Road</small></h3><div class="offsum"><table>' +
+    $('off').innerHTML = '';
+    if (off.length && (filt === 'All' || filt === 'OFF')) $('lanes').innerHTML += '<div class="lane" style="--c:#B91C1C"><h3>🔧 Off road<span class="n">' + off.length + ' · ' + mtOf(off) + ' MT</span><small>गाड़ी बंद · pick a status to put it back on road</small></h3><div class="offsum"><table>' +
       Object.keys(sz).sort((a, b) => (parseInt(b) || 0) - (parseInt(a) || 0)).map(c => '<tr><td><b>' + c + '</b></td><td>' + sz[c].length + ' truck' + (sz[c].length > 1 ? 's' : '') + '</td><td>' + mtOf(sz[c]) + ' MT</td></tr>').join('') +
-      '</table><a class="mini" href="../breakdown/?tab=resolve" style="display:inline-block;margin-top:8px">🔧 Open Off-Road ›</a></div></div>' : '';
+      '</table><a class="mini" href="../breakdown/?tab=resolve" style="display:inline-block;margin-top:8px">🔧 Open Off-Road ›</a></div>' +
+      off.filter(r => cargoF === 'All' || r.cargo === cargoF).sort((x, y) => (y.hrs || 0) - (x.hrs || 0)).map(rowHtml).join('') + '</div>';
   }
   function rowHtml(r) {
     const L = S(r.st), t = r.trip, lateNow = late(r);
-    const opts = (PICK[r.st] || PICK.UNSET).map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + E(k === 'LOADED' && r.dest ? '🚚 Loaded – to ' + r.dest : LABEL[k]) + '</option>').join('');
+    const hasTrip = !!(r.trip || r.pend);
+    const opts = (r.st === 'UNSET' ? '<option value="">— choose —</option>' : '') + ALL.map(k => '<option value="' + k + '"' + (k === r.st ? ' selected' : '') + '>' + E(k === 'LOADED' && r.dest ? '🚚 Loaded – to ' + r.dest : k === 'WAIT_ORDER' && hasTrip && r.st !== 'OFF' ? LABEL.DONE : LABEL[k]) + '</option>').join('');
     const where = JNP.whereTxt(r) + (r.st === 'WAIT_LOADER' && r.hrs > 24 ? ' · old order — update' : '') + ((r.st === 'UNLOADING' || r.st === 'UNLOAD_START') && t && t.Party && JNP.keyOf(t.Party) !== JNP.keyOf(r.dest) ? ' · ' + t.Party : '');
     const age = isNaN(r.hrs) ? '' : (r.since ? 'since ' + JNP.sinceTxt(r.since) + ' · ' : '') + Math.floor(r.hrs) + ' h';
     return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + ' · <span style="color:' + (r.cargo === 'BULK' ? '#1565D8' : '#C2610C') + ';font-weight:800">' + E(JNP.vehicleType(r)) + '</span>' + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
-        '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>' +
+        (r.st === 'OFF' ? '' : '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>') +
         '<div class="msg"></div><div class="acts">' + (lateNow ? '<button type="button" class="mini red" data-a="esc">📣 Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ' done)' : '') + '</button>' : '') + '</div>'
         : '<div class="ro">' + L.icon + ' ' + E(L.en) + (r.place ? ' · ' + E(r.place) : '') + (r.remark ? ' · ' + E(r.remark) : '') + '</div>') + '</div>';
   }
@@ -155,8 +157,16 @@
   // ---------- status change: ask WHEN it happened (default now) and, for returning, WHERE the truck is now
   const localISO = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 6e4); return z.toISOString().slice(0, 16); };
   function stepSheet(r, to, msg) {
+    if (to === 'OFF') return offRoadForm(r);
+    if (r.st === 'OFF') return backOnRoadForm(r, to);
+    if (to === 'WAIT_ORDER' && (r.trip || r.pend)) to = 'DONE';
+    const needOrder = ['WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].indexOf(to) >= 0 && !r.trip && !r.pend;
+    if (needOrder) {
+      sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">This truck has no order yet. Make the <b>Loader entry</b> (LR) first — the truck then moves by itself, and you can set the status after that.</div>' +
+        '<a class="btn orange" href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry · लोडर एंट्री</a>');
+      return;
+    }
     const needLoc = to === 'RETURNING', now = new Date();
-    if (to === 'WAIT_LOADER' && r.st === 'WAIT_ORDER') { location.href = '../loader/?truck=' + encodeURIComponent(r.no); return; }   // order comes from the Loader entry
     sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
       '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
       '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
@@ -170,6 +180,28 @@
       await JNP.call('tripSet', { truck: r.no, to: to === 'DONE' ? 'WAIT_ORDER' : to, lr: r.pend ? r.pend.LR_No : '', at: at.toISOString(), location: loc });
       close(); msg.innerHTML = '<span class="okline">✓ Saved · ' + E(LABEL[to]) + '</span>'; setTimeout(() => load(), 500);
     }).then(() => { const er = $('sErr'); if (er && !er.classList.contains('hidden') && /Loader entry|लोडर/.test(er.textContent)) er.innerHTML += ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>'; });
+  }
+  // ---------- off road from the board: the full Off-Road form opens on top of the board, truck filled in
+  function overlay(src, title) {
+    const o = document.createElement('div'); o.id = 'ovl';
+    o.style.cssText = 'position:fixed;inset:0;z-index:90;background:#fff;display:flex;flex-direction:column';
+    o.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #E3E8EF;background:#F7F9FC"><button type="button" class="mini" id="ovlX">✕ Close</button><b style="color:#022A5B">' + E(title) + '</b></div>' +
+      '<iframe src="' + src + '" style="flex:1;border:0;width:100%"></iframe>';
+    document.body.appendChild(o);
+    let saved = false;
+    const shut = () => { window.removeEventListener('message', onMsg); o.remove(); if (saved) load(); };
+    const onMsg = e => { if (!e.data || !e.data.jnp) return; if (e.data.jnp === 'saved') saved = true; if (e.data.jnp === 'close') shut(); };
+    window.addEventListener('message', onMsg); $('ovlX').onclick = shut;
+  }
+  function offRoadForm(r) {
+    const t = r.trip || {}, loaded = ['LOADED', 'UNLOADING', 'UNLOAD_START'].indexOf(r.st) >= 0;
+    overlay('../breakdown/?tab=report&embed=1&truck=' + encodeURIComponent(r.no) + '&loaded=' + (loaded ? 'Yes' : 'No') + (loaded && t.LR_No ? '&lr=' + encodeURIComponent(t.LR_No) : '') +
+      '&loc=' + encodeURIComponent(r.st === 'WAIT_ORDER' ? (r.place || 'Depot') : (r.place || r.dest || '')), r.no.slice(-4) + ' · Off road · गाड़ी बंद');
+  }
+  function backOnRoadForm(r, to) {
+    if (!r.off || !r.off.Record_ID) return JNP.toast('Open the Off-Road screen to put it back on road', 'warn');
+    JNP.toast('First mark ' + r.no.slice(-4) + ' back on road — then set "' + (LABEL[to] || to) + '"', 'warn', 6000);
+    overlay('../breakdown/?tab=resolve&embed=1&id=' + encodeURIComponent(r.off.Record_ID), r.no.slice(-4) + ' · Back on road · गाड़ी चालू');
   }
   // ---------- escalation messages (after Settings › Escalate_Hrs, default 4 h)
   const veh = r => (r.cap ? Math.round(r.cap) + 'T ' : '') + (r.cargo === 'BULK' ? 'bulker' : 'bag truck') + ' (' + r.no + ')';
