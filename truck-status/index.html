@@ -73,10 +73,7 @@
   async function load(fresh) {
     try {
       if (!M || fresh) M = (await JNP.masters(!!fresh).catch(() => null)) || JNP.M();
-      DATA = await JNP.call('board', {});
-      ROWS = JNP.truckStages(DATA, (M.trucks || []).filter(own));
-      ROWS.forEach(r => { if (r.cap) return; const t = (M.trucks || []).find(x => x.no === r.no); if (!t) return;   // market / inactive trucks on a trip
-        r.cap = Number(t.capacity) || ''; r.mt = r.mt || r.cap; if (/MARKET|HIRE|ATTACH/i.test(t.ownership || '')) r.own = 'MARKET'; });
+      const snap = await JNP.boardSnapshot(false); DATA = snap.data; ROWS = snap.rows;
       if (typing()) redrawLater = true; else draw();
       $('upd').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' · ' + ROWS.length + ' trucks · changes save by themselves';
     } catch (e) { $('lanes').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
@@ -136,11 +133,24 @@
     if (a === 'st') {
       const to = el.value; if (!to || to === r.st) return;
       el.value = r.st; stepSheet(r, to, msg);
-    } else if (a === 'loc' || a === 'rem') {
-      const p = { truck: r.no }; p[a === 'loc' ? 'location' : 'remark'] = el.value.trim();
-      try { await JNP.call('tripInfo', p); flash(el, true); if (a === 'rem') r.remark = el.value.trim(); else r.place = el.value.trim(); }
-      catch (x) { msg.innerHTML = '<span class="err">' + E(x.message) + '</span>'; }
-    }
+    } else if (a === 'loc' || a === 'rem') saveInfo(el);
+  });
+  // place / remark: saved automatically while typing (no button)
+  const timers = new WeakMap();
+  async function saveInfo(el) {
+    clearTimeout(timers.get(el));
+    const { card, r } = rowOf(el); if (!r) return;
+    const a = el.dataset.a, v = el.value.trim(), msg = card.querySelector('.msg');
+    const cur = el.dataset.saved != null ? el.dataset.saved : el.defaultValue.trim();
+    if (v === cur) return;
+    const p = { truck: r.no }; p[a === 'loc' ? 'location' : 'remark'] = v;
+    el.dataset.saved = v; msg.innerHTML = '<span class="hint">Saving…</span>';
+    try { await JNP.call('tripInfo', p); if (a === 'rem') r.remark = v; else r.place = v; flash(el, true); msg.innerHTML = '<span class="hint" style="color:#12804A">✓ Saved · सेव हो गया</span>'; setTimeout(() => { if (/Saved/.test(msg.textContent)) msg.innerHTML = ''; }, 2000); }
+    catch (x) { delete el.dataset.saved; msg.innerHTML = '<span class="err">' + E(x.message) + '</span>'; }
+  }
+  $('lanes').addEventListener('input', e => {
+    const el = e.target; if (el.dataset.a !== 'loc' && el.dataset.a !== 'rem') return;
+    clearTimeout(timers.get(el)); timers.set(el, setTimeout(() => saveInfo(el), 1500));
   });
   $('lanes').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
   document.addEventListener('focusout', () => setTimeout(() => { if (redrawLater && !typing()) draw(); }, 300));
@@ -170,11 +180,10 @@
     sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
       '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
       '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
-      (needLoc || to === 'DONE' || to === 'LOADED' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc || to === 'LOADED' ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : to === 'LOADED' ? 'e.g. waiting at depot, Songir — leave blank if on the way' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '">' +
-        (to === 'LOADED' ? '<div class="btnrow" style="margin-top:6px">' + ['WAITING AT DEPOT', 'AT PLANT', 'ON THE WAY'].map(x => '<button type="button" class="mini" data-l="' + x + '">' + x.charAt(0) + x.slice(1).toLowerCase() + '</button>').join('') + '</div>' : '') + '</div>' : '') +
+      (needLoc || to === 'DONE' || to === 'LOADED' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc || to === 'LOADED' ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : to === 'LOADED' ? 'Type like a remark — e.g. waiting at depot, at plant. Blank = on the way' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '">' +
+        '</div>' : '') +
       '<div id="sErr" class="err hidden"></div><button class="btn green" type="button" id="sGo">✓ Save · सेव करें</button>');
     $('sheet').querySelectorAll('[data-h]').forEach(b => b.onclick = () => { $('sWhen').value = localISO(new Date(Date.now() - Number(b.dataset.h) * 36e5)); });
-    $('sheet').querySelectorAll('[data-l]').forEach(b => b.onclick = () => { $('sLoc').value = b.dataset.l === 'ON THE WAY' ? '' : b.dataset.l; });
     $('sGo').onclick = () => JNP.submit($('sGo'), $('sErr'), async () => {
       const at = $('sWhen').value ? new Date($('sWhen').value) : new Date(), loc = $('sLoc') ? $('sLoc').value.trim() : '';
       if (needLoc && loc.length < 3) throw new Error('Write where the truck is now · गाड़ी अभी कहाँ है');

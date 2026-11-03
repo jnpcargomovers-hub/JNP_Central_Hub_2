@@ -57,6 +57,7 @@
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th { text-align: left; font-size: 11.5px; color: var(--muted); font-weight: 800; padding: 8px 8px; border-bottom: 1.5px solid var(--line); white-space: nowrap; cursor: pointer; user-select: none; background: #fff; position: sticky; top: 0; }
     .tbl th.nr, .tbl td.nr { text-align: right; }
+    .tbl.flow { width: 100%; } .tbl.flow td, .tbl.flow th { vertical-align: top; white-space: normal; padding: 7px 6px; } .tbl.flow td:first-child { width: 46%; } .tbl.flow th { position: static; } .tbl.flow small { color: var(--muted); font-weight: 600; } .tbl.flow tr.tot td { border-top: 2px solid var(--navy); background: #F5F8FC; }
     .tbl th.sorted::after { content: ' ▾'; } .tbl th.sorted.asc::after { content: ' ▴'; }
     .tbl td { padding: 8px 8px; border-bottom: 1px solid #EEF1F5; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .tbl tr.tap { cursor: pointer; } .tbl tr.tap:hover td { background: #F5F8FD; }
@@ -302,7 +303,8 @@
   async function load(fresh) {
     $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
     try {
-      RAW = await JNP.call('dash', { from: $('from').value, to: $('to').value, fresh: fresh === true }); M = model(RAW);
+      const [dash, snap] = await Promise.all([JNP.call('dash', { from: $('from').value, to: $('to').value, fresh: fresh === true }), JNP.boardSnapshot(fresh === true).catch(() => null)]);
+      RAW = dash; M = model(RAW); applyBoard(M, snap);
       if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore', 'finance'].find(x => allowed().indexOf(x) >= 0) || 'explore';
       drawNav(); render();
     }
@@ -426,6 +428,26 @@
     const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
     return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
   }
+
+  /** RIGHT NOW comes from the Truck Status board — the very rows the board and its status image use, so the numbers are identical.
+   *  (The old estimate from the last loading + usual round trip is used only if the board can't be read.) */
+  const LANE_OF = { WAIT_ORDER: 'wait', WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret', OFF: 'off', UNSET: 'wait' };
+  function applyBoard(M, snap) {
+    M.live = null; if (!snap || !snap.rows || !M.liveEst) return;
+    const now = new Date(), fl = [], mk = [];
+    snap.rows.forEach(r => {
+      let t = M.truckM[r.no]; if (!t) { t = { no: r.no, cap: Number(r.cap) || '', cargo: r.cargo, own: r.own === 'MARKET' ? 'MARKET' : '' }; M.truckM[r.no] = t; }
+      if (!t.cap && r.cap) t.cap = Number(r.cap);
+      const st = LANE_OF[r.st] || 'wait', since = D(r.since);
+      M.status[r.no] = st === 'off'
+        ? { st: 'off', real: 1, board: r, why: r.why === 'No driver' ? 'Driver not available' : (r.why || 'Breakdown'), note: (r.off && r.off.Symptom) || '', loc: (r.off && r.off.Location) || '', since: since, daysDown: since ? (now - since) / 864e5 : NaN, rec: r.off }
+        : { st: st, real: 1, board: r, trip: r.trip, since: since, place: r.place, el: r.hrs };
+      (r.own === 'MARKET' ? mk : fl).push(t);
+    });
+    M.live = { fleet: fl, mkt: mk, rows: snap.rows, at: now };
+  }
+  const liveMt = t => { const b = (M.status[t.no] || {}).board; return b ? n0(b.mt) || n0(b.cap) : n0(t.cap); };
+  const liveFleet = () => M.live ? M.live.fleet : M.fleet, liveMkt = () => M.live ? M.live.mkt : M.mktActive;
 
   // ---------- filtering (load type + class)
   const keepT = x => (fLoad === 'All' || x.load === fLoad) && (!fSize.size || fSize.has(x.cls));
@@ -593,9 +615,9 @@
   const STATE = { off: { t: 'Off road', c: 'down' }, load: { t: 'Loaded · on the way', c: 'ld' }, ret: { t: 'Returning empty', c: 'rt' }, wait: { t: 'Waiting for load', c: 'wt' } };
   let tkSel = ''; const laneOpen = {};
   function fleetStatus() {
-    const fl = M.fleet.filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => t.cap);
+    const fl = liveFleet().filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => { const b = (M.status[t.no] || {}).board; return b ? n0(b.mt) || n0(b.cap) : t.cap; });
     const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
-    const LANES = [['wait', 'At depot – waiting for order', 'var(--st-wait)'], ['wl', 'At depot – waiting for loader', '#B45309'], ['load', 'Loaded – to destination', 'var(--st-load)'], ['unl', 'At party – unloading / waiting', '#7C3AED'], ['ret', 'Unloaded – returning', 'var(--st-ret)'], ['off', 'Off road', 'var(--st-off)']];
+    const LANES = [['wait', 'At depot – waiting for order', 'var(--st-wait)'], ['wl', 'Order given – waiting for loader', '#B45309'], ['load', 'Loaded – to destination', 'var(--st-load)'], ['unl', 'At destination – waiting / unloading', '#7C3AED'], ['ret', 'Returning to depot', 'var(--st-ret)'], ['off', 'Off road', 'var(--st-off)']];
     if (!M.liveEst) return '<div class="sec card muted2">Truck status (loaded / at party / returning / waiting) needs the To date set to today.</div>';
     const shortWhy = w => w === 'Driver not available' ? 'no driver' : w === 'Documents / RTO' ? 'documents' : String(w || '').toLowerCase();
     const lane = ([k, label, c]) => {
@@ -618,7 +640,7 @@
     }
     setTimeout(() => { const el = $('lanes'); if (el) el.onclick = e => { const h = e.target.closest('.lane-h'); if (h) { laneOpen[h.dataset.l] = !laneOpen[h.dataset.l]; render(); return; } const c = e.target.closest('.tk'); if (!c) return; tkSel = tkSel === c.dataset.t ? '' : c.dataset.t; render(); };
       const sb = $('stShare'); if (sb) sb.onclick = () => JNP.shareStatusImage(boardRows(), { title: 'Truck status' }); }, 0);
-    const miss = fl.filter(t => !t.cap), mk = M.market.filter(t => keepTruck(t.no)), mka = M.mktActive.filter(t => keepTruck(t.no));
+    const miss = fl.filter(t => M.live ? !n0(((M.status[t.no] || {}).board || {}).cap) : !t.cap), mk = M.live ? [] : M.market.filter(t => keepTruck(t.no)), mka = liveMkt().filter(t => keepTruck(t.no));
     const real = fl.filter(t => (M.status[t.no] || {}).real).length;
     SHARE.fleetNow = { asOn: 1, title: 'Fleet status', fn: fleetText };
     return '<div class="sec card"><div class="fleet-head"><div class="bigno">' + on.length + '<small>of ' + fl.length + ' own trucks on road</small></div>' +
@@ -632,6 +654,7 @@
   }
   /** Fleet card → same rows the Truck Status board shares (estimates included). */
   function boardRows() {
+    if (M.live) return M.live.rows.filter(r => keepTruck(r.no));
     const LS = { wl: 'WAIT_LOADER', load: 'LOADED', unl: 'UNLOADING', ret: 'RETURNING', wait: 'WAIT_ORDER', off: 'OFF' }, now = new Date();
     return M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)).map(t => {
       const s0 = M.status[t.no] || {}, j = s0.trip, L = s0.last;
@@ -833,24 +856,62 @@
     return items.length ? sec('Avg rotation by size', 'days from loading to next loading', hbar(items, { asc: true })) : '';
   }
   // ---------- orders booked (loader entry, truck capacity) vs dispatched (UTCL portal PGI date, actual MT)
+  /** ORDERS FLOW — one chain that always adds up:
+   *    waiting at start + orders booked − loaded = waiting at end
+   *  LOADED = UTCL portal PGI when the dispatch file has it, else the moment the truck was moved to Loaded (or beyond) on the
+   *  Truck Status board (the portal sync also moves the board), else builty / delivery for old trips nobody tapped.
+   *  When the dates end today, "waiting at end" is checked against the Truck Status board; any difference is listed by LR. */
   function bookDisp(from, to) {
-    const B = M.all.filter(x => keepT(x) && x.day >= from && x.day <= to), Dd = M.all.filter(x => keepT(x) && x.loadDay && x.loadDay >= from && x.loadDay <= to);
-    const waiting = B.filter(x => !x.loadAt), port = Dd.filter(x => x.loadSrc === 'portal');
-    return { bT: B.length, bMt: sum(B, x => x.bookMt), dT: Dd.length, dMt: sum(Dd, x => x.loadMt), pT: port.length, bdT: Dd.filter(x => x.loadSrc === 'board').length, eT: Dd.filter(x => x.loadSrc === 'est').length, wT: waiting.length, wMt: sum(waiting, x => x.bookMt) };
+    const back = iso(new Date(D(from).getTime() - 7 * 864e5));
+    const A = M.all.filter(x => keepT(x) && x.day <= to);
+    const open = A.filter(x => x.day < from && (x.loadDay ? x.loadDay >= from : x.day >= back));
+    const booked = A.filter(x => x.day >= from);
+    const pool = open.concat(booked), loaded = pool.filter(x => x.loadDay && x.loadDay <= to), close = pool.filter(x => !x.loadDay || x.loadDay > to);
+    const mtB = a => sum(a, x => x.bookMt), mtL = a => sum(a, x => x.loadMt);
+    const r = { oT: open.length, oMt: mtB(open), bT: booked.length, bMt: mtB(booked), dT: loaded.length, dMt: mtB(loaded), aMt: mtL(loaded), wT: close.length, wMt: mtB(close),
+      pT: loaded.filter(x => x.loadSrc === 'portal').length, bdT: loaded.filter(x => x.loadSrc === 'board').length, eT: loaded.filter(x => x.loadSrc === 'est').length, close: close };
+    // check against the board (only when the dates end today)
+    if (M.live && to === iso(new Date())) {
+      const bw = M.live.rows.filter(b => b.st === 'WAIT_LOADER' && keepTruck(b.no)), lrOf = b => String(((b.trip || b.pend || {}).LR_No) || '').toUpperCase();
+      const want = {}; close.forEach(x => want[String(x.lr || '').toUpperCase()] = x);
+      const have = {}; bw.forEach(b => have[lrOf(b)] = b);
+      r.board = { n: bw.length, mt: Math.round(sum(bw, b => n0(b.mt) || n0(b.cap))),
+        extra: bw.filter(b => !want[lrOf(b)]).map(b => ({ lr: lrOf(b), no: b.no })),          // board says waiting, orders say otherwise
+        missing: close.filter(x => !have[String(x.lr || '').toUpperCase()]).map(x => ({ lr: x.lr, no: x.truck, day: x.day })) };   // order open, board doesn't show it waiting
+    }
+    return r;
   }
   function portalNote() {
     const p = M.portalInfo || {}, t = d => d ? JNP.dmy(iso(d)) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '';
-    return p.lastPgi ? 'Actual loading (UTCL portal) updated till ' + t(p.lastPgi).replace(/ \d\d:\d\d$/, ' ' + String(p.lastPgi.getHours()).padStart(2, '0') + ':00') + (p.lastSync ? ' · last sync ' + t(p.lastSync) : '') + ' · portal file is pasted ~9 am and ~7 pm · after that, loading comes from the Truck Status board (truck set to Loaded)'
-      : 'UTCL portal not synced yet — loading comes from the Truck Status board (truck set to Loaded) until Finance pastes the dispatch file';
+    return p.lastPgi ? 'UTCL portal has loadings till ' + t(p.lastPgi) + (p.lastSync ? ' (synced ' + t(p.lastSync) + ')' : '') + '. After that, Loaded = truck moved to Loaded on the Truck Status board; the portal confirms it at the next paste.'
+      : 'UTCL portal not synced yet — Loaded = truck moved to Loaded on the Truck Status board until Finance pastes the dispatch file.';
+  }
+  function flowTable(cols) {
+    const td = (r, k, m) => '<td class="nr"><b>' + fmt(r[k + 'Mt'], 0) + ' MT</b><br><small>' + r[k + 'T'] + (r[k + 'T'] === 1 ? ' trip' : ' trips') + '</small>' + (m || '') + '</td>';
+    const head = '<tr><th></th>' + cols.map(c => '<th class="nr">' + c.label + '</th>').join('') + '</tr>';
+    const row = (lab, k, extra) => '<tr><td>' + lab + '</td>' + cols.map(c => td(c.r, k, extra ? extra(c.r) : '')).join('') + '</tr>';
+    return '<div class="tscroll"><table class="tbl flow">' + head +
+      row('Waiting for loader at start', 'o') +
+      row('<b>+ Orders booked</b><br><small>loader entry</small>', 'b') +
+      row('<b>− Loaded</b>', 'd', r => '<br><small>actual ' + fmt(r.aMt, 0) + ' MT<br>' + r.pT + ' portal · ' + r.bdT + ' board' + (r.eT ? ' · ' + r.eT + ' builty' : '') + '</small>') +
+      '<tr class="tot"><td><b>= Waiting for loader now</b></td>' + cols.map(c => td(c.r, 'w', c.r.board ? '<br><small style="color:' + (c.r.board.n === c.r.wT && !c.r.board.extra.length ? '#12804A">✓ = board' : '#B91C1C">⚠ board ' + c.r.board.n) + '</small>' : '')).join('') + '</tr></table></div>';
+  }
+  function flowExceptions(r) {
+    if (!r.board || (!r.board.extra.length && !r.board.missing.length)) return '';
+    return '<div class="note" style="margin-top:8px"><b>⚠ Fix these so both match:</b>' +
+      (r.board.missing.length ? '<br>Order open but board doesn\'t show "waiting for loader": ' + r.board.missing.map(x => E(x.no.slice(-4)) + ' (LR ' + E(x.lr) + ', ' + JNP.dmy(x.day).slice(0, 5) + ')').join(', ') + ' — set its status on the board, or cancel the order if it won\'t load.' : '') +
+      (r.board.extra.length ? '<br>Board shows waiting, no open order found: ' + r.board.extra.map(x => E(x.no.slice(-4)) + (x.lr ? ' (LR ' + E(x.lr) + ')' : '')).join(', ') + ' — check the Loader entry / portal.' : '') + '</div>';
   }
   function bookDispCard() {
-    const r = bookDisp(RAW.from, RAW.to), today = iso(new Date()), td = RAW.to === today && RAW.from !== today ? bookDisp(today, today) : null;
-    SHARE.kpBD = { title: 'Orders booked vs loaded', fn: 'kpis' };
-    return '<div class="kwrap"><div class="khead"><b>Orders booked vs loaded</b><button type="button" class="shr" data-s="kpBD">📲 Share</button></div><div class="kpis">' +
-      kpi('Orders booked', fmt(r.bMt, 0) + ' MT', r.bT + ' trips · loader entry · truck capacity' + (td ? ' · today ' + fmt(td.bMt, 0) + ' MT' : ''), 'var(--blue)') +
-      kpi('Loaded', fmt(r.dMt, 0) + ' MT', r.dT + ' trips · by loading date' + (td ? ' · today ' + fmt(td.dMt, 0) + ' MT (' + td.dT + ')' : '') + '<br>' + r.pT + ' UTCL portal · ' + r.bdT + ' Truck Status board' + (r.eT ? ' · ' + r.eT + ' older trips (builty / delivery)' : ''), '#12804A') +
-      kpi('Booked, not loaded yet', fmt(r.wMt, 0) + ' MT', r.wT + ' trips · still waiting for loader', 'var(--orange)') +
-      '</div><div class="muted2" style="margin-top:8px">🕘 ' + E(portalNote()) + '</div></div>';
+    const today = iso(new Date()), r = bookDisp(RAW.from, RAW.to), td = RAW.to === today && RAW.from !== today ? bookDisp(today, today) : null;
+    const lbl = d => d === today ? 'Today' : JNP.dmy(d).slice(0, 5);
+    const cols = (td ? [{ label: 'Today', r: td }] : []).concat([{ label: RAW.from === RAW.to ? lbl(RAW.from) : lbl(RAW.from) + ' – ' + lbl(RAW.to), r: r }]);
+    const live = M.live ? (() => { const g = k => M.live.rows.filter(b => keepTruck(b.no) && k.indexOf(b.st) >= 0), t = a => a.length + ' · ' + fmt(sum(a, b => n0(b.mt) || n0(b.cap)), 0) + ' MT';
+      return '<div class="muted2" style="margin-top:8px">🚚 <b>On the road right now</b> (Truck Status board): loaded to destination ' + t(g(['LOADED'])) + ' · at destination ' + t(g(['UNLOADING', 'UNLOAD_START'])) + ' · returning ' + t(g(['RETURNING'])) + '</div>'; })() : '';
+    SHARE.kpBD = { title: 'Orders booked vs loaded', fn: () => { const c = cols[0].r; return cols[0].label + '\nWaiting at start: ' + c.oT + ' · ' + fmt(c.oMt, 0) + ' MT\n+ Booked: ' + c.bT + ' · ' + fmt(c.bMt, 0) + ' MT\n− Loaded: ' + c.dT + ' · ' + fmt(c.dMt, 0) + ' MT (' + c.pT + ' portal, ' + c.bdT + ' board)\n= Waiting now: ' + c.wT + ' · ' + fmt(c.wMt, 0) + ' MT'; } };
+    return '<div class="kwrap"><div class="khead"><b>Orders: booked → loaded</b><button type="button" class="shr" data-s="kpBD">📲 Share</button></div>' +
+      flowTable(cols) + '<div class="muted2" style="margin-top:4px">MT at truck capacity so the chain adds up; actual loaded MT (portal) shown under Loaded.</div>' + flowExceptions(td || r) + live +
+      '<div class="muted2" style="margin-top:8px">🕘 ' + E(portalNote()) + '</div></div>';
   }
   function overview0(T) {
     const a = agg(T), fleet = M.fleet.filter(t => keepTruck(t.no));
@@ -939,7 +1000,7 @@
     JNP.busy(true, 'Making report image…');
     const box = document.createElement('div'); box.className = 'opsrep';
     try {
-      const day = RAW.to, D1 = T.filter(x => x.day === day), a = agg(T), d1 = agg(D1), u = utilSum(utilRows(T)), lo = liveOff(), fl = M.fleet.filter(t => keepTruck(t.no));
+      const day = RAW.to, D1 = T.filter(x => x.day === day), a = agg(T), d1 = agg(D1), u = utilSum(utilRows(T)), lo = liveOff(), fl = liveFleet().filter(t => keepTruck(t.no));
       const ur = utilRows(T), sizes = CLASSES.map(c => c + 'T').map(c => { const tt = T.filter(x => x.cls === c), g = agg(tt), us = utilSum(ur.filter(r => r.cls === c)); return { c: c, trucks: ur.filter(r => r.cls === c).length, trips: g.trips, mt: g.mt, rot: g.rot, u: us.u }; }).filter(r => r.trips || r.trucks);
       const pc = (k, v) => sum(T.filter(x => x[k] === v), x => x.mt);
       const bar = (parts) => '<div class="or-split">' + parts.filter(p => p.v).map(p => '<div style="flex:' + p.v + ';background:' + p.c + '">' + (sum(parts, q => q.v) && p.v / sum(parts, q => q.v) > .14 ? Math.round(100 * p.v / sum(parts, q => q.v)) + '%' : '') + '</div>').join('') + '</div><div class="or-lg">' + parts.map(p => '<span><i style="background:' + p.c + '"></i>' + p.l + ' ' + fmt(p.v, 0) + '</span>').join('') + '</div>';
@@ -955,21 +1016,22 @@
           '<div><small>Avg rotation</small><b>' + dd(a.rot) + '</b><span>loading → loading</span></div></div>' +
         (() => { const r = bookDisp(RAW.from, RAW.to), t1 = bookDisp(day, day);
           return '<div class="or-sec">Orders booked vs loaded</div><table class="or-t sm"><tr><th></th><th>' + (day === iso(new Date()) ? 'Today' : JNP.dmy(day).slice(0, 5)) + '</th><th>' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</th></tr>' +
-            '<tr><td><b>Orders booked</b> · loader entry</td><td>' + t1.bT + ' · ' + fmt(t1.bMt, 0) + ' MT</td><td>' + r.bT + ' · ' + fmt(r.bMt, 0) + ' MT</td></tr>' +
-            '<tr><td><b>Loaded</b> · portal / board</td><td>' + t1.dT + ' · ' + fmt(t1.dMt, 0) + ' MT</td><td>' + r.dT + ' · ' + fmt(r.dMt, 0) + ' MT</td></tr>' +
-            '<tr><td>Booked, not loaded yet</td><td>' + t1.wT + ' · ' + fmt(t1.wMt, 0) + ' MT</td><td>' + r.wT + ' · ' + fmt(r.wMt, 0) + ' MT</td></tr></table>' +
+            '<tr><td>Waiting for loader at start</td><td>' + t1.oT + ' · ' + fmt(t1.oMt, 0) + ' MT</td><td>' + r.oT + ' · ' + fmt(r.oMt, 0) + ' MT</td></tr>' +
+            '<tr><td><b>+ Orders booked</b></td><td>' + t1.bT + ' · ' + fmt(t1.bMt, 0) + ' MT</td><td>' + r.bT + ' · ' + fmt(r.bMt, 0) + ' MT</td></tr>' +
+            '<tr><td><b>− Loaded</b> · portal / board</td><td>' + t1.dT + ' · ' + fmt(t1.dMt, 0) + ' MT</td><td>' + r.dT + ' · ' + fmt(r.dMt, 0) + ' MT</td></tr>' +
+            '<tr><td><b>= Waiting for loader now</b></td><td><b>' + t1.wT + ' · ' + fmt(t1.wMt, 0) + ' MT</b></td><td><b>' + r.wT + ' · ' + fmt(r.wMt, 0) + ' MT</b></td></tr></table>' +
             '<div class="or-note">' + E(portalNote()) + '</div>'; })() +
         '<div class="or-sec">MT lifted · ' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</div>' +
         bar([{ l: 'Bulk', v: pc('load', 'BULK'), c: '#1565D8' }, { l: 'Bag', v: pc('load', 'BAG'), c: '#F7821A' }]) +
         bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
         '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Trucks</th><th>Trips</th><th>MT</th><th>Rotation</th><th>Utilisation</th></tr>' +
           sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.trucks + '</td><td>' + r.trips + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
-        (() => { const all = M.fleet.concat(M.mktActive).filter(t => keepTruck(t.no)), q = k => { const a2 = all.filter(t => (M.status[t.no] || {}).st === k); return a2.length + ' trucks · ' + fmt(sum(a2, t => t.cap)) + ' MT'; };
-          return M.liveEst ? '<div class="or-sec">Right now</div><table class="or-t sm"><tr><td><b>Order received</b> · waiting for loader</td><td>' + q('wl') + '</td></tr><tr><td><b>Loaded</b> · to destination</td><td>' + q('load') + '</td></tr><tr><td>At party · unloading</td><td>' + q('unl') + '</td></tr></table>' : ''; })() +
-        '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (M.market.length ? ' · market ' + M.mktActive.filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
-        '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(sum(lo.rows, r => r.t.cap), 0) + ' tons · ' + fmt(lo.days, 0) + ' truck-days lost so far</div>' +
+        (() => { const all = liveFleet().concat(liveMkt()).filter(t => keepTruck(t.no)), q = k => { const a2 = all.filter(t => (M.status[t.no] || {}).st === k); return a2.length + ' trucks · ' + fmt(sum(a2, liveMt), 0) + ' MT'; };
+          return M.liveEst ? '<div class="or-sec">Right now</div><table class="or-t sm"><tr><td><b>Order received</b> · waiting for loader</td><td>' + q('wl') + '</td></tr><tr><td><b>Loaded</b> · to destination</td><td>' + q('load') + '</td></tr><tr><td>At destination · waiting / unloading</td><td>' + q('unl') + '</td></tr><tr><td>Returning to depot</td><td>' + q('ret') + '</td></tr><tr><td>At depot · waiting for order</td><td>' + q('wait') + '</td></tr></table><div class="or-note">Same as the Truck Status board.</div>' : ''; })() +
+        '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (liveMkt().length ? ' · market ' + liveMkt().filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
+        '<div class="or-off"><b>' + lo.n + ' off road</b> · ' + fmt(sum(lo.rows, r => liveMt(r.t)), 0) + ' tons · ' + fmt(lo.days, 0) + ' truck-days lost so far</div>' +
         (lo.rows.length ? '<table class="or-t sm"><tr><th>Off road due to</th><th>Trucks</th><th>Tons</th></tr>' + OFF_GROUPS.filter(g => why[g[0]]).map(g => { const rr = lo.rows.filter(r => r.g === g[0]);
-          return '<tr><td>' + g[1] + ' <b>' + g[2] + '</b></td><td>' + rr.length + '</td><td><b>' + fmt(sum(rr, r => r.t.cap), 0) + '</b></td></tr>'; }).join('') + '</table>' : '') +
+          return '<tr><td>' + g[1] + ' <b>' + g[2] + '</b></td><td>' + rr.length + '</td><td><b>' + fmt(sum(rr, r => liveMt(r.t)), 0) + '</b></td></tr>'; }).join('') + '</table>' : '') +
         '<div class="or-f">JNP Cargo Movers · ' + E(JNP.session().user.name) + ' · ' + JNP.nowText() + '</div>';
       document.body.appendChild(box);
       await new Promise(r => setTimeout(r, 120));
@@ -985,7 +1047,7 @@
   // WhatsApp report — same layout as the daily "vehicles not on road" message
   function fleetText() { return report(true); }
   function report(fleetOnly) {
-    const fl = M.fleet.filter(t => keepTruck(t.no)), T = M.trips.filter(keepT), a = agg(T), st = t => M.status[t.no] || {};
+    const fl = liveFleet().filter(t => keepTruck(t.no)), T = M.trips.filter(keepT), a = agg(T), st = t => M.status[t.no] || {};
     const off = fl.filter(t => st(t).st === 'off'), on = fl.filter(t => st(t).st !== 'off');
     const n = k => fl.filter(t => st(t).st === k).length, tons = arr => sum(arr, t => t.cap);
     const L = [], short = no => String(no).slice(-4), d2 = d => d ? JNP.dmy(iso(d)).slice(0, 5) : '';
@@ -1133,22 +1195,22 @@
   const OFF_GROUPS = [['Breakdown', '🔧', 'Breakdown'], ['Driver not available', '👤', 'No driver'], ['Accident', '💥', 'Accident'], ['Documents / RTO', '📄', 'Documents / RTO'], ['Other', '⋯', 'Other']];
   const grpOf = w => OFF_GROUPS.some(g => g[0] === w) ? w : 'Other';
   function offRows() {
-    return M.fleet.filter(t => keepTruck(t.no) && (M.status[t.no] || {}).st === 'off').map(t => { const s0 = M.status[t.no];
+    return liveFleet().filter(t => keepTruck(t.no) && (M.status[t.no] || {}).st === 'off').map(t => { const s0 = M.status[t.no];
       return { t: t, no: t.no, g: grpOf(s0.why), since: s0.since, days: s0.daysDown, note: s0.note && String(s0.note).indexOf('Truck_Master') < 0 ? s0.note : '', loc: s0.loc || '', size: (t.cap ? classOf(t.cap) : '?') + ' ' + (t.cargo || 'BAG') }; })
       .sort((p, q) => (isNaN(q.days) ? -1 : q.days) - (isNaN(p.days) ? -1 : p.days));
   }
   const dayTxt = d => isNaN(d) ? 'date not recorded' : d < 1 ? 'today' : Math.floor(d) + ' d';
   function offLine(r, i) { return (i + 1) + '. ' + r.no + ' (' + r.size + ') – since ' + (r.since ? JNP.dmy(iso(r.since)).slice(0, 5) : '?') + ' · ' + dayTxt(r.days) + (r.note ? ' – ' + r.note : '') + (r.loc ? ' – ' + r.loc : ''); }
   function offText(rows, title) {
-    const td = sum(rows.filter(r => !isNaN(r.days)), r => r.days), tons = sum(rows, r => n0(r.t.cap));
+    const td = sum(rows.filter(r => !isNaN(r.days)), r => r.days), tons = sum(rows, r => liveMt(r.t));
     return '*' + title + '* · as on ' + JNP.dmy(iso(new Date())) + '\n' + rows.map(offLine).join('\n') + '\n————————\nTotal ' + rows.length + ' trucks · ' + fmt(tons) + ' T · ' + fmt(td, 0) + ' truck-days lost';
   }
   function offRoadGroups() {
-    const fl = M.fleet.filter(t => keepTruck(t.no)), rows = offRows();
+    const fl = liveFleet().filter(t => keepTruck(t.no)), rows = offRows();
     const td = sum(rows.filter(r => !isNaN(r.days)), r => r.days);
     const card = ([k, icon, label]) => {
       const list = rows.filter(r => r.g === k); if (!list.length) return '';
-      const d = sum(list.filter(r => !isNaN(r.days)), r => r.days), tons = sum(list, r => n0(r.t.cap));
+      const d = sum(list.filter(r => !isNaN(r.days)), r => r.days), tons = sum(list, r => liveMt(r.t));
       const body = '<div class="og-sum"><b>' + list.length + '</b> trucks · ' + fmt(tons) + ' T · <b>' + fmt(d, 0) + '</b> truck-days lost</div>' +
         '<div class="og">' + list.map(r => '<div class="og-r"><div><b>' + E(r.no) + '</b> <small>' + E(r.size) + '</small><div class="muted2">' + E([r.note, r.loc].filter(Boolean).join(' · ') || '—') + '</div></div>' +
           '<div class="og-d"><b class="' + (r.days >= 3 ? 'late' : '') + '">' + dayTxt(r.days) + '</b><small>' + (r.since ? 'since ' + JNP.dmy(iso(r.since)).slice(0, 5) : 'no record') + '</small></div></div>').join('') + '</div>';

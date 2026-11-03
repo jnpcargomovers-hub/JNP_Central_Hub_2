@@ -645,6 +645,16 @@
     '.srep .f{margin-top:12px;font-size:11px;color:#7A8596;text-align:right}.srep b.bk{color:#1565D8;font-size:11px}.srep span.bg{color:#C2610C;font-size:11px;font-weight:700}' +
     '.srep tr.cg td{font-size:11px;font-weight:800;color:#334155;background:#F3F6FB;padding:3px 6px;letter-spacing:.3px}.srep .kp em{display:block;font-style:normal;font-size:10px;color:#5D6877;font-weight:700;margin-top:1px}';
   /** Builds the status report element: totals for heads on top, one table per stage, off road as a size summary at the bottom. */
+  /** ONE truck list for the Truck Status board AND the Dashboard (same rows → same numbers everywhere). */
+  async function boardSnapshot(fresh) {
+    let mm = null; try { mm = (await masters(!!fresh)) || M(); } catch (e) { mm = M(); }
+    const d = await call('board', {}), trucks = (mm && mm.trucks) || [];
+    const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
+    const rows = truckStages(d, trucks.filter(own));
+    rows.forEach(r => { if (r.cap) return; const t = trucks.find(x => x.no === r.no); if (!t) return;   // market / inactive trucks on a trip
+      r.cap = Number(t.capacity) || ''; r.mt = r.mt || r.cap; if (/MARKET|HIRE|ATTACH/i.test(t.ownership || '')) r.own = 'MARKET'; });
+    return { data: d, rows: rows, masters: mm };
+  }
   /** Status report image: totals on top, then one simple table per stage — truck · size/type · where · since (time) · hours. */
   const p2_ = v => String(v).padStart(2, '0');
   function sinceTxt(v) { const d = tDate(v); if (!d) return ''; const t = new Date(), same = d.toDateString() === t.toDateString(); return (same ? '' : p2_(d.getDate()) + '-' + p2_(d.getMonth() + 1) + ' ') + p2_(d.getHours()) + ':' + p2_(d.getMinutes()); }
@@ -681,7 +691,8 @@
         kp('UNLOADING', 'At destination<br>waiting to unload') + kp('UNLOAD_START', 'Unloading<br>&nbsp;') + kp('RETURNING', 'Returning<br>to depot') + '</div>' +
       '<div class="tot">Fleet ' + rows.length + ' trucks · ' + mt(rows) + ' MT · Off road ' + off.length + ' · ' + mt(off) + ' MT</div>' +
       ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
-      '<div class="f" style="text-align:left">Since = time the truck reached this stage · Hrs = hours in it · ⚠ = over ' + esc0 + ' h' + (rows.some(r => r.est) ? ' · ~ = estimate' : '') + '</div>' +
+      '<div class="f" style="text-align:left">Since = time the truck reached this stage · Hrs = hours in it · ⚠ = over ' + esc0 + ' h' + (rows.some(r => r.est) ? ' · ~ = estimate' : '') +
+        (rows.some(r => !Number(r.cap)) ? '<br>⚠ No capacity in Truck Master (counted as 0 MT): ' + esc(rows.filter(r => !Number(r.cap)).map(r => r.no).join(', ')) : '') + '</div>' +
       '<div class="f">JNP Cargo Movers · ' + esc((session() || { user: {} }).user.name || '') + ' · ' + stamp + '</div>';
     const line = k => n(k) ? '\n' + stageOf(k).short + ': ' + n(k) + ' · ' + mt(by[k]) + ' MT' : '';
     const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*' + ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].map(line).join('') + '\nOff road: ' + off.length + ' · ' + mt(off) + ' MT';
@@ -703,7 +714,7 @@
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
     pendingLRTable, sharePendingLR, plSub,
     vehicleType, sinceTxt, whereTxt,
-    isApp, STAGES, NEXT_BTN, stageOf, truckStages, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
+    isApp, STAGES, NEXT_BTN, stageOf, truckStages, boardSnapshot, stageReport, ago, tDate, shareImage, statusReportEl, shareStatusImage,
     esc, uid, keyOf, titleCase, todayISO, monthISO, nowText, normTruck, inr, param, dmy, store,
   };
 })(window);
