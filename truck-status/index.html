@@ -30,6 +30,9 @@
     .tr .acts { display: flex; gap: 6px; margin-top: 6px; } .tr .acts:empty { display: none; }
     .lane .grp { display: block; width: 100%; margin: 6px 0 2px; background: var(--red); color: #fff; border-color: transparent; padding: 8px; font-weight: 800; }
     .tr .acts .mini.red { background: var(--red); color: #fff; border-color: transparent; }
+    .warnline { background: #FFF4E5; color: #8A4B00; border-radius: 9px; padding: 8px 10px; font-size: 13px; margin: 6px 0; }
+    #sheet .mini.sel { background: #022A5B; color: #fff; border-color: transparent; } #sheet .mini.red { background: #fff; color: #B91C1C; border-color: #F3C2C2; } #sheet .mini.red.sel { background: #B91C1C; color: #fff; }
+    #sheet .btnrow .mini { white-space: normal; text-align: left; }
     .ro { margin-top: 6px; font-size: 13px; color: var(--char); font-weight: 600; }
     .offsum { background: #FDE8EB; border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
     .offsum table { width: 100%; border-collapse: collapse; font-size: 14px; } .offsum td { padding: 5px 2px; border-bottom: 1px solid #F6C9D0; } .offsum td:last-child { text-align: right; font-weight: 800; }
@@ -115,6 +118,7 @@
     const age = isNaN(r.hrs) ? '' : (r.since ? 'since ' + JNP.sinceTxt(r.since) + ' · ' : '') + Math.floor(r.hrs) + ' h';
     return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + ' · <span style="color:' + (r.cargo === 'BULK' ? '#1565D8' : '#C2610C') + ';font-weight:800">' + E(JNP.vehicleType(r)) + '</span>' + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
+      (r.st === 'WAIT_ORDER' && DATA.misClosed && DATA.misClosed[r.no] ? '<div class="warnline">⚠ Order LR ' + E(DATA.misClosed[r.no].LR_No) + ' → ' + E(DATA.misClosed[r.no].Destination || '') + ' was closed as "reached depot" before loading' + (DATA.misClosed[r.no].By ? ' (by ' + E(DATA.misClosed[r.no].By) + ')' : '') + '. If it is loaded / still to load, pick the status — it reopens.</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
         (r.st === 'OFF' ? '' : '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' || (r.st === 'LOADED' && !/^On the way/i.test(r.place || '')) ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>') +
         '<div class="msg"></div><div class="acts">' + (lateNow ? '<button type="button" class="mini red" data-a="esc">📣 Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ' done)' : '') + '</button>' : '') + '</div>'
@@ -170,26 +174,34 @@
     if (to === 'OFF') return offRoadForm(r);
     if (r.st === 'OFF') return backOnRoadForm(r, to);
     if (to === 'WAIT_ORDER' && (r.trip || r.pend)) to = 'DONE';
-    const needOrder = ['WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].indexOf(to) >= 0 && !r.trip && !r.pend;
+    const mis = !r.trip && !r.pend && DATA && DATA.misClosed && DATA.misClosed[r.no];        // its order was closed as "reached depot" before loading
+    const keepOrder = r.st === 'WAIT_LOADER' && to === 'DONE';                                  // order waiting for loader → don't lose it by mistake
+    const needOrder = ['WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].indexOf(to) >= 0 && !r.trip && !r.pend && !mis;
     if (needOrder) {
       sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">This truck has no order yet. Make the <b>Loader entry</b> (LR) first — the truck then moves by itself, and you can set the status after that.</div>' +
         '<a class="btn orange" href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry · लोडर एंट्री</a>');
       return;
     }
     const needLoc = to === 'RETURNING', now = new Date();
+    const lrNow = ((r.trip || r.pend || {}).LR_No) || '';
     sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
+      (mis ? '<div class="warnline">This reopens order <b>LR ' + E(mis.LR_No) + '</b> → ' + E(mis.Destination || '') + ' (it was closed as "reached depot" before loading). No new Loader entry needed.</div>' : '') +
+      (keepOrder ? '<div class="warnline">This truck has order <b>LR ' + E(lrNow) + '</b> waiting for loader. What happened?</div>' +
+        '<div class="btnrow" style="margin:6px 0 10px"><button type="button" class="mini sel" data-k="keep">🏠 Reached depot before this order — keep LR ' + E(lrNow) + '</button><button type="button" class="mini red" data-k="cancel">✕ Cancel order LR ' + E(lrNow) + '</button></div>' : '') +
       '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
       '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
       (needLoc || to === 'DONE' || to === 'LOADED' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc || to === 'LOADED' ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : to === 'LOADED' ? 'Type like a remark — e.g. waiting at depot, at plant. Blank = on the way' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '">' +
         '</div>' : '') +
       '<div id="sErr" class="err hidden"></div><button class="btn green" type="button" id="sGo">✓ Save · सेव करें</button>');
+    let cancelOrder = false;
+    $('sheet').querySelectorAll('[data-k]').forEach(b => b.onclick = () => { cancelOrder = b.dataset.k === 'cancel'; $('sheet').querySelectorAll('[data-k]').forEach(x => x.classList.toggle('sel', x === b)); });
     $('sheet').querySelectorAll('[data-h]').forEach(b => b.onclick = () => { $('sWhen').value = localISO(new Date(Date.now() - Number(b.dataset.h) * 36e5)); });
     $('sGo').onclick = () => JNP.submit($('sGo'), $('sErr'), async () => {
       const at = $('sWhen').value ? new Date($('sWhen').value) : new Date(), loc = $('sLoc') ? $('sLoc').value.trim() : '';
       if (needLoc && loc.length < 3) throw new Error('Write where the truck is now · गाड़ी अभी कहाँ है');
       if (at > new Date(Date.now() + 6e4)) throw new Error('Time cannot be in the future');
-      await JNP.call('tripSet', { truck: r.no, to: to === 'DONE' ? 'WAIT_ORDER' : to, lr: r.pend ? r.pend.LR_No : '', at: at.toISOString(), location: loc });
-      close(); msg.innerHTML = '<span class="okline">✓ Saved · ' + E(LABEL[to]) + '</span>'; setTimeout(() => load(), 500);
+      const out = await JNP.call('tripSet', { truck: r.no, to: to === 'DONE' ? 'WAIT_ORDER' : to, lr: r.pend ? r.pend.LR_No : '', at: at.toISOString(), location: loc, cancelOrder: cancelOrder });
+      close(); msg.innerHTML = '<span class="okline">✓ Saved · ' + E(out && out.kept ? 'depot time saved · LR ' + out.kept + ' still waiting for loader' : out && out.reopened ? LABEL[to] + ' · LR ' + out.reopened + ' reopened' : LABEL[to]) + '</span>'; setTimeout(() => load(), 500);
     }).then(() => { const er = $('sErr'); if (er && !er.classList.contains('hidden') && /Loader entry|लोडर/.test(er.textContent)) er.innerHTML += ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>'; });
   }
   // ---------- off road from the board: the full Off-Road form opens on top of the board, truck filled in
