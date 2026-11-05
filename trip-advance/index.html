@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Trip Advance Sheet · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row2 label { font-size: 12px; font-weight: 800; color: var(--muted); display: block; margin-bottom: 4px; }
+    .row2 input { width: 100%; border: 1.5px solid #D7DEE8; border-radius: 10px; padding: 9px 10px; font-size: 15px; font-weight: 700; background: #fff; }
+    .quick { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+    .k4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 12px; }
+    .k4 div { background: #F3F6FB; border-radius: 12px; padding: 10px; } .k4 small { color: var(--muted); font-weight: 700; font-size: 11.5px; display: block; } .k4 b { font-size: 19px; color: var(--navy); }
+    .warnline { background: #FFF4E5; color: #8A4B00; border-radius: 10px; padding: 8px 10px; font-size: 13px; margin-top: 10px; }
+    table.p { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+    table.p th, table.p td { border-bottom: 1px solid #EEF1F5; padding: 6px 4px; text-align: left; } table.p td.n { text-align: right; } table.p th { color: var(--muted); font-size: 11.5px; }
+    .tscroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <p class="muted" style="margin:0 0 10px">Excel of the trip advance for the bank transfer — <b>one sheet per day</b> in the usual advance-sheet columns, and a <b>Summary</b> sheet in front showing how each driver is doing. Your old backup sheet does not change.</p>
+      <div class="row2">
+        <div><label>From</label><input type="date" id="from"></div>
+        <div><label>To</label><input type="date" id="to"></div>
+      </div>
+      <div class="quick">
+        <button type="button" class="mini" data-q="today">Today</button>
+        <button type="button" class="mini" data-q="yday">Yesterday</button>
+        <button type="button" class="mini" data-q="month">This month</button>
+        <button type="button" class="mini" data-q="last">Last month</button>
+      </div>
+      <button class="btn green" id="go" type="button">📊 Download Excel</button>
+      <div id="err" class="err hidden"></div>
+      <div id="out"></div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Trip Advance Sheet', 'ड्राइवर एडवांस शीट · Excel');
+  await JNP.requireModule('FIN-07');
+  const p2 = n => String(n).padStart(2, '0'), iso = d => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+  const dmy = s => s.slice(8, 10) + '-' + s.slice(5, 7) + '-' + s.slice(0, 4);
+  const set = (a, b) => { $('from').value = iso(a); $('to').value = iso(b); };
+  const now = new Date(); set(now, now);
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
+    const t = new Date(), q = b.dataset.q;
+    if (q === 'today') set(t, t);
+    if (q === 'yday') { const y = new Date(t.getTime() - 864e5); set(y, y); }
+    if (q === 'month') set(new Date(t.getFullYear(), t.getMonth(), 1), t);
+    if (q === 'last') set(new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0));
+  });
+
+  // Excel helpers (SheetJS community: values + formulas, column widths, freeze rows)
+  const colL = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const txt = v => ({ t: 's', v: String(v === undefined || v === null ? '' : v) });
+  const num = v => v === '' || v === undefined || v === null ? { t: 's', v: '' } : { t: 'n', v: Number(v) };
+  const fx = (f, v) => ({ t: typeof v === 'number' ? 'n' : 's', f: f, v: v === undefined ? '' : v });
+  function sheet(aoa, widths, freeze) {
+    const ws = {}; let maxC = 0;
+    aoa.forEach((row, r) => { row.forEach((c, k) => { if (c === null || c === undefined) return; ws[colL(k) + (r + 1)] = typeof c === 'object' ? c : (typeof c === 'number' ? { t: 'n', v: c } : { t: 's', v: String(c) }); }); maxC = Math.max(maxC, row.length); });
+    ws['!ref'] = 'A1:' + colL(Math.max(0, maxC - 1)) + Math.max(1, aoa.length);
+    if (widths) ws['!cols'] = widths.map(w => ({ wch: w }));
+    if (freeze) ws['!freeze'] = { xSplit: 0, ySplit: freeze };
+    return ws;
+  }
+  // Day sheet columns (the usual advance sheet) + the FIN-02 validation columns at the end
+  // exactly the columns of JNP_DRIVER_ADV_SHEET (OCTOBER 26), then the rate-check columns
+  const COLS = [['DI NO', 'di', 12], ['LR NO', 'lr', 9], ['DATE', 'date', 17], ['DESTINATION', 'dest', 22], ['GADI NO', 'truck', 13], ['Grade', 'grade', 9], ['TON', 'ton', 7], [' TYPE', 'type', 7],
+    ['DRIVER NAME', 'driver', 22], ['DRIVER NO.', 'mobile', 12], ['TYPE', 'status', 6], ['DRIVER AC', 'ac', 18], ['IFCE CODE', 'ifsc', 13], ['ADVANCE', 'advance', 9], ['BULTI', 'bilty', 7], ['DEBIT', 'debit', 7],
+    ['PAYBLE AMOUNT', 'payable', 12], ['REMARK', 'remark', 14], ['PAID DATE', 'paid', 11], ['REMARK', 'remark2', 22], ['STD ADVANCE', 'std', 11], ['DIFF %', 'diff', 8], ['CHECK', 'check', 12]];
+  const HEAD = COLS.map(c => c[0]), WID = COLS.map(c => c[2]);
+  const C = k => colL(COLS.findIndex(c => c[1] === k));
+
+  function build(rows, from, to) {
+    const wb = XLSX.utils.book_new(), days = [...new Set(rows.map(r => r.day))].sort();
+    const sheetName = d => dmy(d);
+    const drivers = {};
+    rows.forEach(r => { const k = r.driver.toLowerCase(); (drivers[k] = drivers[k] || { name: r.driver.toUpperCase(), mobile: r.mobile, ac: r.ac, ifsc: r.ifsc, rows: [] }).rows.push(r); if (!drivers[k].ac && r.ac) drivers[k].ac = r.ac; });
+    const daySheets = days.map(d => {
+      const list = rows.filter(r => r.day === d), aoa = [HEAD];
+      list.forEach((r, i) => {
+        const n = i + 2, diff = r.std ? (r.advance - r.std) / r.std : '';
+        const v = { di: txt(r.di), lr: r.lr, date: r.at.slice(8, 10) + '-' + r.at.slice(5, 7) + '-' + r.at.slice(0, 4) + r.at.slice(10), dest: r.dest, truck: r.truck, grade: r.grade || '', ton: r.qty === '' ? r.ton : num(r.qty),
+          type: r.type, driver: r.driver.toUpperCase(), mobile: txt(r.mobile), status: '', ac: txt(r.ac), ifsc: r.ifsc, advance: num(r.advance), bilty: r.bilty ? num(r.bilty) : '', debit: '',
+          payable: fx(C('advance') + n + '-' + C('bilty') + n + '-' + C('debit') + n, r.advance - r.bilty), remark: '', paid: '',
+          remark2: !r.inMaster ? 'Driver not in master' : !r.ac ? 'A/C missing in master' : !r.advance ? 'No advance in Loader entry and no rate' : r.fromRate ? 'Rate card (loader left blank)' : '', std: num(r.std),
+          diff: r.std ? fx('IF(' + C('std') + n + '="","",(' + C('advance') + n + '-' + C('std') + n + ')/' + C('std') + n + ')', Math.round(diff * 1000) / 1000) : '',
+          check: r.std ? fx('IF(' + C('std') + n + '="","",IF(ABS(' + C('diff') + n + ')>0.1,"CHECK >10%","OK"))', Math.abs(diff) > 0.1 ? 'CHECK >10%' : 'OK') : (r.ac ? 'NO RATE' : 'NO BANK A/C') };
+        aoa.push(COLS.map(c => v[c[1]]));
+      });
+      const L = list.length + 1, sumc = k => fx('SUM(' + C(k) + '2:' + C(k) + L + ')', list.reduce((s, r) => s + (k === 'advance' ? r.advance : k === 'bilty' ? r.bilty : k === 'payable' ? r.advance - r.bilty : 0), 0));
+      const at = k => COLS.findIndex(c => c[1] === k), tot = HEAD.map(() => ''); tot[at('driver')] = 'TOTAL'; ['advance', 'bilty', 'debit', 'payable'].forEach(k => tot[at(k)] = sumc(k));
+      aoa.push([]); aoa.push(tot);
+      return { name: sheetName(d), ws: sheet(aoa, WID, 1), n: list.length, last: L, adv: list.reduce((s, r) => s + r.advance, 0), pay: list.reduce((s, r) => s + r.advance - r.bilty, 0) };
+    });
+    // SUMMARY first: per driver, formulas over every day sheet so edits (debit, type) flow through
+    const q = n => "'" + n + "'!";
+    const across = (fn, col, key) => daySheets.map(s => fn + '(' + q(s.name) + C('driver') + '2:' + C('driver') + s.last + ',' + key + (col ? ',' + q(s.name) + C(col) + '2:' + C(col) + s.last : '') + ')').join('+');
+    const SH = ['DRIVER NAME', 'DRIVER NO.', 'DRIVER AC', 'IFCE CODE', 'TRIPS', 'DAYS', 'ADVANCE', 'BULTI', 'DEBIT', 'PAYBLE AMOUNT', 'AVG ADVANCE / TRIP', 'TRIPS >10% OFF STD', 'DESTINATIONS', 'LAST TRIP', 'CHECK'];
+    const sum = [['JNP Cargo Movers · Trip Advance Summary · ' + dmy(from) + ' to ' + dmy(to)], ['One sheet per day after this one. Totals here add up the day sheets (edit DEBIT / TYPE there).'], [], SH];
+    Object.keys(drivers).sort((a, b) => drivers[b].rows.length - drivers[a].rows.length || a.localeCompare(b)).forEach((k, i) => {
+      const d = drivers[k], r = i + 5, key = 'A' + r, adv = d.rows.reduce((s, x) => s + x.advance, 0), bil = d.rows.reduce((s, x) => s + x.bilty, 0);
+      const off = d.rows.filter(x => x.std && Math.abs(x.advance - x.std) / x.std > 0.1).length, dests = {};
+      d.rows.forEach(x => dests[x.dest] = (dests[x.dest] || 0) + 1);
+      sum.push([d.name, txt(d.mobile), txt(d.ac), d.ifsc, fx(across('COUNTIF', '', key), d.rows.length), new Set(d.rows.map(x => x.day)).size,
+        fx(across('SUMIF', 'advance', key), adv), fx(across('SUMIF', 'bilty', key), bil), fx(across('SUMIF', 'debit', key), 0), fx(across('SUMIF', 'payable', key), adv - bil),
+        fx('IF(E' + r + '=0,"",ROUND(G' + r + '/E' + r + ',0))', d.rows.length ? Math.round(adv / d.rows.length) : ''), off,
+        Object.keys(dests).sort((a, b) => dests[b] - dests[a]).map(x => x + (dests[x] > 1 ? ' ×' + dests[x] : '')).join(', '), dmy(d.rows[d.rows.length - 1].day),
+        !d.ac ? 'NO BANK A/C' : off ? off + ' off-rate' : '']);
+    });
+    const n0 = 5, n1 = sum.length; sum.push([]);
+    const tr = ['TOTAL', '', '', '', fx('SUM(E' + n0 + ':E' + n1 + ')', rows.length), '', fx('SUM(G' + n0 + ':G' + n1 + ')', rows.reduce((s, x) => s + x.advance, 0)), fx('SUM(H' + n0 + ':H' + n1 + ')', rows.reduce((s, x) => s + x.bilty, 0)), fx('SUM(I' + n0 + ':I' + n1 + ')', 0), fx('SUM(J' + n0 + ':J' + n1 + ')', rows.reduce((s, x) => s + x.advance - x.bilty, 0))];
+    sum.push(tr); sum.push([]); sum.push(['DAY TOTALS']); sum.push(['DATE', 'TRIPS', 'ADVANCE', 'PAYBLE AMOUNT']);
+    daySheets.forEach(s => sum.push([s.name, fx('COUNTA(' + q(s.name) + C('driver') + '2:' + C('driver') + s.last + ')', s.n), fx('SUM(' + q(s.name) + C('advance') + '2:' + C('advance') + s.last + ')', s.adv), fx('SUM(' + q(s.name) + C('payable') + '2:' + C('payable') + s.last + ')', s.pay)]));
+    wb.Workbook = { CalcPr: { fullCalcOnLoad: true } };
+    XLSX.utils.book_append_sheet(wb, sheet(sum, [22, 12, 18, 13, 7, 6, 11, 8, 8, 13, 12, 12, 40, 11, 14], 4), 'Summary');
+    daySheets.forEach(s => XLSX.utils.book_append_sheet(wb, s.ws, s.name));
+    return wb;
+  }
+
+  $('go').onclick = () => JNP.submit($('go'), $('err'), async () => {
+    const from = $('from').value, to = $('to').value; if (!from || !to || to < from) throw new Error('Pick From and To dates');
+    const out = await JNP.call('tripAdvanceSheet', { from: from, to: to });
+    const R = out.rows || []; if (!R.length) throw new Error('No Loader entries in these dates');
+    // advance not typed by the loader → the rate-card standard is used (marked in REMARK); FIN-02: standard auto-fills, Finance owns the number
+    R.forEach(r => { if (!r.advance && r.std) { r.advance = r.std; r.fromRate = true; } });
+    const fromRate = R.filter(r => r.fromRate).length;
+    const adv = R.reduce((s, r) => s + r.advance, 0), pay = R.reduce((s, r) => s + r.advance - r.bilty, 0);
+    const noAc = R.filter(r => !r.ac), noAdv = R.filter(r => !r.advance && !r.fromRate), off = R.filter(r => r.std && Math.abs(r.advance - r.std) / r.std > 0.1), withStd = R.filter(r => r.std).length;
+    XLSX.writeFile(build(R, from, to), 'JNP_Trip_Advance_' + dmy(from) + (to !== from ? '_to_' + dmy(to) : '') + '.xlsx');
+    $('out').innerHTML = '<div class="k4"><div><small>Trips</small><b>' + R.length + '</b></div><div><small>Advance</small><b>₹' + adv.toLocaleString('en-IN') + '</b></div><div><small>Payable (after bulti)</small><b>₹' + pay.toLocaleString('en-IN') + '</b></div><div><small>Off standard >10%</small><b>' + (withStd ? off.length + ' of ' + withStd : '—') + '</b></div></div>' +
+      (noAc.length ? '<div class="warnline">⚠ No bank A/C in Driver Master for ' + [...new Set(noAc.map(r => r.driver))].map(E).join(', ') + ' — fill Driver_Master before paying.</div>' : '') +
+      (noAdv.length ? '<div class="warnline">⚠ ' + noAdv.length + ' Loader entr' + (noAdv.length === 1 ? 'y has' : 'ies have') + ' no advance and no rate on the card: ' + noAdv.slice(0, 12).map(r => E(r.truck.slice(-4)) + ' (LR ' + E(r.lr) + ')').join(', ') + '</div>' : '') +
+      (fromRate ? '<div class="warnline">ℹ ' + fromRate + ' trip' + (fromRate === 1 ? '' : 's') + ' had no advance typed by the loader — filled from the rate card (REMARK says so). Check before paying.</div>' : '') +
+      (out.rateNote ? '<div class="warnline">ℹ ' + E(out.rateNote) + '.</div>' : '') +
+      '<div class="muted" style="margin-top:10px">✓ Downloaded. Bulti ₹' + out.bilty + ' per trip · DEBIT and TYPE (NEW/OLD/REV) are left for the office to fill — the Summary updates by itself. The Excel has bank account numbers: keep it on the office laptop, don\'t forward it on WhatsApp.</div>';
+  });
+})();
+</script>
+</body>
+</html>
