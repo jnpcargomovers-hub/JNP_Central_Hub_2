@@ -266,32 +266,38 @@
     finally { btn.disabled = false; btn.textContent = 'Save Entry · सेव करें'; }
   });
 
-  function showDone() {
+  // the saved entry + which messages went, kept for this tab: WhatsApp opens in this same tab and Back must bring both buttons back
+  const PEND = 'jnp2_loader_pending';
+  const keepPend = () => { try { sessionStorage.setItem(PEND, JSON.stringify({ last: last, at: Date.now(), s1: $('msg1').classList.contains('done'), s2: $('msg2').classList.contains('done') })); } catch (e) { } };
+  function markSent(b) { b.classList.add('done'); b.innerHTML = b.id === 'msg1' ? '✓ Pump message sent (tap to send again)' : '✓ LR / Rate message sent (tap to send again)'; }
+  function showDone(_, restore) {
     $('f').classList.add('hidden'); $('doneCard').classList.remove('hidden');
     $('lrNo').textContent = last.LR_No;
     $('lrSub').textContent = last.Truck_No + ' · ' + last.Driver_Name + ' · ' + last.Destination;
     $('msg1').classList.remove('done'); $('msg2').classList.remove('done');
     $('msg1').innerHTML = '📲 Pump message (Diesel)'; $('msg2').innerHTML = '📲 LR / Rate message';
     window.scrollTo(0, 0);
+    if (restore) { if (restore.s1) markSent($('msg1')); if (restore.s2) markSent($('msg2')); return; }
+    keepPend();
     JNP.toast('Saved — LR ' + last.LR_No + (last.Off_Road_Note ? ' · ' + last.Off_Road_Note : ''), 'ok', last.Off_Road_Note ? 7000 : 3000);
   }
 
   // Message formats exactly as the original Loader app
   $('msg1').onclick = () => {
     if (!last) return;
+    markSent($('msg1')); keepPend();
     JNP.whatsapp(last.Truck_No + '\nDIESEL ' + last.Diesel_Ltr + '\n' + last.Destination + '\nKM ' + last.Start_KM);
-    $('msg1').classList.add('done'); $('msg1').innerHTML = '✓ Pump message sent (tap to send again)';
   };
   $('msg2').onclick = () => {
     if (!last) return;
+    markSent($('msg2')); keepPend();
     JNP.whatsapp((last.Truck_No + ' ' + last.LR_No + ' ' + last.Destination + ' ' + (last.Rate || '')).trim());
-    $('msg2').classList.add('done'); $('msg2').innerHTML = '✓ LR / Rate message sent (tap to send again)';
   };
   $('corrBtn').onclick = () => { if (window.__corr) JNP.whatsapp(window.__corr); };
   $('nextBtn').onclick = () => {
     $('f').reset(); ['truckInfo', 'driverInfo', 'destInfo', 'kmInfo', 'formErr'].forEach(i => $(i).innerHTML = '');
     $('lr').value = suggestedLR; lrTag(); fetchLR();
-    clientReqId = JNP.uid(); last = null; $('corrBtn').classList.add('hidden');
+    clientReqId = JNP.uid(); last = null; $('corrBtn').classList.add('hidden'); try { sessionStorage.removeItem(PEND); } catch (e) { }
     $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden');
     window.scrollTo(0, 0);
   };
@@ -350,10 +356,12 @@
     window.__corr = changes.length ? '*CORRECTION · LR ' + last.LR_No + '*\n' + changes.join('\n') + '\n— ' + JNP.session().user.name : '';
     $('corrBtn').classList.toggle('hidden', !changes.length);
     editing = null; $('lr').readOnly = false; $('editBanner').classList.add('hidden'); $('saveBtn').textContent = 'Save Entry · सेव करें';
-    window.scrollTo(0, 0); JNP.toast(changes.length ? 'Correction saved' : 'Nothing changed', changes.length ? 'ok' : 'warn');
+    keepPend(); window.scrollTo(0, 0); JNP.toast(changes.length ? 'Correction saved' : 'Nothing changed', changes.length ? 'ok' : 'warn');
     loadRecent();
   };
   window.__isEditing = () => !!editing;
+  // back from WhatsApp (same tab) → the saved entry and its message buttons come back
+  try { const p = JSON.parse(sessionStorage.getItem(PEND) || 'null'); if (p && p.last && Date.now() - p.at < 6 * 36e5) { last = p.last; showDone(null, p); } } catch (e) { }
   loadRecent();
 })();
 </script>

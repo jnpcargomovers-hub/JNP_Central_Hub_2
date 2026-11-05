@@ -335,11 +335,12 @@
       const t = truckM[r.Truck_No] || {}, b = blt[r.LR_No], i = ind[r.LR_No];
       // MT: UTCL portal (actual) → builty → delivery → truck capacity
       const mt = n0(r.Actual_Qty_MT) ? n0(r.Actual_Qty_MT) : b && n0(b.Qty_MT) ? n0(b.Qty_MT) : i && n0(i.Qty_Issued_MT) ? n0(i.Qty_Issued_MT) : n0(t.cap);
-      const fr = n0(r.Final_Freight) || n0(r.Freight_Amount);      // portal freight (final after GPS lead check, else billed amount)
+      const okF = v => { const n = n0(v); return n > 0 && n <= 500000 ? n : 0; };   // > ₹5 L for one trip = a DI / bill no. in the wrong column → not freight
+      const fr = okF(r.Final_Freight) || okF(r.Freight_Amount);      // portal freight (final after GPS lead check, else billed amount)
       const lt = b && b.Load_Type ? String(b.Load_Type).toUpperCase() : (t.cargo || '');
       const at = D(r.Created_At), un = i && (i.Unloaded_At || i.Created_At) ? D(i.Unloaded_At || i.Created_At) : null;
       return { lr: r.LR_No, at: at, day: String(r.Trip_Date || r.Created_At).slice(0, 10), truck: r.Truck_No, driver: r.Driver_Name, dest: r.Destination, km0: n0(r.Start_KM),
-        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate), adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(n0(r.Actual_Qty_MT) || (b && n0(b.Qty_MT))), portal: !!n0(r.Actual_Qty_MT), frPortal: !!fr,
+        diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate) <= 20000 ? n0(r.Rate) : 0, adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(n0(r.Actual_Qty_MT) || (b && n0(b.Qty_MT))), portal: !!n0(r.Actual_Qty_MT), frPortal: !!fr, badFr: (n0(r.Final_Freight) > 500000 || n0(r.Freight_Amount) > 500000),
         rev: fr || n0(r.Rate) * mt, consignee: r.Party || (b ? b.Consignee : ''), unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By, hasDoc: !!(b || i), bAt: b && b.Created_At ? D(b.Created_At) : null,
         pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null };
@@ -958,7 +959,7 @@
     return '<div class="money-h">💰 Revenue <small>management only · not in the ops report</small></div>' +
       '<div class="kwrap"><div class="khead"><b>Revenue numbers</b><button type="button" class="shr" data-s="kpRev">📲 Share</button></div><div class="kpis">' +
       (() => { const conf = T.filter(x => x.portal || x.frPortal), rc = sum(conf, x => x.rev), rn = a.rev - rc;
-        return kpi('Freight revenue', inr(a.rev), a.trips + ' trips<br><small style="font-weight:600">✓ ' + inr(rc) + ' confirmed on UTCL portal (' + conf.length + ' trips) · <b style="color:var(--orange)">' + inr(rn) + ' not confirmed yet</b> (' + (a.trips - conf.length) + ' trips, at truck capacity / loader rate)</small>', 'var(--orange)'); })() +
+        return kpi('Freight revenue', inr(a.rev), a.trips + ' trips<br><small style="font-weight:600">✓ ' + inr(rc) + ' confirmed on UTCL portal (' + conf.length + ' trips) · <b style="color:var(--orange)">' + inr(rn) + ' not confirmed yet</b> (' + (a.trips - conf.length) + ' trips, at truck capacity / loader rate)' + (T.some(x => x.badFr) ? '<br><b style="color:var(--red)">⚠ ' + T.filter(x => x.badFr).length + ' trips had a DI / bill number in the portal freight column — ignored (Portal Sync › Apply fixes it)</b>' : '') + '</small>', 'var(--orange)'); })() +
       kpi('₹ per litre diesel', isNaN(revPerL(a)) ? '—' : '₹' + fmt(revPerL(a), 1), fmt(a.diesel) + ' L · diesel on ' + pct(a.trips ? a.dieselTrips / a.trips : NaN) + ' trips', 'var(--orange)') +
       kpi('Revenue per trip', a.trips ? inr(a.rev / a.trips) : '—', '', 'var(--orange)') +
       kpi('Avg rate', a.mt ? '₹' + fmt(a.rev / a.mt) + ' / MT' : '—', fmt(a.mt, 0) + ' MT', 'var(--orange)') +

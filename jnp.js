@@ -242,7 +242,6 @@
    *  message is COPIED and WhatsApp Web is opened only the first time — every next message is pasted (Ctrl+V) in the same
    *  WhatsApp tab and chat. Laptops with the WhatsApp desktop app can switch to it once ("Use WhatsApp app"). */
   const WA_KEY = 'jnp2_wa_mode';
-  function waMode() { try { return localStorage.getItem(WA_KEY) || 'web'; } catch (e) { return 'web'; } }
   function setWaMode(m) { try { localStorage.setItem(WA_KEY, m); } catch (e) { } }
   async function copyText(t) {
     try { await navigator.clipboard.writeText(t); return true; } catch (e) { }
@@ -252,21 +251,20 @@
     let b = document.getElementById('waBar');
     if (!b) { b = document.createElement('div'); b.id = 'waBar'; b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:999;background:#022A5B;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);font:600 14px/1.4 inherit;max-width:min(560px,94vw);display:flex;gap:10px;align-items:center;flex-wrap:wrap'; document.body.appendChild(b); }
     b.innerHTML = html; clearTimeout(b._t); b._t = setTimeout(() => b.remove(), 12000);
-    b.querySelectorAll('[data-wa]').forEach(x => x.onclick = () => { const k = x.dataset.wa; if (k === 'open') window.open('https://web.whatsapp.com/', 'jnp_whatsapp'); if (k === 'app') { setWaMode('app'); location.href = 'whatsapp://send?text=' + encodeURIComponent(b._text || ''); } if (k === 'web') setWaMode('web'); b.remove(); });
+    b.querySelectorAll('[data-wa]').forEach(x => x.onclick = () => { const k = x.dataset.wa; if (k === 'copy') return; if (k === 'open') window.open('https://web.whatsapp.com/', 'jnp_whatsapp'); if (k === 'app') { setWaMode('app'); location.href = 'whatsapp://send?text=' + encodeURIComponent(b._text || ''); } if (k === 'web') setWaMode('web'); b.remove(); });
     return b;
   }
-  async function whatsapp(text) {
+  // WhatsApp — the version in use since 19 Oct (restored as it was): phone opens the app; laptop opens WhatsApp Web in
+  // ONE separate tab ("jnp_whatsapp") that is reused for every message, so the Hub stays open with its buttons.
+  function whatsapp(text) {
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (mobile) { location.href = 'whatsapp://send?text=' + encodeURIComponent(text); return; }
-    if (waMode() === 'app') { location.href = 'whatsapp://send?text=' + encodeURIComponent(text); waBar('Opened in the WhatsApp app <button data-wa="web" style="background:#fff;color:#022A5B;border:0;border-radius:8px;padding:6px 10px;font-weight:800">Use WhatsApp Web instead</button>'); return; }
-    const ok = await copyText(text);
-    let first = false; try { first = !sessionStorage.getItem('jnp2_wa_open'); sessionStorage.setItem('jnp2_wa_open', '1'); } catch (e) { first = true; }
-    if (!ok) { window.open('https://web.whatsapp.com/send?text=' + encodeURIComponent(text), 'jnp_whatsapp'); return; }   // copy blocked → old way
-    if (first) window.open('https://web.whatsapp.com/', 'jnp_whatsapp');
-    const btn = 'style="background:#fff;color:#022A5B;border:0;border-radius:8px;padding:6px 10px;font-weight:800;cursor:pointer"';
-    const b = waBar('✓ Message copied — go to your <b>WhatsApp tab</b>, open the chat and press <b>Ctrl + V</b>, then Enter.' +
-      '<span style="display:flex;gap:6px;flex-wrap:wrap"><button data-wa="open" ' + btn + '>Open WhatsApp Web</button><button data-wa="app" ' + btn + '>Use WhatsApp app</button></span>');
-    b._text = text;
+    const p = '';
+    if (mobile) { location.href = 'whatsapp://send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text); return; }
+    try { localStorage.removeItem(WA_KEY); } catch (e) { }
+    const url = 'https://web.whatsapp.com/send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text);
+    const win = window.open(url, 'jnp_whatsapp');
+    if (win) { try { win.focus(); } catch (e) { } toast('Opened in the WhatsApp tab — come back to this tab for the next message', 'ok', 5000); }
+    else location.href = url;   // pop-up blocked → old behaviour
   }
   async function shareFile(blob, filename, text) {
     const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
@@ -622,7 +620,7 @@
     const cv = await w.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
     const blob = await new Promise(r => cv.toBlob(r, 'image/png')), file = new File([blob], name, { type: 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: caption }); return; } catch (e) { if (e.name === 'AbortError') return; } }
-    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); let first = true; try { first = !sessionStorage.getItem('jnp2_wa_open'); sessionStorage.setItem('jnp2_wa_open', '1'); } catch (e) { } waBar('✓ Image copied — go to your <b>WhatsApp tab</b>, open the chat and press <b>Ctrl + V</b>.'); if (first) w.open('https://web.whatsapp.com/', 'jnp_whatsapp'); return; } catch (e) { }
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); let first = true; try { first = !sessionStorage.getItem('jnp2_wa_open'); sessionStorage.setItem('jnp2_wa_open', '1'); } catch (e) { } waBar('✓ Image copied — go to your <b>WhatsApp tab</b>, open the chat and press <b>Ctrl + V</b>. <button data-wa="open" style="background:#fff;color:#022A5B;border:0;border-radius:8px;padding:6px 10px;font-weight:800">WhatsApp Web not open? Open it</button>'); return; } catch (e) { }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
     toast('Image downloaded — attach it in WhatsApp', 'warn', 6000);
   }
