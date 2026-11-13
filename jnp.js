@@ -65,6 +65,7 @@
     'FIN-05': { icon: '🔗', path: 'portal/' },
     'FIN-06': { icon: '🛣️', path: 'toll-bill/' },
     'FIN-07': { icon: '📊', path: 'trip-advance/' },
+    'PTR-01': { icon: '🤝', path: 'partner/' },
     'ATT-01': { icon: '🕘', path: 'attendance/' },
     'APR-01': { icon: '✅', path: 'approvals/' },
     'TSK-01': { icon: '📋', path: 'tasks/' },
@@ -77,6 +78,7 @@
     { name: 'Repair & Maintenance', hindi: 'रिपेयर और मेंटेनेंस', color: 'var(--rm)', prefix: 'RM-' },
     { name: 'Finance', hindi: 'फाइनेंस', color: 'var(--fin)', prefix: 'FIN-' },
     { name: 'Challans & Diesel', hindi: 'चालान · डीज़ल', color: 'var(--ops)', prefix: 'ADM-' },
+    { name: 'Partners (JNP Lines)', hindi: 'पार्टनर', color: 'var(--fin)', prefix: 'PTR-' },
   ];
 
   // ---- 3. SAFE STORAGE ---------------------------------------------------------
@@ -668,8 +670,9 @@
   async function boardSnapshot(fresh) {
     let mm = null; try { mm = (await masters(!!fresh)) || M(); } catch (e) { mm = M(); }
     const d = await call('board', {}), trucks = (mm && mm.trucks) || [];
-    const own = t => !/MARKET|HIRE|ATTACH/i.test(t.ownership || '') && !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
-    const rows = truckStages(d, trucks.filter(own));
+    // every ACTIVE truck in Truck_Master — own AND market/attached (market ones are tagged, so they're never lost between trips)
+    const active = t => !/INACTIVE|NOC|SOLD/i.test(t.vstatus || '');
+    const rows = truckStages(d, trucks.filter(active));
     rows.forEach(r => { if (r.cap) return; const t = trucks.find(x => x.no === r.no); if (!t) return;   // market / inactive trucks on a trip
       r.cap = Number(t.capacity) || ''; r.mt = r.mt || r.cap; if (/MARKET|HIRE|ATTACH/i.test(t.ownership || '')) r.own = 'MARKET'; });
     return { data: d, rows: rows, masters: mm };
@@ -708,7 +711,7 @@
       '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
       '<div class="kp">' + kp('WAIT_ORDER', 'At depot<br>waiting for order') + kp('WAIT_LOADER', 'Order given<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') +
         kp('UNLOADING', 'At destination<br>waiting to unload') + kp('UNLOAD_START', 'Unloading<br>&nbsp;') + kp('RETURNING', 'Returning<br>to depot') + '</div>' +
-      '<div class="tot">Fleet ' + rows.length + ' trucks · ' + mt(rows) + ' MT · Off road ' + off.length + ' · ' + mt(off) + ' MT</div>' +
+      '<div class="tot">Fleet ' + rows.length + ' trucks' + (rows.some(r => r.own === 'MARKET') ? ' (' + rows.filter(r => r.own !== 'MARKET').length + ' own + ' + rows.filter(r => r.own === 'MARKET').length + ' market)' : '') + ' · ' + mt(rows) + ' MT · Off road ' + off.length + ' · ' + mt(off) + ' MT</div>' +
       ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
       '<div class="f" style="text-align:left">Since = time the truck reached this stage · Hrs = hours in it · ⚠ = over ' + esc0 + ' h' + (rows.some(r => r.est) ? ' · ~ = estimate' : '') +
         (rows.some(r => !Number(r.cap)) ? '<br>⚠ No capacity in Truck Master (counted as 0 MT): ' + esc(rows.filter(r => !Number(r.cap)).map(r => r.no).join(', ')) : '') + '</div>' +
