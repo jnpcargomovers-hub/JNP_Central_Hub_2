@@ -616,7 +616,9 @@
   const STATE = { off: { t: 'Off road', c: 'down' }, load: { t: 'Loaded · on the way', c: 'ld' }, ret: { t: 'Returning empty', c: 'rt' }, wait: { t: 'Waiting for load', c: 'wt' } };
   let tkSel = ''; const laneOpen = {};
   function fleetStatus() {
-    const fl = liveFleet().filter(t => keepTruck(t.no)), g = k => fl.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => { const b = (M.status[t.no] || {}).board; return b ? n0(b.mt) || n0(b.cap) : t.cap; });
+    // lanes track EVERY truck (own + market, market tagged "M"); the headline and utilisation stay own-fleet only
+    const fl = liveFleet().filter(t => keepTruck(t.no)), all = M.live ? fl.concat(liveMkt().filter(t => keepTruck(t.no))) : fl, isMk = t => M.live && liveMkt().indexOf(t) >= 0;
+    const g = k => all.filter(t => (M.status[t.no] || {}).st === k), tons = a => sum(a, t => { const b = (M.status[t.no] || {}).board; return b ? n0(b.mt) || n0(b.cap) : t.cap; });
     const totT = tons(fl), on = fl.filter(t => (M.status[t.no] || {}).st !== 'off');
     const LANES = [['wait', 'At depot – waiting for order', 'var(--st-wait)'], ['wl', 'Order given – waiting for loader', '#B45309'], ['load', 'Loaded – to destination', 'var(--st-load)'], ['unl', 'At destination – waiting / unloading', '#7C3AED'], ['ret', 'Returning to depot', 'var(--st-ret)'], ['off', 'Off road', 'var(--st-off)']];
     if (!M.liveEst) return '<div class="sec card muted2">Truck status (loaded / at party / returning / waiting) needs the To date set to today.</div>';
@@ -627,7 +629,7 @@
       const why = {}; if (k === 'off') list.forEach(t => { const w = shortWhy(M.status[t.no].why); why[w] = (why[w] || 0) + 1; });
       return '<div class="lane' + (laneOpen[k] ? '' : ' closed') + '" style="--c:' + c + '"><div class="lane-h" data-l="' + k + '"><b><i>' + list.length + '</i>' + label + (est ? '<span class="est">' + (est === list.length ? 'estimate' : est + ' estimated') + '</span>' : '') + '</b><span>' + fmt(tons(list)) + ' T<span class="tog">' + (laneOpen[k] ? '▾' : '▸') + '</span></span></div>' +
         (k === 'off' && list.length ? '<div class="muted2" style="margin-top:2px">' + Object.keys(why).map(w => w + ' ' + why[w]).join(', ') + '</div>' : '') +
-        '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + (M.status[t.no].real || k === 'off' ? '' : ' est') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + '</small></span>').join('') + '</div></div>';
+        '<div class="chips2">' + list.map(t => '<span class="tk' + (tkSel === t.no ? ' sel' : '') + (M.status[t.no].real || k === 'off' ? '' : ' est') + '" data-t="' + E(t.no) + '" title="' + E(t.no) + (isMk(t) ? ' · market' : '') + '">' + E(t.no.slice(-4)) + '<small>' + (t.cap ? t.cap + 'T' : '?') + (isMk(t) ? ' · M' : '') + '</small></span>').join('') + '</div></div>';
     };
     let info = '';
     if (tkSel && M.status[tkSel]) {
