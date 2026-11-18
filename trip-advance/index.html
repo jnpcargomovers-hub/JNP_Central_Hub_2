@@ -78,7 +78,7 @@
   const COLS = [['DI NO', 'di', 12], ['LR NO', 'lr', 9], ['DATE', 'date', 17], ['DESTINATION', 'dest', 22], ['GADI NO', 'truck', 13], ['Grade', 'grade', 9], ['TON', 'ton', 7], [' TYPE', 'type', 7],
     ['DRIVER NAME', 'driver', 22], ['DRIVER NO.', 'mobile', 12], ['TYPE', 'status', 6], ['DRIVER AC', 'ac', 18], ['IFCE CODE', 'ifsc', 13], ['ADVANCE', 'advance', 9], ['BULTI', 'bilty', 7], ['DEBIT', 'debit', 7],
     ['PAYBLE AMOUNT', 'payable', 12], ['REMARK', 'remark', 14], ['PAID DATE', 'paid', 11], ['REMARK', 'remark2', 22], ['STD ADVANCE', 'std', 11], ['DIFF %', 'diff', 8], ['CHECK', 'check', 12],
-    ['EST KM', 'estKm', 8], ['FIXED', 'advFixed', 8], ['KHARCHA', 'advKharcha', 9], ['UNLOADING', 'advUnload', 10], ['WHY CHANGED', 'advReason', 24], ['DEF LTR', 'def', 8]];
+    ['EST KM', 'estKm', 8], ['FIXED', 'advFixed', 8], ['KHARCHA', 'advKharcha', 9], ['WARAI ₹', 'advUnload', 10], ['WHY CHANGED', 'advReason', 24], ['DEF LTR', 'def', 8], ['WARAI', 'warai', 7], ['MATERIAL', 'mix', 22], ['DIESEL L', 'diesel', 8], ['USUAL DIESEL L', 'dieselNorm', 10], ['DIESEL OVER USUAL', 'dslOver', 10]];
   const HEAD = COLS.map(c => c[0]), WID = COLS.map(c => c[2]);
   const C = k => colL(COLS.findIndex(c => c[1] === k));
 
@@ -96,7 +96,7 @@
           payable: fx(C('advance') + n + '-' + C('bilty') + n + '-' + C('debit') + n, r.advance - r.bilty), remark: '', paid: '',
           remark2: !r.inMaster ? 'Driver not in master' : !r.ac ? 'A/C missing in master' : !r.advance ? 'No advance in Loader entry and no rate' : r.fromRate ? 'Rate card (loader left blank)' : '', std: num(r.std),
           diff: r.std ? fx('IF(' + C('std') + n + '="","",(' + C('advance') + n + '-' + C('std') + n + ')/' + C('std') + n + ')', Math.round(diff * 1000) / 1000) : '',
-          estKm: num(r.estKm), advFixed: num(r.advFixed), advKharcha: num(r.advKharcha), advUnload: num(r.advUnload), advReason: r.advReason || '', def: num(r.def),
+          estKm: num(r.estKm), advFixed: num(r.advFixed), advKharcha: num(r.advKharcha), advUnload: num(r.advUnload), advReason: r.advReason || '', def: num(r.def), warai: r.warai || '', mix: r.mix || '', diesel: num(r.diesel), dieselNorm: num(r.dieselNorm), dslOver: num(Number(r.diesel) > 0 && Number(r.dieselNorm) > 0 && Number(r.diesel) > Number(r.dieselNorm) ? Number(r.diesel) - Number(r.dieselNorm) : ''),
           check: r.std ? fx('IF(' + C('std') + n + '="","",IF(ABS(' + C('diff') + n + ')>0.1,"CHECK >10%","OK"))', Math.abs(diff) > 0.1 ? 'CHECK >10%' : 'OK') : (r.ac ? 'NO RATE' : 'NO BANK A/C') };
         aoa.push(COLS.map(c => v[c[1]]));
       });
