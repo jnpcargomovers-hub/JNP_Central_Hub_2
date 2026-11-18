@@ -66,6 +66,10 @@
     const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Checking…';
     try {
       const out = await JNP.login($('mobile').value, $('code').value);
+      if (!out.ok && out.code === 'PARTNER') {         // partner number on the staff form → partner login, same mobile + code, logs in there
+        try { sessionStorage.setItem('jnp2_p_handoff', JSON.stringify({ m: $('mobile').value, c: $('code').value })); } catch (e) { }
+        $('loginErr').textContent = out.error; $('loginErr').classList.remove('hidden'); location.href = 'partner/'; return;
+      }
       if (!out.ok) throw new Error(out.error);
       const next = JNP.param('next');
       if (next && next.indexOf(JNP.CONFIG.HUB) === 0) { location.href = next; return; }

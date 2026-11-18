@@ -199,7 +199,11 @@
   const ps = JNP.store.get(P_KEY), ss = JNP.session();
   if (ps && ps.token) startPartner();
   else if (ss && ss.token && ss.access && ss.access['PTR-01'] && ss.access['PTR-01'].rights && ss.access['PTR-01'].rights !== '-') startHO();
-  else showLogin();
+  else {
+    showLogin();
+    let h = null; try { h = JSON.parse(sessionStorage.getItem('jnp2_p_handoff') || 'null'); sessionStorage.removeItem('jnp2_p_handoff'); } catch (e) { }
+    if (h && h.m) { $('lm').value = h.m; $('lc').value = h.c || ''; if (h.c) $('loginForm').requestSubmit(); }
+  }
 })();
 </script>
 </body>
