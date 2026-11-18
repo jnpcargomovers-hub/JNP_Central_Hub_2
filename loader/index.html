@@ -27,6 +27,13 @@
     .mini { border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 6px 10px; font-weight: 700; font-size: 12.5px; color: var(--navy); cursor: pointer; }
     h3.cardh { margin: 0 0 12px; font-size: 14px; color: var(--navy); display: flex; justify-content: space-between; align-items: center; }
     .req::after { content: ' *'; color: var(--bad); }
+    .yn { display: flex; gap: 6px; } .yn button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 10px; padding: 10px; font-weight: 800; color: var(--navy); cursor: pointer; }
+    .yn button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .ln { display: grid; grid-template-columns: 70px 1fr 78px 28px; gap: 6px; align-items: end; margin-bottom: 8px; }
+    .ln .input { padding: 9px 8px; font-size: 15px; } .ln small { display: block; font-size: 10.5px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+    .ln .di { grid-column: 1 / 4; } .ln .x { border: 0; background: #FDECEC; color: #B91C1C; border-radius: 8px; height: 38px; font-weight: 800; cursor: pointer; }
+    .advbox { background: #F3F7FC; border: 1px solid #DCE6F3; border-radius: 12px; padding: 10px 12px; font-size: 13px; color: #1E3A5F; line-height: 1.5; }
+    .advbox b.big { font-size: 20px; color: var(--navy); }
   </style>
 </head>
 <body>
@@ -87,17 +94,39 @@
 
       <div class="row2">
         <div class="field">
-          <label for="rate">6. Rate (₹)</label>
-          <input id="rate" class="input" inputmode="decimal" placeholder="e.g. 722">
+          <label>6. DEF given? · DEF दिया?</label>
+          <div class="yn" id="defYN"><button type="button" data-v="no" class="on">No</button><button type="button" data-v="yes">Yes</button></div>
         </div>
-        <div class="field">
-          <label for="adv">7. Trip Advance (₹)</label>
-          <input id="adv" class="input" inputmode="numeric" placeholder="e.g. 5000">
+        <div class="field hidden" id="defWrap">
+          <label class="req" for="def">DEF (Ltr)</label>
+          <input id="def" class="input" inputmode="decimal" placeholder="e.g. 20">
         </div>
       </div>
 
       <div class="field">
-        <label for="remark">8. Remark</label>
+        <label for="rate">7. Rate (₹)</label>
+        <input id="rate" class="input" inputmode="decimal" placeholder="e.g. 722">
+      </div>
+
+      <div class="field">
+        <label>8. Order lines · unloading · ऑर्डर और अनलोडिंग</label>
+        <div class="hint" style="margin:-2px 0 8px">One line per order. Club order (6 + 6) = two lines. DI number can be added later.</div>
+        <div id="lines"></div>
+        <button type="button" class="mini" id="addLine">➕ Add line</button>
+      </div>
+
+      <div class="field">
+        <label for="adv">9. Trip Advance (₹) · ट्रिप एडवांस</label>
+        <div class="advbox" id="advBox">Fill truck and diesel to calculate the advance.</div>
+        <input id="adv" class="input" inputmode="numeric" placeholder="Calculated advance" style="margin-top:8px">
+        <div class="field hidden" id="reasonWrap" style="margin:8px 0 0">
+          <label class="req" for="advReason">Why different from the calculated advance?</label>
+          <input id="advReason" class="input" placeholder="e.g. party pays unloading, extra toll">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="remark">10. Remark</label>
         <input id="remark" class="input" placeholder="Notes">
       </div>
 
@@ -206,17 +235,85 @@
     $('kmInfo').innerHTML = msg ? '<span class="warnline">' + msg + '</span>' : '';
   }
 
+  // ---------- DEF (in-house) · order lines · advance calculator (18 Nov 2026)
+  let Q = null, orderTypes = [], advTouched = false, qTimer = null, qSeq = 0;
+  function setDef(on) {
+    [...$('defYN').children].forEach(b => b.classList.toggle('on', (b.dataset.v === 'yes') === on));
+    $('defWrap').classList.toggle('hidden', !on); if (!on) $('def').value = '';
+  }
+  $('defYN').onclick = e => { const b = e.target.closest('button'); if (!b) return; setDef(b.dataset.v === 'yes'); if (b.dataset.v === 'yes') $('def').focus(); saveDraft(); };
+  const typeOpts = sel => '<option value="">Type</option>' + orderTypes.map(o => '<option' + (o.type === sel ? ' selected' : '') + '>' + JNP.esc(o.type) + '</option>').join('') +
+    (sel && !orderTypes.some(o => o.type === sel) ? '<option selected>' + JNP.esc(sel) + '</option>' : '');
+  function lineHtml(l) {
+    l = l || {};
+    return '<div class="ln"><div><small>Tons</small><input class="input q" inputmode="decimal" value="' + JNP.esc(l.qty == null ? '' : l.qty) + '"></div>' +
+      '<div><small>Order type</small><select class="input t">' + typeOpts(l.type || '') + '</select></div>' +
+      '<div><small>₹ / ton</small><input class="input r" inputmode="decimal" value="' + JNP.esc(l.rate == null ? '' : l.rate) + '"></div>' +
+      '<button type="button" class="x" title="Remove">✕</button>' +
+      '<div class="di"><input class="input d" inputmode="numeric" maxlength="10" placeholder="DI number (optional, 10 digits)" value="' + JNP.esc(l.di || '') + '"></div></div>';
+  }
+  function setLines(ls) { $('lines').innerHTML = (ls && ls.length ? ls : [{}]).map(lineHtml).join(''); }
+  function getLines() {
+    return [...$('lines').querySelectorAll('.ln')].map(n => ({ qty: n.querySelector('.q').value.trim(), type: n.querySelector('.t').value, rate: n.querySelector('.r').value.trim(), di: n.querySelector('.d').value.replace(/\D/g, '') }))
+      .filter(l => l.qty !== '' || l.di || l.rate !== '');
+  }
+  $('addLine').onclick = () => { if ($('lines').children.length >= 6) return JNP.toast('Max 6 lines', 'warn'); $('lines').insertAdjacentHTML('beforeend', lineHtml({})); };
+  $('lines').addEventListener('click', e => { const x = e.target.closest('.x'); if (!x) return; x.closest('.ln').remove(); if (!$('lines').children.length) setLines([]); quote(); saveDraft(); });
+  $('lines').addEventListener('change', e => {
+    if (e.target.classList.contains('t')) { const o = orderTypes.find(o => o.type === e.target.value), r = e.target.closest('.ln').querySelector('.r'); if (o && o.rate !== '') r.value = o.rate; }
+    quote(); saveDraft();
+  });
+  $('lines').addEventListener('input', () => { quote(); });
+  setLines([]);
+  function stdTxt(n) { return n === '' || n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN'); }
+  function checkReason() {
+    const std = Q && Q.standard !== '' ? Number(Q.standard) : null, a = $('adv').value.trim();
+    const off = std && a !== '' && !isNaN(Number(a)) && Math.abs(Number(a) - std) / std * 100 > ((Q && Q.limitPct) || 10);
+    $('reasonWrap').classList.toggle('hidden', !off);
+    return !off || !!$('advReason').value.trim();
+  }
+  $('adv').addEventListener('input', () => { advTouched = $('adv').value.trim() !== ''; checkReason(); });
+  function quote() { clearTimeout(qTimer); qTimer = setTimeout(runQuote, 450); }
+  async function runQuote() {
+    const truck = JNP.normTruck($('truck').value);
+    if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$/.test(truck)) { $('advBox').innerHTML = 'Fill truck and diesel to calculate the advance.'; return; }
+    const my = ++qSeq;
+    try {
+      const o = await JNP.call('advQuote', { truck: truck, diesel: $('diesel').value.trim(), lines: getLines() });
+      if (my !== qSeq) return;
+      if (o.orderTypes && JSON.stringify(o.orderTypes) !== JSON.stringify(orderTypes)) {
+        orderTypes = o.orderTypes;
+        $('lines').querySelectorAll('.t').forEach(s => { const v = s.value; s.innerHTML = typeOpts(v); });
+      }
+      if (o.error) { $('advBox').innerHTML = '<span class="warnline">' + JNP.esc(o.error) + '</span>'; return; }
+      Q = o;
+      // first line defaults to the truck capacity
+      const q1 = $('lines').querySelector('.q'); if (q1 && !q1.value && o.cap && $('lines').children.length === 1) q1.value = o.cap;
+      if (o.standard === '') { $('advBox').innerHTML = '<span class="warnline">' + JNP.esc(o.note || 'Enter diesel to calculate') + '</span>'; checkReason(); return; }
+      $('advBox').innerHTML = 'Calculated advance · <b class="big">' + stdTxt(o.standard) + '</b><br>' +
+        (o.estKm !== '' ? '≈ <b>' + o.estKm + ' km</b> one way (' + JNP.esc($('diesel').value) + ' L × ' + o.kmpl + ' km/L ÷ 2) · ' : '') + JNP.esc(o.truckType) + (o.slab ? ' · slab ' + JNP.esc(o.slab) : '') +
+        '<br>Fixed ' + stdTxt(o.fixed) + (o.kharcha ? ' + Kharcha ' + stdTxt(o.kharcha) : '') + (o.unloading ? ' + Unloading ' + stdTxt(o.unloading) : '') +
+        (o.note ? '<br><small>' + JNP.esc(o.note) + '</small>' : '');
+      if (!advTouched) $('adv').value = o.standard;
+      checkReason();
+    } catch (e) { if (my === qSeq) $('advBox').innerHTML = '<span class="warnline">Could not calculate: ' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('diesel').addEventListener('input', quote);
+  $('truck').addEventListener('change', quote); $('truck').addEventListener('blur', quote);
+
   // ---------- draft (form survives a dropped network or closed tab)
-  const fields = ['truck', 'driver', 'dest', 'km', 'diesel', 'rate', 'adv', 'remark'];
-  function saveDraft() { if (window.__isEditing && window.__isEditing()) return; const d = {}; fields.forEach(f => d[f] = $(f).value); JNP.store.set(DRAFT, d); }
+  const fields = ['truck', 'driver', 'dest', 'km', 'diesel', 'def', 'rate', 'adv', 'advReason', 'remark'];
+  function saveDraft() { if (window.__isEditing && window.__isEditing()) return; const d = {}; fields.forEach(f => d[f] = $(f).value); d.lines = getLines(); d.advTouched = advTouched; JNP.store.set(DRAFT, d); }
+  function fillExtra(d) { setDef(!!(d.def && Number(d.def) > 0)); if (d.def) $('def').value = d.def; setLines(d.lines || []); advTouched = !!d.advTouched; }
   (function restoreDraft() {
     const d = JNP.store.get(DRAFT); if (!d) return;
     fields.forEach(f => { if (d[f]) $(f).value = d[f]; });
-    onTruck(); onDriver(); onDest();
+    fillExtra(d);
+    onTruck(); onDriver(); onDest(); quote();
   })();
   $('f').addEventListener('input', saveDraft);
   if (JNP.param('truck') && JNP.normTruck(JNP.param('truck')) !== JNP.normTruck($('truck').value)) {   // opened from Truck Status board
-    fields.forEach(f => $(f).value = ''); $('truck').value = JNP.normTruck(JNP.param('truck')); onTruck(); onDriver(); onDest();
+    fields.forEach(f => $(f).value = ''); fillExtra({}); $('truck').value = JNP.normTruck(JNP.param('truck')); onTruck(); onDriver(); onDest(); quote();
   }
   await fetchLR();
 
@@ -234,10 +331,19 @@
     if (v('diesel') === '' || isNaN(Number(v('diesel')))) return bad('Diesel Liters must be a valid number.');
     if (v('rate') !== '' && isNaN(Number(v('rate')))) return bad('Rate must be a valid number.');
     if (v('adv') !== '' && isNaN(Number(v('adv')))) return bad('Trip Advance must be a valid number.');
+    const defOn = $('defYN').querySelector('.on').dataset.v === 'yes';
+    if (defOn && (v('def') === '' || isNaN(Number(v('def'))) || Number(v('def')) <= 0)) return bad('DEF: enter the litres given (or select No).');
+    const lines = getLines();
+    for (const [i, l] of lines.entries()) {
+      if (l.qty === '' || isNaN(Number(l.qty)) || Number(l.qty) <= 0) return bad('Order line ' + (i + 1) + ': enter tons.');
+      if (l.di && !/^\d{10}$/.test(l.di)) return bad('Order line ' + (i + 1) + ': DI number must be 10 digits.');
+    }
+    if (!checkReason()) return bad('Advance is different from the calculated amount — write the reason.');
+    const extra = { DEF_Ltr: defOn ? v('def') : '', Adv_Change_Reason: $('reasonWrap').classList.contains('hidden') ? '' : v('advReason') };
 
     if (window.__isEditing && window.__isEditing()) {
       const btnE = $('saveBtn'); btnE.disabled = true; btnE.textContent = 'Saving correction…';
-      try { await window.__loaderEdit({ Truck_No: truck, Driver_Name: JNP.titleCase(v('driver')), Destination: v('dest').replace(/\s+/g, ' ').toUpperCase(), Start_KM: v('km'), Diesel_Ltr: v('diesel'), Rate: v('rate'), Trip_Advance: v('adv'), Remark: v('remark') }); }
+      try { await window.__loaderEdit(Object.assign({ Truck_No: truck, Driver_Name: JNP.titleCase(v('driver')), Destination: v('dest').replace(/\s+/g, ' ').toUpperCase(), Start_KM: v('km'), Diesel_Ltr: v('diesel'), Rate: v('rate'), Trip_Advance: v('adv'), Remark: v('remark') }, extra), lines); }
       catch (ex) { bad(ex.message); } finally { btnE.disabled = false; if (window.__isEditing()) btnE.textContent = 'Save correction · सुधार सेव करें'; }
       return;
     }
@@ -246,11 +352,11 @@
       LR_No: lr, _lrEdited: edited, Truck_No: truck,
       Driver_Name: JNP.titleCase(v('driver')),            // keeps the space: "kailash  patil" → "Kailash Patil"
       Destination: v('dest').replace(/\s+/g, ' ').toUpperCase(),
-      Start_KM: v('km'), Diesel_Ltr: v('diesel'), Rate: v('rate'), Trip_Advance: v('adv'), Remark: v('remark')
+      Start_KM: v('km'), Diesel_Ltr: v('diesel'), Rate: v('rate'), Trip_Advance: v('adv'), Remark: v('remark'), DEF_Ltr: extra.DEF_Ltr, Adv_Change_Reason: extra.Adv_Change_Reason
     };
     const btn = $('saveBtn'); btn.disabled = true; btn.textContent = 'Saving to Google Sheet…';
     try {
-      const out = await JNP.api('save', { module: 'OPS-01', clientReqId: clientReqId, data: data });
+      const out = await JNP.api('save', { module: 'OPS-01', clientReqId: clientReqId, data: Object.assign({ lines: lines }, data) });
       if (!out.ok) {
         if (out.code === 'DUPLICATE' && edited) throw new Error(out.error + ' — check your LR book');
         throw new Error(out.error);
@@ -291,11 +397,12 @@
   $('msg2').onclick = () => {
     if (!last) return;
     markSent($('msg2')); keepPend();
-    JNP.whatsapp((last.Truck_No + ' ' + last.LR_No + ' ' + last.Destination + ' ' + (last.Rate || '')).trim());
+    JNP.whatsapp((last.Truck_No + ' ' + last.LR_No + ' ' + last.Destination + ' ' + (last.Rate || '')).trim() + (Number(last.DEF_Ltr) > 0 ? '\nDEF ' + last.DEF_Ltr + ' liters' : ''));
   };
   $('corrBtn').onclick = () => { if (window.__corr) JNP.whatsapp(window.__corr); };
   $('nextBtn').onclick = () => {
     $('f').reset(); ['truckInfo', 'driverInfo', 'destInfo', 'kmInfo', 'formErr'].forEach(i => $(i).innerHTML = '');
+    fillExtra({}); Q = null; $('advBox').innerHTML = 'Fill truck and diesel to calculate the advance.'; $('reasonWrap').classList.add('hidden');
     $('lr').value = suggestedLR; lrTag(); fetchLR();
     clientReqId = JNP.uid(); last = null; $('corrBtn').classList.add('hidden'); try { sessionStorage.removeItem(PEND); } catch (e) { }
     $('doneCard').classList.add('hidden'); $('f').classList.remove('hidden');
@@ -332,6 +439,9 @@
       $('lr').value = editing.LR_No; $('lr').readOnly = true; $('lrTag').textContent = 'Editing'; $('lrTag').className = 'lrtag pill warn';
       $('truck').value = editing.Truck_No || ''; $('driver').value = editing.Driver_Name || ''; $('dest').value = editing.Destination || '';
       $('km').value = editing.Start_KM; $('diesel').value = editing.Diesel_Ltr; $('rate').value = editing.Rate; $('adv').value = editing.Trip_Advance; $('remark').value = editing.Remark || '';
+      fillExtra({ def: editing.DEF_Ltr, lines: out.lines || [], advTouched: true }); $('advReason').value = editing.Adv_Change_Reason || '';
+      if (!(out.lines || []).length && editing.DI_No) setLines(String(editing.DI_No).split(/[,\s]+/).filter(Boolean).map(d => ({ di: d })));
+      quote();
       ['truckInfo', 'driverInfo', 'destInfo', 'kmInfo', 'formErr'].forEach(i => $(i).innerHTML = '');
       $('editLrTxt').textContent = editing.LR_No + ' (' + JNP.dmy(editing.Created_At) + ', by ' + editing.Created_By + ')' + (out.hasBuilty ? ' · builty will also update' : '');
       $('editBanner').classList.remove('hidden'); $('editBox').classList.add('hidden');
@@ -342,12 +452,12 @@
   }
   function endEdit() {
     editing = null; $('lr').readOnly = false; $('editBanner').classList.add('hidden'); $('saveBtn').textContent = 'Save Entry · सेव करें';
-    $('f').reset(); $('lr').value = suggestedLR; lrTag(); restoreDraftAfterEdit();
+    $('f').reset(); fillExtra({}); $('lr').value = suggestedLR; lrTag(); restoreDraftAfterEdit();
   }
   $('editCancel').onclick = e => { e.preventDefault(); endEdit(); };
-  function restoreDraftAfterEdit() { const d = JNP.store.get(DRAFT); if (d) fields.forEach(f => { if (d[f]) $(f).value = d[f]; }); }
-  window.__loaderEdit = async (data) => {
-    const out = await JNP.call('loaderEdit', { lr: editing.LR_No, data: data });
+  function restoreDraftAfterEdit() { const d = JNP.store.get(DRAFT); if (d) { fields.forEach(f => { if (d[f]) $(f).value = d[f]; }); fillExtra(d); } quote(); }
+  window.__loaderEdit = async (data, lines) => {
+    const out = await JNP.call('loaderEdit', { lr: editing.LR_No, data: data, lines: lines });
     last = out.record; const changes = out.changes || [];
     $('f').classList.add('hidden'); $('doneCard').classList.remove('hidden');
     $('lrNo').textContent = last.LR_No;

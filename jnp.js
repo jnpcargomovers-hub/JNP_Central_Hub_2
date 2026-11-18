@@ -27,7 +27,7 @@
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
     nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
-    board: 'ops', tollDIs: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    board: 'ops', tollDIs: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
@@ -253,21 +253,39 @@
     let b = document.getElementById('waBar');
     if (!b) { b = document.createElement('div'); b.id = 'waBar'; b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:999;background:#022A5B;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);font:600 14px/1.4 inherit;max-width:min(560px,94vw);display:flex;gap:10px;align-items:center;flex-wrap:wrap'; document.body.appendChild(b); }
     b.innerHTML = html; clearTimeout(b._t); b._t = setTimeout(() => b.remove(), 12000);
-    b.querySelectorAll('[data-wa]').forEach(x => x.onclick = () => { const k = x.dataset.wa; if (k === 'copy') return; if (k === 'open') window.open('https://web.whatsapp.com/', 'jnp_whatsapp'); if (k === 'app') { setWaMode('app'); location.href = 'whatsapp://send?text=' + encodeURIComponent(b._text || ''); } if (k === 'web') setWaMode('web'); b.remove(); });
+    b.querySelectorAll('[data-wa]').forEach(x => x.onclick = () => { const k = x.dataset.wa; if (k === 'copy' || k === 'retry' || k === 'webgo') return; if (k === 'open') window.open('https://web.whatsapp.com/', 'jnp_whatsapp'); if (k === 'app') { setWaMode('app'); location.href = 'whatsapp://send?text=' + encodeURIComponent(b._text || ''); } if (k === 'web') setWaMode('web'); b.remove(); });
     return b;
   }
   // WhatsApp — the version in use since 19 Oct (restored as it was): phone opens the app; laptop opens WhatsApp Web in
   // ONE separate tab ("jnp_whatsapp") that is reused for every message, so the Hub stays open with its buttons.
   function whatsapp(text) {
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const p = '';
-    if (mobile) { location.href = 'whatsapp://send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text); return; }
-    try { localStorage.removeItem(WA_KEY); } catch (e) { }
-    const url = 'https://web.whatsapp.com/send?' + (p ? 'phone=91' + p + '&' : '') + 'text=' + encodeURIComponent(text);
-    const win = window.open(url, 'jnp_whatsapp');
-    if (win) { try { win.focus(); } catch (e) { } toast('Opened in the WhatsApp tab — come back to this tab for the next message', 'ok', 5000); }
-    else location.href = url;   // pop-up blocked → old behaviour
+    const app = 'whatsapp://send?text=' + encodeURIComponent(text);
+    if (mobile) { location.href = app; return; }
+    // Laptop (18 Nov 2026): the WhatsApp DESKTOP APP — one window, reused for every message, Hub stays open.
+    // Chrome asks "Open WhatsApp?" the first time — tick "Always allow". WhatsApp Web only if the app is not installed.
+    let mode = ''; try { mode = localStorage.getItem(WA_KEY) || ''; } catch (e) { }
+    const web = 'https://web.whatsapp.com/send?text=' + encodeURIComponent(text);
+    if (mode === 'web') {
+      const w = window.open(web, 'jnp_whatsapp'); if (w) { try { w.focus(); } catch (e) { } } else { location.href = web; return; }
+      const bar = waBar('<span>Sent via WhatsApp Web.</span><button data-wa="retry" style="border:0;border-radius:9px;padding:7px 11px;font-weight:800;cursor:pointer">Use desktop app from now</button>');
+      bar.querySelector('[data-wa="retry"]').onclick = () => { bar.remove(); setWaMode('app'); toast('Next message opens the WhatsApp desktop app', 'ok'); };
+      return;
+    }
+    let left = false; const onBlur = () => { left = true; }; window.addEventListener('blur', onBlur, { once: true });
+    location.href = app;
+    setTimeout(() => {
+      window.removeEventListener('blur', onBlur);
+      if (left || document.hidden) { setWaMode('app'); return; }
+      const bar = waBar('<span>WhatsApp app did not open? · ऐप नहीं खुला?</span>' +
+        '<button data-wa="retry" style="border:0;border-radius:9px;padding:7px 11px;font-weight:800;cursor:pointer">Try app again</button>' +
+        '<button data-wa="webgo" style="border:0;border-radius:9px;padding:7px 11px;font-weight:800;cursor:pointer;background:#25D366;color:#fff">Use WhatsApp Web</button>');
+      bar.querySelector('[data-wa="retry"]').onclick = () => { bar.remove(); location.href = app; };
+      bar.querySelector('[data-wa="webgo"]').onclick = () => { bar.remove(); setWaMode('web'); const w = window.open(web, 'jnp_whatsapp'); if (!w) location.href = web; };
+    }, 2500);
   }
+  /** switch a laptop back to the WhatsApp desktop app (after it was installed) */
+  function whatsappUseApp() { setWaMode('app'); toast('WhatsApp desktop app will be used', 'ok'); }
   async function shareFile(blob, filename, text) {
     const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -732,7 +750,7 @@
 
   w.JNP = {
     CONFIG, MODULES, TILES, api, call, session, login, logout, goLogin, rights, can, requireModule, refreshMe, masters, M, list,
-    findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, shareFile, waText, approvalButtons,
+    findTruck, findDriver, findDest, header, toast, busy, tabs, done, whatsapp, whatsappUseApp, shareFile, waText, approvalButtons,
     compress, uploadPhoto, geo, picker, form, submit, rowsHtml, statusCls, driveThumb,
     pendingLRTable, sharePendingLR, plSub,
     vehicleType, sinceTxt, whereTxt,

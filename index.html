@@ -187,6 +187,7 @@
   }
 
   async function showHome() {
+    { const su = (JNP.session() || {}).user || {}; if (/^partner/i.test(su.role || '')) { location.replace('partner/'); return; } }
     $('loginView').classList.add('hidden'); $('homeView').classList.remove('hidden');
     JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
     render();

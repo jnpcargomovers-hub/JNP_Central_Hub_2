@@ -331,6 +331,9 @@
     const destM = {}; (R.dests || []).forEach(d => destM[JNP.keyOf(d.name)] = d);
     const blt = {}; rows(R.builty).forEach(b => blt[b.LR_No] = b);
     const ind = {}; rows(R.indent).forEach(i => ind[i.LR_No] = i);
+    // diesel / DEF ₹ per litre: the rate stamped on the entry; older entries → the Fuel_Rates row in force that day
+    const FR = (R.fuelRates || []).map(f => ({ fuel: f.fuel, rate: n0(f.rate), at: D(f.at) })).filter(f => f.rate > 0 && f.at).sort((a, b) => a.at - b.at);
+    const rateAt = (fuel, at) => { let hit = null, first = null; FR.forEach(f => { if (f.fuel !== fuel) return; if (!first) first = f; if (!at || f.at <= at) hit = f; }); return (hit || first || {}).rate || 0; };
     const all = rows(R.loader).map(r => {
       const t = truckM[r.Truck_No] || {}, b = blt[r.LR_No], i = ind[r.LR_No];
       // MT: UTCL portal (actual) → builty → delivery → truck capacity
@@ -343,8 +346,16 @@
         diesel: n0(r.Diesel_Ltr), rate: n0(r.Rate) <= 20000 ? n0(r.Rate) : 0, adv: n0(r.Trip_Advance), cap: n0(t.cap), cls: classOf(t.cap), load: lt === 'BULK' ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN', mt: mt, mtEst: !(n0(r.Actual_Qty_MT) || (b && n0(b.Qty_MT))), portal: !!n0(r.Actual_Qty_MT), frPortal: !!fr, badFr: (n0(r.Final_Freight) > 500000 || n0(r.Freight_Amount) > 500000),
         rev: fr || n0(r.Rate) * mt, consignee: r.Party || (b ? b.Consignee : ''), unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By, hasDoc: !!(b || i), bAt: b && b.Created_At ? D(b.Created_At) : null,
-        pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null };
+        pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null,
+        dRate: n0(r.Diesel_Rate), defL: n0(r.DEF_Ltr), defRate: n0(r.DEF_Rate) };
     }).sort((a, b) => a.at - b.at);
+    // Gross profit per trip = revenue − diesel ₹ − DEF ₹ − trip advance (extra diesel is added at truck / fleet level)
+    all.forEach(x => {
+      const dr = x.dRate || rateAt('Diesel', x.at), fr = x.defL ? (x.defRate || rateAt('DEF', x.at)) : 0;
+      x.dCost = x.diesel * dr; x.defCost = x.defL * fr; x.noDRate = x.diesel > 0 && !dr; x.dEst = x.diesel > 0 && !x.dRate && !!dr;
+      x.gp = x.rev - x.dCost - x.defCost - x.adv;
+    });
+    const extraAmt = x => n0(x.Amount) || n0(x.Litres) * (n0(x.Rate) || rateAt('Diesel', D(x.Diesel_Date || x.Created_At)));
     // rotation / km / idle need the sequence per truck and per driver (includes 35 days before the range)
     const byTruck = {}, byDriver = {};
     all.forEach(x => { (byTruck[x.truck] = byTruck[x.truck] || []).push(x); (byDriver[x.driver] = byDriver[x.driver] || []).push(x); });
@@ -427,7 +438,7 @@
       x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; });
     const portalInfo = { lastPgi: all.reduce((m, x) => x.pgi && (!m || x.pgi > m) ? x.pgi : m, null), lastSync: all.reduce((m, x) => x.synced && !isNaN(x.synced) && (!m || x.synced > m) ? x.synced : m, null) };
     const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
-    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor };
+    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor, extraAmt, rateAt };
   }
 
   /** RIGHT NOW comes from the Truck Status board — the very rows the board and its status image use, so the numbers are identical.
@@ -457,6 +468,7 @@
   function agg(list) {
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
     return { trips: list.length, mt: sum(list, x => x.mt), rev: sum(list, x => x.rev), diesel: sum(list, x => x.diesel), dieselTrips: withD.length,
+      gp: sum(list, x => x.gp), dCost: sum(list, x => x.dCost), defCost: sum(list, x => x.defCost), adv: sum(list, x => x.adv), noDRate: list.filter(x => x.noDRate).length, dEst: list.filter(x => x.dEst).length,
       cap: sum(list, x => x.cap), km: sum(km, x => x.km), kmDiesel: sum(km, x => x.diesel), rot: avg(list.map(x => x.rot).filter(v => !isNaN(v))),
       tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length, portal: list.filter(x => x.portal).length,
       onTime: (() => { const z = list.filter(x => !isNaN(x.tat) && x.targetTat); return z.length ? z.filter(x => x.tat <= x.targetTat).length / z.length : NaN; })(),
@@ -674,6 +686,8 @@
     rev: { l: 'Freight revenue', money: 1, f: g => g.rev, t: v => inr(v), add: 1 },
     revTrip: { l: 'Revenue per trip', money: 1, f: g => g.trips ? g.rev / g.trips : NaN, t: v => inr(v) },
     revMT: { l: 'Rate (₹ per MT)', money: 1, f: g => g.mt ? g.rev / g.mt : NaN, t: v => '₹' + fmt(v) },
+    gp: { l: 'Gross profit (trip)', money: 1, f: g => g.gp, t: v => inr(v), add: 1 },
+    gpTrip: { l: 'Gross profit per trip', money: 1, f: g => g.trips ? g.gp / g.trips : NaN, t: v => inr(v) },
     rpl: { l: '₹ earned per litre diesel', money: 1, f: g => revPerL(g), t: v => '₹' + fmt(v, 1) },
     diesel: { l: 'Diesel (litres)', f: g => g.diesel, t: v => fmt(v) + ' L', add: 1 },
     km: { l: 'KM run', f: g => g.km, t: v => fmt(v) + ' km', add: 1 },
@@ -967,7 +981,7 @@
       kpi('Avg rate', a.mt ? '₹' + fmt(a.rev / a.mt) + ' / MT' : '—', fmt(a.mt, 0) + ' MT', 'var(--orange)') +
       kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') +
       kpi('Revenue per truck', (() => { const n = new Set(T.map(x => x.truck)).size; return n ? inr(a.rev / n) : '—'; })(), new Set(T.map(x => x.truck)).size + ' trucks ran', 'var(--orange)') +
-      '</div></div>' +
+      '</div></div>' + gpBlock(T) +
       sec('Revenue split', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.rev, v => sh(v), '₹ freight'), () => splitText(T, x => x.rev, v => inr(v))) +
       '<div class="cgrid">' +
       sec('₹ per litre diesel', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) +
@@ -975,6 +989,28 @@
       '</div>' +
       sec('Revenue per day', '₹ lakh, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
       '<div class="muted2" style="margin:4px 2px 0">Explore tab → Measure: Freight revenue / ₹ per litre → split by truck, driver, destination, party, own/market…</div>';
+  }
+
+  // ---------- Gross profit = Revenue − Diesel ₹ − DEF ₹ − Trip advance − Extra diesel ₹ (management only)
+  function gpBlock(T) {
+    const a = agg(T), xd = rows(RAW.extraDiesel).filter(x => keepTruck(JNP.normTruck(x.Truck_No))), xdAmt = sum(xd, x => M.extraAmt(x));
+    const gp = a.gp - xdAmt, nT = new Set(T.map(x => x.truck)).size;
+    const per = {}; T.forEach(x => { const p = per[x.truck] = per[x.truck] || { truck: x.truck, cls: x.cls, trips: 0, rev: 0, cost: 0, gp: 0, xd: 0 }; p.trips++; p.rev += x.rev; p.cost += x.dCost + x.defCost + x.adv; p.gp += x.gp; });
+    xd.forEach(x => { const k = JNP.normTruck(x.Truck_No); if (per[k]) { per[k].xd += M.extraAmt(x); per[k].gp -= M.extraAmt(x); } });
+    const list = Object.values(per).sort((p, q) => q.gp - p.gp);
+    SHARE.kpGp = { title: 'Gross profit', fn: 'kpis' };
+    return '<div class="kwrap"><div class="khead"><b>Gross profit</b><button type="button" class="shr" data-s="kpGp">📲 Share</button></div><div class="kpis">' +
+      kpi('Gross profit', inr(gp), 'Revenue ' + inr(a.rev) + ' − Diesel ' + inr(a.dCost) + (a.defCost ? ' − DEF ' + inr(a.defCost) : '') + ' − Advance ' + inr(a.adv) + (xdAmt ? ' − Extra diesel ' + inr(xdAmt) : '') +
+        (a.dEst ? '<br><small>' + a.dEst + ' older trips had no rate stamped — priced at the Fuel_Rates rate of that day (or the first rate on file)</small>' : '') +
+        (a.noDRate ? '<br><b style="color:var(--red)">⚠ ' + a.noDRate + ' trips have no diesel rate — HO: Trip Advance › Diesel / DEF rates</b>' : ''), gp >= 0 ? 'var(--ok)' : 'var(--red)') +
+      kpi('GP per trip', a.trips ? inr(gp / a.trips) : '—', a.trips + ' trips', 'var(--ok)') +
+      kpi('GP per truck', nT ? inr(gp / nT) : '—', nT + ' trucks ran', 'var(--ok)') +
+      kpi('GP margin', a.rev ? pct(gp / a.rev) : '—', 'of freight revenue', 'var(--ok)') +
+      '</div></div>' +
+      sec('Gross profit per truck', 'after diesel, DEF, advance and extra diesel',
+        hbar(list.map(r => ({ label: r.truck, sub: r.cls + ' · ' + r.trips + ' trips', value: r.gp, color: r.gp >= 0 ? 'var(--ok)' : 'var(--red)', text: inr(r.gp) })), { top: 12 }) +
+        tv('Table view', table('tGp', [{ k: 'truck', t: 'Truck' }, { k: 'cls', t: 'Class' }, { k: 'trips', t: 'Trips', num: 1 },
+        { k: 'rev', t: 'Revenue', num: 1, f: inr }, { k: 'cost', t: 'Diesel+DEF+Adv', num: 1, f: inr }, { k: 'xd', t: 'Extra diesel', num: 1, f: inr }, { k: 'gp', t: 'Gross profit', num: 1, bar: 1, f: inr }], list, { sort: 'gp' })));
   }
 
   // ================= IMAGES for WhatsApp =================

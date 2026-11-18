@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Fuel Rates · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .k2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .k2 div { background: #F3F6FB; border-radius: 12px; padding: 10px 12px; } .k2 small { color: var(--muted); font-weight: 700; font-size: 11.5px; display: block; } .k2 b { font-size: 22px; color: var(--navy); }
+    .k2 em { font-style: normal; font-size: 11.5px; color: var(--muted); display: block; }
+    .yn { display: flex; gap: 6px; } .yn button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 10px; padding: 10px; font-weight: 800; color: var(--navy); cursor: pointer; }
+    .yn button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    table.p { width: 100%; border-collapse: collapse; font-size: 12.5px; } table.p th, table.p td { border-bottom: 1px solid #EEF1F5; padding: 6px 4px; text-align: left; }
+    table.p td.n { text-align: right; } table.p th { color: var(--muted); font-size: 11.5px; }
+    .chk { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 6px 0 12px; } .chk input { margin-top: 3px; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:14px;color:var(--navy)">Rate in use now</h3>
+      <div class="k2"><div><small>Diesel ₹/L</small><b id="cD">—</b><em id="cDs"></em></div><div><small>DEF ₹/L (in-house)</small><b id="cF">—</b><em id="cFs"></em></div></div>
+      <p class="muted" style="margin:10px 0 0;font-size:12.5px">Every loader entry is stamped with the rate in use when it is saved. The same rate carries on until you enter a new one. Loaders never see or change this.</p>
+    </div>
+
+    <form class="card" id="f" autocomplete="off">
+      <h3 style="margin:0 0 10px;font-size:14px;color:var(--navy)">New purchase rate</h3>
+      <div class="field"><label>Fuel</label><div class="yn" id="fuel"><button type="button" data-v="Diesel" class="on">Diesel</button><button type="button" data-v="DEF">DEF</button></div></div>
+      <div class="row2">
+        <div class="field"><label class="req" for="rate">Rate ₹ per litre</label><input id="rate" class="input" inputmode="decimal" placeholder="e.g. 98.59"></div>
+        <div class="field"><label for="sup">Supplier / pump</label><input id="sup" class="input" placeholder="e.g. HP, BP"></div>
+      </div>
+      <div class="field"><label class="req" for="from">Effective from</label><input id="from" type="datetime-local" class="input"></div>
+      <div class="field"><label for="rem">Remark</label><input id="rem" class="input" placeholder="e.g. bill no., tanker load"></div>
+      <label class="chk"><input type="checkbox" id="apply"> <span>Also apply to entries already saved since this date/time that still carry the previous rate (entries corrected by hand are not touched)</span></label>
+      <div id="err" class="err hidden" style="margin-bottom:10px"></div>
+      <button class="btn orange" id="save" type="submit">Save rate</button>
+    </form>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:14px;color:var(--navy)">History</h3>
+      <div id="hist" class="muted">Loading…</div>
+    </div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  JNP.header($('hdr'), 'Fuel Rates', 'डीज़ल / DEF रेट');
+  await JNP.requireModule('FIN-07');
+  const pad = n => String(n).padStart(2, '0'), d = new Date();
+  $('from').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  let fuel = 'Diesel';
+  $('fuel').onclick = e => { const b = e.target.closest('button'); if (!b) return; fuel = b.dataset.v; [...$('fuel').children].forEach(x => x.classList.toggle('on', x === b)); };
+  async function load() {
+    try {
+      const o = await JNP.call('fuelRates');
+      const c = o.current || {};
+      $('cD').textContent = c.Diesel ? '₹' + c.Diesel.rate : '—'; $('cDs').textContent = c.Diesel ? (c.Diesel.supplier || '') : 'not set';
+      $('cF').textContent = c.DEF ? '₹' + c.DEF.rate : '—'; $('cFs').textContent = c.DEF ? (c.DEF.supplier || '') : 'not set';
+      if (!o.canEdit) $('f').classList.add('hidden');
+      $('hist').innerHTML = (o.rows || []).length ? '<table class="p"><tr><th>From</th><th>Fuel</th><th>Supplier</th><th style="text-align:right">₹/L</th></tr>' +
+        o.rows.map(r => '<tr><td>' + JNP.esc(r.at) + '</td><td>' + JNP.esc(r.fuel) + '</td><td>' + JNP.esc(r.supplier) + '</td><td class="n"><b>' + JNP.esc(r.rate) + '</b></td></tr>').join('') + '</table>' : 'No rates yet.';
+    } catch (e) { $('hist').innerHTML = '<span class="err">' + JNP.esc(e.message) + '</span>'; }
+  }
+  $('f').addEventListener('submit', async e => {
+    e.preventDefault(); const er = $('err'); er.classList.add('hidden');
+    const rate = Number($('rate').value);
+    if (!(rate > 0) || rate > 200) { er.textContent = 'Enter the rate per litre, e.g. 98.59'; er.classList.remove('hidden'); return; }
+    const b = $('save'); b.disabled = true; b.textContent = 'Saving…';
+    try {
+      const o = await JNP.call('fuelRateAdd', { fuel: fuel, rate: rate, supplier: $('sup').value.trim(), from: $('from').value.replace('T', ' '), remark: $('rem').value.trim(), apply: $('apply').checked });
+      JNP.toast(fuel + ' ₹' + rate + ' saved' + (o.restamped ? ' · applied to ' + o.restamped + ' entries' : ''), 'ok', 5000);
+      $('rate').value = ''; $('rem').value = ''; $('apply').checked = false; load();
+    } catch (ex) { er.textContent = ex.message; er.classList.remove('hidden'); }
+    finally { b.disabled = false; b.textContent = 'Save rate'; }
+  });
+  load();
+})();
+</script>
+</body>
+</html>

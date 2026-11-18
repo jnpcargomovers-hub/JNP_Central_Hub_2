@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#022A5B">
+  <title>Partner Dashboard · JNP</title>
+  <link rel="icon" href="../icon.png">
+  <link rel="stylesheet" href="../jnp.css">
+  <script src="../jnp.js"></script>
+  <style>
+    .who { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .who b { font-size: 17px; color: var(--navy); } .who small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; } .chips span { background: #EEF3FA; color: var(--navy); border-radius: 8px; padding: 3px 8px; font-size: 12px; font-weight: 800; }
+    .seg { display: flex; background: #EEF1F5; border-radius: 12px; padding: 4px; gap: 4px; margin: 4px 0 12px; }
+    .seg button { flex: 1; border: 0; background: transparent; border-radius: 9px; padding: 10px; font-weight: 800; color: var(--muted); cursor: pointer; font-size: 14px; }
+    .seg button.on { background: #fff; color: var(--navy); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .quick { display: flex; gap: 6px; flex-wrap: wrap; } .quick button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .kp { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    @media (min-width: 640px) { .kp { grid-template-columns: repeat(4, 1fr); } }
+    .kp div { background: #F3F6FB; border-radius: 12px; padding: 10px 12px; } .kp small { display: block; color: var(--muted); font-size: 11.5px; font-weight: 700; }
+    .kp b { font-size: 20px; color: var(--navy); } .kp em { display: block; font-style: normal; color: var(--muted); font-size: 11.5px; }
+    .st { border-left: 4px solid var(--line); padding: 8px 10px; margin-bottom: 8px; background: #FAFBFD; border-radius: 0 10px 10px 0; }
+    .st b { color: var(--navy); } .st small { display: block; color: var(--muted); font-size: 12px; }
+    .st.OFF { border-color: var(--red); } .st.LOADED, .st.UNLOADING, .st.UNLOAD_START { border-color: var(--orange); } .st.RETURNING { border-color: var(--blue); } .st.WAIT_ORDER, .st.WAIT_LOADER { border-color: var(--ok); }
+    table.p { width: 100%; border-collapse: collapse; font-size: 12.5px; } table.p th, table.p td { border-bottom: 1px solid #EEF1F5; padding: 7px 4px; text-align: left; vertical-align: top; }
+    table.p td.n, table.p th.n { text-align: right; white-space: nowrap; } table.p th { color: var(--muted); font-size: 11px; } table.p tr.tot td { font-weight: 800; border-top: 2px solid var(--line); }
+    .tscroll { overflow-x: auto; } h3.h { margin: 0 0 10px; font-size: 14px; color: var(--navy); }
+    .tag { display: inline-block; font-size: 10.5px; font-weight: 800; border-radius: 6px; padding: 1px 5px; background: #FFF4E5; color: #8A4B00; }
+    .tag.ok { background: #E7F7EE; color: #11663A; }
+  </style>
+</head>
+<body>
+  <div id="hdr"></div>
+  <div class="wrap">
+    <div class="card">
+      <div class="who"><div><b id="pName">…</b><small id="pSub"></small><div class="chips" id="pTrucks"></div></div>
+        <button class="mini" id="logout" type="button">Logout</button></div>
+      <div id="pickWrap" class="hidden" style="margin-top:10px"><select id="pick" class="input"></select></div>
+    </div>
+    <div class="seg"><button type="button" data-t="ops" class="on">🚚 Operations</button><button type="button" data-t="fin">₹ Financials</button></div>
+    <div class="card" style="padding-bottom:10px">
+      <div class="quick">
+        <button type="button" class="mini" data-q="7">7 days</button>
+        <button type="button" class="mini on" data-q="30">30 days</button>
+        <button type="button" class="mini" data-q="month">This month</button>
+        <button type="button" class="mini" data-q="last">Last month</button>
+      </div>
+      <div class="muted" id="range" style="margin-top:8px;font-size:12.5px"></div>
+    </div>
+    <div id="err" class="err hidden"></div>
+    <div id="view"></div>
+  </div>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), E = JNP.esc;
+  JNP.header($('hdr'), 'Partner Dashboard', 'पार्टनर डैशबोर्ड', { home: false, who: false, sync: () => load() });
+  await JNP.requireModule('PTR-01');
+  $('logout').onclick = () => JNP.logout();
+  const p2 = n => String(n).padStart(2, '0'), iso = d => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+  const dmy = s => s ? s.slice(8, 10) + '-' + s.slice(5, 7) : '';
+  const tm = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) + ' ' + s.slice(11, 16) : '—';
+  const inr = v => '₹' + Math.round(v || 0).toLocaleString('en-IN');
+  const fmt = (v, d) => (v === '' || v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d || 0 });
+  const h1 = v => v === '' || v == null ? '—' : (v >= 48 ? fmt(v / 24, 1) + ' d' : fmt(v, 1) + ' h');
+  let tab = 'ops', from = '', to = '', D = null, who = '';
+  function setRange(q) {
+    const t = new Date();
+    if (q === '7') { from = iso(new Date(t.getTime() - 6 * 864e5)); to = iso(t); }
+    if (q === '30') { from = iso(new Date(t.getTime() - 29 * 864e5)); to = iso(t); }
+    if (q === 'month') { from = iso(new Date(t.getFullYear(), t.getMonth(), 1)); to = iso(t); }
+    if (q === 'last') { from = iso(new Date(t.getFullYear(), t.getMonth() - 1, 1)); to = iso(new Date(t.getFullYear(), t.getMonth(), 0)); }
+  }
+  setRange('30');
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); setRange(b.dataset.q); load(); });
+  document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); tab = b.dataset.t; render(); });
+  $('pick').onchange = () => { who = $('pick').value; load(); };
+
+  async function load() {
+    $('err').classList.add('hidden'); JNP.busy(true);
+    try {
+      D = await JNP.call('partnerDash', { from: from, to: to, partner: who });
+      if (D.empty) { $('pName').textContent = 'No partner yet'; $('view').innerHTML = '<div class="card muted">' + E(D.note) + '</div>'; return; }
+      $('pName').textContent = D.partner.name;
+      $('pSub').textContent = D.trucks.length + ' truck' + (D.trucks.length === 1 ? '' : 's') + ' · updated ' + tm(D.generated);
+      $('pTrucks').innerHTML = D.trucks.map(t => '<span>' + E(t.no) + (t.cap ? ' · ' + t.cap + 'T' : '') + '</span>').join('');
+      if (D.partners && D.partners.length) {      // HO view: pick which partner
+        $('pickWrap').classList.remove('hidden');
+        $('pick').innerHTML = D.partners.map(x => '<option value="' + E(x.mobile) + '"' + (x.name === D.partner.name ? ' selected' : '') + '>' + E(x.name) + ' (' + x.n + ' trucks)</option>').join('');
+      }
+      $('range').textContent = dmy(D.from) + '-' + D.from.slice(0, 4) + ' to ' + dmy(D.to) + '-' + D.to.slice(0, 4) + ' · ' + D.trips.length + ' trips';
+      render();
+    } catch (e) { $('err').textContent = e.message; $('err').classList.remove('hidden'); $('view').innerHTML = ''; }
+    finally { JNP.busy(false); }
+  }
+  const perTruck = () => {
+    const P = {}; D.trucks.forEach(t => P[t.no] = { no: t.no, trips: 0, mt: 0, rev: 0, diesel: 0, dCost: 0, transit: [], days: new Set() });
+    D.trips.forEach(r => { const p = P[r.truck] || (P[r.truck] = { no: r.truck, trips: 0, mt: 0, rev: 0, diesel: 0, dCost: 0, transit: [], days: new Set() });
+      p.trips++; p.mt += Number(r.mt) || 0; p.rev += Number(r.rev) || 0; p.diesel += Number(r.diesel) || 0; p.dCost += (Number(r.diesel) || 0) * (Number(r.dRate) || Number(D.dieselRate) || 0);
+      if (r.transitHrs !== '') p.transit.push(r.transitHrs); p.days.add(r.at.slice(0, 10)); });
+    Object.values(P).forEach(p => { p.xd = Number((D.extraDiesel || {})[p.no]) || 0; p.xdCost = p.xd * (Number(D.dieselRate) || 0); p.down = Number((D.downtime || {})[p.no]) || 0; });
+    return Object.values(P);
+  };
+  function render() {
+    if (!D || D.empty) return;
+    const P = perTruck(), T = D.trips, sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
+    if (tab === 'ops') {
+      const live = D.status.map(s => '<div class="st ' + E(s.st) + '"><b>' + E(s.no) + '</b> · ' + E(s.label) +
+        '<small>' + (s.where ? '📍 ' + E(s.where) : '') + (s.since ? ' · since ' + tm(s.since) : '') + (s.lr ? ' · LR ' + E(s.lr) : '') + '</small></div>').join('');
+      const tr = T.slice().reverse().map(r => '<tr><td>' + dmy(r.at) + '<br><small class="muted">' + E(r.lr) + '</small></td><td><b>' + E(r.truck.slice(-4)) + '</b><br><small class="muted">' + E(r.driver) + '</small></td><td>' + E(r.dest) + (r.km ? '<br><small class="muted">' + r.km + ' km</small>' : '') + '</td>' +
+        '<td class="n">' + fmt(r.mt, 2) + (r.mtActual ? '' : '<br><span class="tag">est</span>') + '</td><td class="n">' + fmt(r.diesel) + ' L</td><td class="n">' + h1(r.transitHrs) + (r.target && r.transitHrs !== '' && r.transitHrs > r.target ? '<br><span class="tag">late</span>' : '') + '</td><td>' + (r.epod ? '<span class="tag ok">ePOD</span>' : r.unloadedAt ? 'Unloaded' : E(r.stage || '')) + '</td></tr>').join('');
+      $('view').innerHTML =
+        '<div class="card"><h3 class="h">Where are my trucks now · गाड़ी अभी कहाँ</h3>' + live + '</div>' +
+        '<div class="card"><h3 class="h">Summary</h3><div class="kp">' +
+          '<div><small>Trips</small><b>' + T.length + '</b></div><div><small>MT carried</small><b>' + fmt(sum(T, r => Number(r.mt) || 0), 1) + '</b></div>' +
+          '<div><small>Diesel issued</small><b>' + fmt(sum(P, p => p.diesel + p.xd)) + ' L</b>' + (sum(P, p => p.xd) ? '<em>incl. ' + fmt(sum(P, p => p.xd)) + ' L extra</em>' : '') + '</div>' +
+          '<div><small>Off-road time</small><b>' + h1(sum(P, p => p.down)) + '</b></div></div></div>' +
+        '<div class="card"><h3 class="h">Per truck</h3><div class="tscroll"><table class="p"><tr><th>Truck</th><th class="n">Trips</th><th class="n">MT</th><th class="n">Diesel L</th><th class="n">Avg transit</th><th class="n">Off road</th></tr>' +
+          P.map(p => '<tr><td><b>' + E(p.no) + '</b></td><td class="n">' + p.trips + '</td><td class="n">' + fmt(p.mt, 1) + '</td><td class="n">' + fmt(p.diesel + p.xd) + '</td><td class="n">' + h1(p.transit.length ? p.transit.reduce((a, b) => a + b, 0) / p.transit.length : '') + '</td><td class="n">' + h1(p.down || '') + '</td></tr>').join('') + '</table></div></div>' +
+        '<div class="card"><h3 class="h">Trips</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">Diesel</th><th class="n">Transit</th><th>Status</th></tr>' + tr + '</table></div>' : '<span class="muted">No trips in these dates.</span>') + '</div>';
+      return;
+    }
+    // Financials — freight per trip comes ready from the server
+    const rev = sum(P, p => p.rev), dc = sum(P, p => p.dCost + p.xdCost), mt = sum(P, p => p.mt), pend = T.filter(r => !r.revOk).length;
+    const rows = T.slice().reverse().map(r => { const d = (Number(r.diesel) || 0) * (Number(r.dRate) || Number(D.dieselRate) || 0);
+      return '<tr><td>' + dmy(r.at) + '<br><small class="muted">' + E(r.lr) + '</small></td><td><b>' + E(r.truck.slice(-4)) + '</b></td><td>' + E(r.dest) + '</td><td class="n">' + fmt(r.mt, 2) + '</td><td class="n">' + (r.mt ? '₹' + fmt(r.rev / r.mt, 0) : '—') + '</td><td class="n">' + inr(r.rev) + (r.revOk ? '' : '<br><span class="tag">provisional</span>') + '</td><td class="n">' + inr(d) + '</td><td class="n"><b>' + inr(r.rev - d) + '</b></td></tr>'; }).join('');
+    $('view').innerHTML =
+      '<div class="card"><h3 class="h">Earnings · कमाई</h3><div class="kp">' +
+        '<div><small>Freight earned</small><b>' + inr(rev) + '</b><em>' + fmt(mt, 1) + ' MT</em></div>' +
+        '<div><small>Rate per MT</small><b>' + (mt ? '₹' + fmt(rev / mt) : '—') + '</b></div>' +
+        '<div><small>Diesel issued (₹)</small><b>' + inr(dc) + '</b><em>at JNP purchase rate</em></div>' +
+        '<div><small>Freight − diesel</small><b>' + inr(rev - dc) + '</b><em>before other deductions</em></div></div>' +
+        (pend ? '<div class="muted" style="margin-top:8px;font-size:12.5px">' + pend + ' trip' + (pend === 1 ? ' is' : 's are') + ' provisional (freight not yet confirmed by the customer) — the amount can change.</div>' : '') + '</div>' +
+      '<div class="card"><h3 class="h">Per truck</h3><div class="tscroll"><table class="p"><tr><th>Truck</th><th class="n">Trips</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Net</th></tr>' +
+        P.map(p => '<tr><td><b>' + E(p.no) + '</b></td><td class="n">' + p.trips + '</td><td class="n">' + inr(p.rev) + '</td><td class="n">' + inr(p.dCost + p.xdCost) + '</td><td class="n"><b>' + inr(p.rev - p.dCost - p.xdCost) + '</b></td></tr>').join('') +
+        '<tr class="tot"><td>Total</td><td class="n">' + T.length + '</td><td class="n">' + inr(rev) + '</td><td class="n">' + inr(dc) + '</td><td class="n">' + inr(rev - dc) + '</td></tr></table></div></div>' +
+      '<div class="card"><h3 class="h">Trip-wise</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">₹/MT</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Net</th></tr>' + rows + '</table></div>' : '<span class="muted">No trips in these dates.</span>') +
+      '<div class="muted" style="margin-top:8px;font-size:12px">Final settlement is as per the statement from JNP office.</div></div>';
+  }
+  load();
+})();
+</script>
+</body>
+</html>
