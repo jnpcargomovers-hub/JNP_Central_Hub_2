@@ -28,9 +28,26 @@
     .tscroll { overflow-x: auto; } h3.h { margin: 0 0 10px; font-size: 14px; color: var(--navy); }
     .tag { display: inline-block; font-size: 10.5px; font-weight: 800; border-radius: 6px; padding: 1px 5px; background: #FFF4E5; color: #8A4B00; }
     .tag.ok { background: #E7F7EE; color: #11663A; }
+    .plogin { max-width: 420px; margin: 0 auto; padding: 28px 16px; } .plogin h1 { font-size: 22px; color: var(--navy); margin: 14px 0 2px; text-align: center; }
+    .plogin .sub { text-align: center; color: var(--muted); margin: 0 0 16px; } .plogin .brand { text-align: center; } .plogin .brand img { height: 54px; }
   </style>
 </head>
 <body>
+  <!-- PARTNER LOGIN (separate from staff login) -->
+  <div id="loginView" class="plogin hidden">
+    <div class="brand"><img src="../logo.png" alt="JNP Cargo Movers"></div>
+    <h1>Partner Login</h1>
+    <p class="sub">Truck owners · पार्टनर लॉगिन</p>
+    <form id="loginForm" class="card" autocomplete="on">
+      <div class="field"><label for="lm">Mobile Number · मोबाइल नंबर</label><input id="lm" class="input" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>
+      <div class="field"><label for="lc">Entry Code · एंट्री कोड</label><input id="lc" class="input" type="password" inputmode="numeric" maxlength="8" placeholder="Code from JNP office" autocomplete="current-password"></div>
+      <div id="loginErr" class="err hidden"></div>
+      <button id="loginBtn" class="btn orange" type="submit">Login · लॉगिन</button>
+      <p class="hint center" style="margin-top:12px">You see only your own trucks. Forgot the code? Call JNP office.</p>
+    </form>
+  </div>
+
+  <div id="dashView" class="hidden">
   <div id="hdr"></div>
   <div class="wrap">
     <div class="card">
@@ -50,20 +67,60 @@
     </div>
     <div id="err" class="err hidden"></div>
     <div id="view"></div>
+
+    <a class="btn light hidden" id="mgLink" href="../partner-admin/" style="display:block;text-align:center;text-decoration:none">⚙️ Manage partners (HO)</a>
+  </div>
+  </div>
   </div>
 <script>
 (async function () {
   const $ = id => document.getElementById(id), E = JNP.esc;
-  JNP.header($('hdr'), 'Partner Dashboard', 'पार्टनर डैशबोर्ड', { home: false, who: false, sync: () => load() });
-  await JNP.requireModule('PTR-01');
-  $('logout').onclick = () => JNP.logout();
+  const P_KEY = 'jnp2_partner';                       // partner session — never the staff session
   const p2 = n => String(n).padStart(2, '0'), iso = d => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
   const dmy = s => s ? s.slice(8, 10) + '-' + s.slice(5, 7) : '';
   const tm = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) + ' ' + s.slice(11, 16) : '—';
   const inr = v => '₹' + Math.round(v || 0).toLocaleString('en-IN');
   const fmt = (v, d) => (v === '' || v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d || 0 });
   const h1 = v => v === '' || v == null ? '—' : (v >= 48 ? fmt(v / 24, 1) + ' d' : fmt(v, 1) + ' h');
-  let tab = 'ops', from = '', to = '', D = null, who = '';
+  let tab = 'ops', from = '', to = '', D = null, who = '', mode = '', token = '';
+
+  // own call to the DB_Master script: a partner token never touches the staff session or staff screens
+  async function P(action, payload) {
+    let r; try { r = await fetch(JNP.CONFIG.APIS.core, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, token: token, device: navigator.userAgent.slice(0, 100) }, payload || {})) }); }
+    catch (e) { throw new Error('No internet — try again'); }
+    const o = await r.json();
+    if (!o.ok) { if (o.code === 'AUTH' && mode === 'partner') { JNP.store.del(P_KEY); showLogin(); } const e = new Error(o.error || 'Failed'); e.code = o.code; throw e; }
+    return o;
+  }
+  function showLogin() { mode = ''; $('dashView').classList.add('hidden'); $('loginView').classList.remove('hidden'); }
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault(); const er = $('loginErr'), b = $('loginBtn'); er.classList.add('hidden'); b.disabled = true; b.textContent = 'Checking…';
+    try {
+      token = ''; mode = 'login';
+      const o = await P('partnerLogin', { mobile: $('lm').value, entryCode: $('lc').value });
+      JNP.store.set(P_KEY, { token: o.token, name: o.partner.name, at: Date.now() }); $('lc').value = '';
+      startPartner();
+    } catch (ex) { er.textContent = ex.message; er.classList.remove('hidden'); }
+    finally { b.disabled = false; b.textContent = 'Login · लॉगिन'; }
+  });
+  function startPartner() {
+    const ps = JNP.store.get(P_KEY); mode = 'partner'; token = ps.token;
+    $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden');
+    JNP.header($('hdr'), 'Partner Dashboard', 'पार्टनर डैशबोर्ड', { home: false, who: false, sync: () => load() });
+    const a = $('hdr').querySelector('a'); if (a) a.removeAttribute('href');        // no way into the staff hub
+    $('logout').onclick = () => { JNP.store.del(P_KEY); location.reload(); };
+    load();
+  }
+  async function startHO() {
+    mode = 'ho';
+    $('loginView').classList.add('hidden'); $('dashView').classList.remove('hidden');
+    JNP.header($('hdr'), 'Partner Dashboard', 'पार्टनर डैशबोर्ड · HO view', { who: false, sync: () => load() });
+    const ctx = await JNP.requireModule('PTR-01'); token = JNP.session().token;
+    $('logout').textContent = '⌂ Hub'; $('logout').onclick = () => location.href = JNP.CONFIG.HUB;
+    if (ctx.isL1) $('mgLink').classList.remove('hidden');
+    load();
+  }
+
   function setRange(q) {
     const t = new Date();
     if (q === '7') { from = iso(new Date(t.getTime() - 6 * 864e5)); to = iso(t); }
@@ -79,12 +136,12 @@
   async function load() {
     $('err').classList.add('hidden'); JNP.busy(true);
     try {
-      D = await JNP.call('partnerDash', { from: from, to: to, partner: who });
-      if (D.empty) { $('pName').textContent = 'No partner yet'; $('view').innerHTML = '<div class="card muted">' + E(D.note) + '</div>'; return; }
+      D = await P('partnerDash', { from: from, to: to, partner: who });
+      if (D.empty) { $('pName').textContent = 'No partner yet'; $('pSub').textContent = ''; $('pTrucks').innerHTML = ''; $('view').innerHTML = '<div class="card muted">' + E(D.note) + '</div>'; return; }
       $('pName').textContent = D.partner.name;
       $('pSub').textContent = D.trucks.length + ' truck' + (D.trucks.length === 1 ? '' : 's') + ' · updated ' + tm(D.generated);
       $('pTrucks').innerHTML = D.trucks.map(t => '<span>' + E(t.no) + (t.cap ? ' · ' + t.cap + 'T' : '') + '</span>').join('');
-      if (D.partners && D.partners.length) {      // HO view: pick which partner
+      if (D.partners && D.partners.length) {
         $('pickWrap').classList.remove('hidden');
         $('pick').innerHTML = D.partners.map(x => '<option value="' + E(x.mobile) + '"' + (x.name === D.partner.name ? ' selected' : '') + '>' + E(x.name) + ' (' + x.n + ' trucks)</option>').join('');
       }
@@ -137,7 +194,12 @@
       '<div class="card"><h3 class="h">Trip-wise</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">₹/MT</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Net</th></tr>' + rows + '</table></div>' : '<span class="muted">No trips in these dates.</span>') +
       '<div class="muted" style="margin-top:8px;font-size:12px">Final settlement is as per the statement from JNP office.</div></div>';
   }
-  load();
+
+  // which way in: partner login on this phone → partner view; HO staff session with the Partner tile → HO view; else the partner login form
+  const ps = JNP.store.get(P_KEY), ss = JNP.session();
+  if (ps && ps.token) startPartner();
+  else if (ss && ss.token && ss.access && ss.access['PTR-01'] && ss.access['PTR-01'].rights && ss.access['PTR-01'].rights !== '-') startHO();
+  else showLogin();
 })();
 </script>
 </body>

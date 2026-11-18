@@ -32,6 +32,7 @@
       <p class="hint center" style="margin-top:12px">You stay logged in on this phone for 30 days.</p>
     </form>
     <p class="footnote">Forgot your code? Ask HO.</p>
+    <p class="footnote"><a href="partner/">Truck owner / partner? Login here · पार्टनर लॉगिन</a></p>
   </div>
 
   <!-- HOME -->
@@ -187,7 +188,6 @@
   }
 
   async function showHome() {
-    { const su = (JNP.session() || {}).user || {}; if (/^partner/i.test(su.role || '')) { location.replace('partner/'); return; } }
     $('loginView').classList.add('hidden'); $('homeView').classList.remove('hidden');
     JNP.header($('hdr'), 'Central Hub', 'सेंट्रल हब', { home: false, who: false, sync: async () => { JNP.busy(true); try { await JNP.refreshMe(); await JNP.masters(true); render(); JNP.toast('Updated', 'ok'); } catch (e) { JNP.toast(e.message, 'bad'); } finally { JNP.busy(false); } } });
     render();
