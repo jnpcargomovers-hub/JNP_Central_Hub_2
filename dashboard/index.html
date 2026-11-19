@@ -369,7 +369,9 @@
       x.truckIdle = p && p.unload ? hrs(p.unload, x.at) : NaN;                                  // waiting after last unload
     }));
     Object.values(byDriver).forEach(a => a.forEach((x, k) => { const p = a[k - 1]; x.drvIdle = p && p.unload ? hrs(p.unload, x.at) : NaN; if (x.drvIdle > 30 * 24 || x.drvIdle < 0) x.drvIdle = NaN; }));
-    const trips = all.filter(x => x.day >= R.from && x.day <= R.to);
+    // 19 Nov: a trip counts on its UTCL invoice (PGI) date — the same day the portal report shows. Only trucks not on the portal yet count on the loading day.
+    all.forEach(x => { x.dday = x.pgi && !isNaN(x.pgi) ? iso(x.pgi) : x.day; x.onPortal = !!(x.pgi && !isNaN(x.pgi)); });
+    const trips = all.filter(x => x.dday >= R.from && x.dday <= R.to);
     const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
     // fleet
     const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
@@ -465,9 +467,11 @@
   const keepT = x => (fLoad === 'All' || x.load === fLoad) && (!fSize.size || fSize.has(x.cls));
   const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (!fSize.size || fSize.has(c)) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
 
+  const mtNote = a => 'UTCL invoice (PGI) date' + (a.notPortal ? ' · ' + a.notPortal + ' truck' + (a.notPortal > 1 ? 's' : '') + ' not on portal yet (' + fmt(a.notPortalMt, 0) + ' MT, loading day)' : '');
   function agg(list) {
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
-    return { trips: list.length, mt: sum(list, x => x.mt), rev: sum(list, x => x.rev), diesel: sum(list, x => x.diesel), dieselTrips: withD.length,
+    const np = list.filter(x => !x.onPortal);
+    return { trips: list.length, mt: sum(list, x => x.mt), rev: sum(list, x => x.rev), notPortal: np.length, notPortalMt: sum(np, x => x.mt), diesel: sum(list, x => x.diesel), dieselTrips: withD.length,
       gp: sum(list, x => x.gp), dCost: sum(list, x => x.dCost), defCost: sum(list, x => x.defCost), adv: sum(list, x => x.adv), noDRate: list.filter(x => x.noDRate).length, dEst: list.filter(x => x.dEst).length,
       cap: sum(list, x => x.cap), km: sum(km, x => x.km), kmDiesel: sum(km, x => x.diesel), rot: avg(list.map(x => x.rot).filter(v => !isNaN(v))),
       tat: avg(list.map(x => x.tat).filter(v => !isNaN(v) && v >= 0 && v < 240)), short: sum(list, x => x.shortKg), est: list.filter(x => x.mtEst).length, portal: list.filter(x => x.portal).length,
@@ -708,7 +712,7 @@
     cls: { l: 'Truck size', k: x => x.cls, prof: 1 },
     load: { l: 'Bulk / Bag', k: x => x.load === 'BULK' ? 'Bulk' : 'Bag', prof: 1 },
     own: { l: 'Own / Market', k: x => x.own === 'MARKET' ? 'Market' : 'Own', prof: 1 },
-    day: { l: 'Day', k: x => x.day, time: 1, lab: k => k.slice(8, 10) + '/' + k.slice(5, 7) },
+    day: { l: 'Day', k: x => x.dday, time: 1, lab: k => k.slice(8, 10) + '/' + k.slice(5, 7) },
     week: { l: 'Week', k: x => wkOf(x.day), time: 1, lab: k => 'wk ' + k.slice(8, 10) + '/' + k.slice(5, 7) },
     month: { l: 'Month', k: x => x.day.slice(0, 7), time: 1, lab: k => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(k.slice(5, 7)) - 1] + ' ' + k.slice(2, 4) },
   };
@@ -1126,7 +1130,7 @@
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
     setTimeout(() => { const s = $('tq'); if (s) { s.oninput = () => { window.__tq = s.value; const p = s.selectionStart; render(); const n = $('tq'); n.focus(); n.setSelectionRange(p, p); }; } const c = $('csv'); if (c) c.onclick = () => csv(data); }, 0);
     return '<div class="card"><div class="frow"><input id="tq" class="input search" style="max-width:none;flex:1" placeholder="Search LR, truck, driver, destination, party" value="' + E(window.__tq || '') + '"><button class="chip sm" id="csv">⬇ CSV</button></div>' +
-      '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1)) + $m(kpi('Revenue', inr(a.rev), '', 'var(--orange)')) + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
+      '<div class="kpis">' + kpi('Trips', fmt(a.trips)) + kpi('MT', fmt(a.mt, 1), mtNote(a)) + $m(kpi('Revenue', inr(a.rev), '', 'var(--orange)')) + kpi('Destinations', ds.length, '', 'var(--navy)') + '</div></div>' +
       sec('Loaded for', 'destination-wise · ' + JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to), hbar(ds.map(d => ({ label: d.dest, sub: d.tcount + ' trucks · ' + fmt(d.mt, 0) + ' MT', value: d.trips, text: fmt(d.trips) + ' trips', tip: d.dest + ': ' + d.trips + ' trips, ' + fmt(d.mt, 1) + ' MT, ' + inr(d.rev) })), { top: 12 }) +
         tv('Table view', table('tDs', [{ k: 'dest', t: 'Destination' }, { k: 'trips', t: 'Trips', num: 1, bar: 1 }, { k: 'tcount', t: 'Trucks', num: 1 }, { k: 'mt', t: 'MT', num: 1, f: v => fmt(v, 1) }, { k: 'rev', t: 'Revenue', num: 1, f: inr }], ds, { sort: 'trips' }))) +
       $m(sec('Revenue per day', '₹ lakh, Bulk vs Bag', columns('cRev', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(data.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }))) +
