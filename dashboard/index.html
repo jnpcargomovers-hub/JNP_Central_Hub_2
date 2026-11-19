@@ -300,15 +300,18 @@
 
   $('view').addEventListener('click', e => { const b = e.target.closest('.shr'); if (b && b.dataset.s) shareSection(b.dataset.s); });
   // ---------- data
+  let loadSeq = 0;
   async function load(fresh) {
+    const my = ++loadSeq, want = { from: $('from').value, to: $('to').value };     // only the LAST request may draw (typing a date fires several)
     $('status').classList.remove('hidden'); $('status').textContent = 'Loading data…'; $('view').innerHTML = ''; $('rangeTxt').textContent = 'Loading ' + JNP.dmy($('from').value) + ' to ' + JNP.dmy($('to').value) + '…';
     try {
-      const [dash, snap] = await Promise.all([JNP.call('dash', { from: $('from').value, to: $('to').value, fresh: fresh === true }), JNP.boardSnapshot(fresh === true).catch(() => null)]);
+      const [dash, snap] = await Promise.all([JNP.call('dash', { from: want.from, to: want.to, fresh: fresh === true }), JNP.boardSnapshot(fresh === true).catch(() => null)]);
+      if (my !== loadSeq) return;                                                   // an older answer arriving late is thrown away
       RAW = dash; M = model(RAW); applyBoard(M, snap);
       if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore', 'finance'].find(x => allowed().indexOf(x) >= 0) || 'explore';
       drawNav(); render();
     }
-    catch (e) { $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
+    catch (e) { if (my === loadSeq) $('status').innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
   }
 
   const M_DAYS_BACK = 35;
@@ -371,7 +374,10 @@
     Object.values(byDriver).forEach(a => a.forEach((x, k) => { const p = a[k - 1]; x.drvIdle = p && p.unload ? hrs(p.unload, x.at) : NaN; if (x.drvIdle > 30 * 24 || x.drvIdle < 0) x.drvIdle = NaN; }));
     // 19 Nov: a trip counts on its UTCL invoice (PGI) date — the same day the portal report shows. Only trucks not on the portal yet count on the loading day.
     all.forEach(x => { x.dday = x.pgi && !isNaN(x.pgi) ? iso(x.pgi) : x.day; x.onPortal = !!(x.pgi && !isNaN(x.pgi)); });
-    const trips = all.filter(x => x.dday >= R.from && x.dday <= R.to);
+    // 19 Nov (2): the day report is the UTCL portal — only trips with a PGI in these dates. Loaded trucks the portal has not confirmed yet are
+    // listed apart (notOnPortal) and are NOT added to trips / MT / revenue.
+    const trips = all.filter(x => x.onPortal && x.dday >= R.from && x.dday <= R.to);
+    const notOnPortal = all.filter(x => !x.onPortal && x.day >= R.from && x.day <= R.to);
     const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
     // fleet
     const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
@@ -440,7 +446,7 @@
       x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; });
     const portalInfo = { lastPgi: all.reduce((m, x) => x.pgi && (!m || x.pgi > m) ? x.pgi : m, null), lastSync: all.reduce((m, x) => x.synced && !isNaN(x.synced) && (!m || x.synced > m) ? x.synced : m, null) };
     const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
-    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor, extraAmt, rateAt };
+    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor, extraAmt, rateAt, notOnPortal };
   }
 
   /** RIGHT NOW comes from the Truck Status board — the very rows the board and its status image use, so the numbers are identical.
@@ -467,7 +473,7 @@
   const keepT = x => (fLoad === 'All' || x.load === fLoad) && (!fSize.size || fSize.has(x.cls));
   const keepTruck = no => { const t = M.truckM[no] || {}; const c = classOf(t.cap); return (!fSize.size || fSize.has(c)) && (fLoad === 'All' || (t.cargo || 'BAG') === fLoad); };
 
-  const mtNote = a => 'UTCL invoice (PGI) date' + (a.notPortal ? ' · ' + a.notPortal + ' truck' + (a.notPortal > 1 ? 's' : '') + ' not on portal yet (' + fmt(a.notPortalMt, 0) + ' MT, loading day)' : '');
+  const mtNote = () => 'UTCL portal · PGI date';
   function agg(list) {
     const withD = list.filter(x => x.diesel > 0), km = list.filter(x => !isNaN(x.km));
     const np = list.filter(x => !x.onPortal);
@@ -602,7 +608,12 @@
     const T = M.trips.filter(keepT);
     SHARE = {}; SHN = 0;
     const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab }[tab] || overview;
-    $('view').innerHTML = fn(T);
+    const np = (M.notOnPortal || []).filter(keepT), pi = M.portalInfo || {}, tm = d => d ? JNP.dmy(iso(d)).slice(0, 5) + ' ' + String(d.getHours()).padStart(2, '0') + ':00' : '';
+    const band = '<div class="card" style="padding:10px 14px;margin-bottom:10px;font-size:13px;border-left:4px solid var(--blue)">📋 Trips, MT and revenue = <b>UTCL portal, by PGI date</b>' +
+      (pi.lastPgi ? ' · portal has loadings till <b>' + tm(pi.lastPgi) + '</b>' : ' · portal not synced yet') +
+      (np.length ? '<br><span style="color:var(--orange)">⏳ <b>' + np.length + ' truck' + (np.length > 1 ? 's' : '') + '</b> loaded in these dates, not on the portal yet (' + fmt(sum(np, x => x.cap || x.mt), 0) + ' MT at truck size) — not counted above: ' +
+        np.slice(0, 12).map(x => E(x.lr) + ' ' + E(String(x.truck).slice(-4))).join(', ') + (np.length > 12 ? ' …' : '') + '</span>' : '') + '</div>';
+    $('view').innerHTML = band + fn(T);
   }
 
   // donut (pie) for 2–6 parts
