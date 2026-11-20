@@ -83,6 +83,13 @@
   }
   const escH = () => (DATA && DATA.escalateHrs) || 4;
   const late = r => !!S(r.st).esc && r.hrs >= escH() && !(r.st === 'WAIT_ORDER' && r.own === 'MARKET');
+  // daily sanity checks from the server (board vs portal, stages far too long, old off-road records) — HO / Ops Head see the full list
+  function checksHtml() {
+    const c = (DATA && DATA.checks) || []; if (!c.length || !(DATA.isHead || DATA.canMove)) return '';
+    const open = (() => { try { return sessionStorage.getItem('jnp_chk') === '1'; } catch (e) { return false; } })();
+    return '<details class="alert" style="background:#FFF8E6;border:1px solid #F3D9A4;color:#6B4400"' + (open ? ' open' : '') + ' ontoggle="try{sessionStorage.setItem(\'jnp_chk\',this.open?\'1\':\'0\')}catch(e){}"><summary style="cursor:pointer;font-weight:800">🔎 ' + c.length + ' thing' + (c.length > 1 ? 's' : '') + ' to check on this board · जाँचें</summary>' +
+      '<ul style="margin:8px 0 0 16px;padding:0;font-size:12.5px;line-height:1.5">' + c.map(x => '<li>' + E(x.msg) + '</li>').join('') + '</ul></details>';
+  }
   function draw() {
     redrawLater = false;
     const cnt = {}; ROWS.forEach(r => cnt[r.st] = (cnt[r.st] || 0) + 1);
@@ -91,7 +98,8 @@
       ORDER.concat('OFF').filter(k => cnt[k]).map(k => '<button type="button" data-f="' + k + '" class="' + (filt === k ? 'on' : '') + '">' + S(k).icon + ' ' + E(S(k).short) + '<b>' + cnt[k] + '</b></button>').join('');
     const lt = ROWS.filter(late), unset = ROWS.filter(r => r.st === 'WAIT_LOADER' && r.hrs > 24), lk = {}; lt.forEach(r => lk[r.st] = (lk[r.st] || 0) + 1);
     $('alerts').innerHTML = Object.keys(lk).map(k => '<div class="alert red" data-f="' + k + '">⚠️ ' + lk[k] + ' truck' + (lk[k] > 1 ? 's' : '') + ' ' + E(S(k).short.toLowerCase()) + ' over ' + escH() + ' h — escalate · ज़्यादा देर</div>').join('') +
-      (unset.length ? '<div class="alert purple" data-f="WAIT_LOADER">❓ ' + unset.length + ' order' + (unset.length > 1 ? 's' : '') + ' older than a day still "waiting for loader" — please update · स्थिति अपडेट करें</div>' : '');
+      (unset.length ? '<div class="alert purple" data-f="WAIT_LOADER">❓ ' + unset.length + ' order' + (unset.length > 1 ? 's' : '') + ' older than a day still "waiting for loader" — please update · स्थिति अपडेट करें</div>' : '') +
+      checksHtml();
     const q = $('q').value.trim().toUpperCase().replace(/\s/g, '');
     const show = ROWS.filter(r => (filt === 'All' || r.st === filt) && (cargoF === 'All' || r.cargo === cargoF) && (!q || r.no.indexOf(q) >= 0));
     $('lanes').innerHTML = ORDER.map(k => {
@@ -118,7 +126,7 @@
     const age = isNaN(r.hrs) ? '' : (r.since ? 'since ' + JNP.sinceTxt(r.since) + ' · ' : '') + Math.floor(r.hrs) + ' h';
     return '<div class="tr" style="--c:' + L.c + '" data-t="' + r.no + '"><div class="top"><b data-a="open">' + E(r.no.slice(-4)) + '</b><small>' + E(r.no.slice(0, -4)) + ' · <span style="color:' + (r.cargo === 'BULK' ? '#1565D8' : '#C2610C') + ';font-weight:800">' + E(JNP.vehicleType(r)) + '</span>' + (r.own === 'MARKET' ? ' · Market' : '') + '</small><span class="age' + (lateNow ? ' late' : '') + '">' + E(age) + '</span></div>' +
       (where ? '<div class="hint" style="margin-top:2px">' + E(where) + '</div>' : '') +
-      (r.st === 'WAIT_ORDER' && DATA.misClosed && DATA.misClosed[r.no] ? '<div class="warnline">⚠ Order LR ' + E(DATA.misClosed[r.no].LR_No) + ' → ' + E(DATA.misClosed[r.no].Destination || '') + ' was closed as "reached depot" before loading' + (DATA.misClosed[r.no].By ? ' (by ' + E(DATA.misClosed[r.no].By) + ')' : '') + '. If it is loaded / still to load, pick the status — it reopens.</div>' : '') +
+      (r.st === 'WAIT_ORDER' && DATA.misClosed && DATA.misClosed[r.no] && (!DATA.misClosed[r.no].Loaded || /cancel/i.test(DATA.misClosed[r.no].How || '')) ? '<div class="warnline">⚠ Order LR ' + E(DATA.misClosed[r.no].LR_No) + ' → ' + E(DATA.misClosed[r.no].Destination || '') + ' was ' + (/cancel/i.test(DATA.misClosed[r.no].How || '') ? 'marked <b>cancelled</b>' : 'closed as "reached depot" before loading') + (DATA.misClosed[r.no].By ? ' (by ' + E(DATA.misClosed[r.no].By) + ')' : '') + '. If it is loaded / on the way / returning, pick that status — it reopens.</div>' : '') +
       (DATA.canMove ? '<select data-a="st" aria-label="Status">' + opts + '</select>' +
         (r.st === 'OFF' ? '' : '<div class="two"><input data-a="loc" placeholder="📍 Place · जगह" value="' + E(r.st === 'RETURNING' || r.st === 'WAIT_ORDER' || (r.st === 'LOADED' && !/^On the way/i.test(r.place || '')) ? r.place : '') + '"><input data-a="rem" placeholder="💬 Remark · टिप्पणी" value="' + E(r.remark || '') + '"></div>') +
         '<div class="msg"></div><div class="acts">' + (lateNow ? '<button type="button" class="mini red" data-a="esc">📣 Escalate' + (Number(t && t.Escalations) ? ' (' + t.Escalations + ' done)' : '') + '</button>' : '') + '</div>'
@@ -185,9 +193,10 @@
     const needLoc = to === 'RETURNING', now = new Date();
     const lrNow = ((r.trip || r.pend || {}).LR_No) || '';
     sheet('<h3>' + E(r.no.slice(-4)) + ' · ' + E(LABEL[to]) + '</h3><div class="sub">' + E(JNP.vehicleType(r)) + (r.dest ? ' · ' + E(r.dest) : '') + '</div>' +
-      (mis ? '<div class="warnline">This reopens order <b>LR ' + E(mis.LR_No) + '</b> → ' + E(mis.Destination || '') + ' (it was closed as "reached depot" before loading). No new Loader entry needed.</div>' : '') +
+      (mis ? '<div class="warnline">This reopens order <b>LR ' + E(mis.LR_No) + '</b> → ' + E(mis.Destination || '') + ' (it was marked <b>' + E(/cancel/i.test(mis.How || '') ? 'order cancelled' : 'reached depot') + '</b>' + (mis.By ? ' by ' + E(mis.By) : '') + '). No new Loader entry needed · नई लोडर एंट्री की ज़रूरत नहीं।</div>' : '') +
       (keepOrder ? '<div class="warnline">This truck has order <b>LR ' + E(lrNow) + '</b> waiting for loader. What happened?</div>' +
-        '<div class="btnrow" style="margin:6px 0 10px"><button type="button" class="mini sel" data-k="keep">🏠 Reached depot before this order — keep LR ' + E(lrNow) + '</button><button type="button" class="mini red" data-k="cancel">✕ Cancel order LR ' + E(lrNow) + '</button></div>' : '') +
+        '<div class="btnrow" style="margin:6px 0 10px"><button type="button" class="mini sel" data-k="keep">🏠 Reached depot before this order — keep LR ' + E(lrNow) + '</button><button type="button" class="mini red" data-k="cancel">✕ Cancel order LR ' + E(lrNow) + '</button></div>' +
+        '<div class="hint" style="margin:-4px 0 10px">Cancel only if the plant really cancelled the order. If the truck was loaded on this LR, the portal reopens it by itself.</div>' : '') +
       '<div class="field"><label class="req">When? · कब</label><input id="sWhen" class="input" type="datetime-local" value="' + localISO(now) + '" max="' + localISO(now) + '"></div>' +
       '<div class="btnrow" style="margin:-4px 0 10px">' + [0, 1, 2, 4].map(h => '<button type="button" class="mini" data-h="' + h + '">' + (h ? h + ' h ago' : 'Now') + '</button>').join('') + '</div>' +
       (needLoc || to === 'DONE' || to === 'LOADED' ? '<div class="field"><label class="' + (needLoc ? 'req' : '') + '">' + (needLoc || to === 'LOADED' ? 'Where is the truck now? · अभी कहाँ है' : 'Place') + '</label><input id="sLoc" class="input upper" placeholder="' + (needLoc ? 'e.g. Songir toll, Malegaon bypass' : to === 'LOADED' ? 'Type like a remark — e.g. waiting at depot, at plant. Blank = on the way' : 'Depot') + '" value="' + E(to === 'DONE' ? 'Depot' : '') + '">' +
