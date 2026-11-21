@@ -27,7 +27,7 @@
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
     nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
-    board: 'ops', tollDIs: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    board: 'ops', tollDIs: 'ops', tollMark: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
@@ -570,7 +570,8 @@
   // ---- TRUCK JOURNEY (shared by Truck Status board and Dashboard) --------------
   const STAGES = [
     { k: 'WAIT_ORDER', icon: '🅿️', en: 'At depot – waiting for order', short: 'Waiting for order', hi: 'डिपो पर – ऑर्डर का इंतज़ार', wa: 'AT DEPOT · WAITING FOR ORDER', c: '#64748B', esc: 'order' },
-    { k: 'WAIT_LOADER', icon: '⏳', en: 'Order given – waiting for loader', short: 'Waiting for loader', hi: 'ऑर्डर मिला – लोडिंग का इंतज़ार', wa: 'WAITING FOR LOADER', c: '#B45309', next: 'LOADED', esc: 'loader' },
+    { k: 'WAIT_LOADER', icon: '⏳', en: 'Order given – waiting for loader', short: 'Waiting for loader', hi: 'ऑर्डर मिला – लोडिंग का इंतज़ार', wa: 'WAITING FOR LOADER', c: '#B45309', next: 'AT_LOADING', esc: 'loader' },
+    { k: 'AT_LOADING', icon: '🏭', en: 'At loading point', short: 'At loading point', hi: 'लोडिंग पॉइंट पर', wa: 'AT LOADING POINT', c: '#C2410C', next: 'LOADED' },
     { k: 'LOADED', icon: '🚚', en: 'Loaded – to destination', short: 'To destination', hi: 'माल भरा – रास्ते में', wa: 'LOADED · TO DESTINATION', c: '#1D4ED8', next: 'UNLOADING' },
     { k: 'UNLOADING', icon: '📍', en: 'At destination – waiting for unloading', short: 'Waiting to unload', hi: 'पार्टी पर – खाली होने का इंतज़ार', wa: 'AT DESTINATION · WAITING FOR UNLOADING', c: '#7C3AED', next: 'UNLOAD_START', esc: 'unload' },
     { k: 'UNLOAD_START', icon: '⬇️', en: 'Unloading', short: 'Unloading', hi: 'माल उतर रहा है', wa: 'UNLOADING', c: '#9333EA', next: 'RETURNING', esc: 'unload' },
@@ -578,7 +579,7 @@
     { k: 'OFF', icon: '🔧', en: 'Off road', short: 'Off road', hi: 'गाड़ी बंद', wa: 'OFF ROAD', c: '#B91C1C' },
     { k: 'UNSET', icon: '❓', en: 'Status not set', short: 'Not set', hi: 'स्थिति नहीं डाली', wa: 'STATUS NOT UPDATED', c: '#9333EA' },
   ];
-  const NEXT_BTN = { LOADED: '✅ Loaded · माल भर गया', UNLOADING: '📍 Reached party · पार्टी पर पहुँचा', RETURNING: '✅ Unloaded · खाली हो गया', DONE: '🏠 Reached depot · डिपो पहुँचा' };
+  const NEXT_BTN = { AT_LOADING: '🏭 At loading point · लोडिंग पॉइंट पर पहुँचा', LOADED: '✅ Loaded · माल भर गया', UNLOADING: '📍 Reached party · पार्टी पर पहुँचा', RETURNING: '✅ Unloaded · खाली हो गया', DONE: '🏠 Reached depot · डिपो पहुँचा' };
   const stageOf = k => STAGES.find(x => x.k === k) || STAGES[0];
   const tDate = v => { if (!v) return null; const m = String(v).trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:[ T,]+(\d{1,2}):(\d{2}))?/);
     if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)); const d = new Date(String(v).trim().replace(' ', 'T')); return isNaN(d) ? null : d; };
@@ -702,7 +703,7 @@
   const cleanDest = d => String(d || '').replace(/_[0-9][0-9A-Z-]*$/i, '');     // "STATION-DUMP_6325-2522" → "STATION-DUMP"
   function whereTxt(r0) {
     const r = Object.assign({}, r0, { dest: cleanDest(r0.dest) }), k = r.st, lr = (r.trip || r.pend || {}).LR_No || '';
-    return k === 'WAIT_LOADER' ? (lr ? 'LR ' + lr + ' → ' : '→ ') + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') + (r.place && !/^On the way|^Loading point/i.test(r.place) ? ' · now at ' + r.place : '')
+    return k === 'WAIT_LOADER' || k === 'AT_LOADING' ? (lr ? 'LR ' + lr + ' → ' : '→ ') + (r.dest || '') : k === 'LOADED' ? '→ ' + (r.dest || '') + (r.place && !/^On the way|^Loading point/i.test(r.place) ? ' · now at ' + r.place : '')
       : k === 'UNLOADING' || k === 'UNLOAD_START' ? (r.dest || r.place || '') : k === 'RETURNING' ? 'now at ' + (r.place || '?') : (r.place || 'Depot');
   }
   function statusReportEl(rows, opt) {
@@ -712,7 +713,7 @@
     const mt = a => Math.round(a.reduce((x, r) => x + (Number(r.mt) || Number(r.cap) || 0), 0)), n = k => (by[k] || []).length;
     const now = new Date(), stamp = p2_(now.getDate()) + '-' + p2_(now.getMonth() + 1) + '-' + now.getFullYear() + ' ' + p2_(now.getHours()) + ':' + p2_(now.getMinutes());
     const bb = a => { const k = a.filter(r => r.cargo === 'BULK').length; return a.length ? '<em>Bulk ' + k + ' · Bag ' + (a.length - k) + '</em>' : ''; };
-    const kp = (k, label) => { const s = stageOf(k), a = by[k] || []; return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span>' + bb(a) + '</div>'; };
+    const kp = (k, label) => { const ks = [].concat(k), s = stageOf(ks[0]), a = [].concat(...ks.map(x => by[x] || [])); return '<div style="--c:' + s.c + '"><small>' + label + '</small><b>' + mt(a) + ' MT</b><span>' + a.length + ' truck' + (a.length === 1 ? '' : 's') + '</span>' + bb(a) + '</div>'; };
     const sect = k => {
       const s = stageOf(k), a = (by[k] || []).slice().sort((x, y) => (y.hrs || 0) - (x.hrs || 0)); if (!a.length) return '';
       return '<div class="sec" style="--c:' + s.c + '"><span>' + esc(s.en) + '</span><span>' + a.length + ' · ' + mt(a) + ' MT</span></div><table><tr class="th"><td>Truck</td><td>Type</td><td>Where</td><td>Since</td><td class="r">Hrs</td></tr>' + a.map(r => {
@@ -727,15 +728,15 @@
     const box = document.createElement('div'); box.className = 'srep';
     box.innerHTML = '<div class="h"><img src="' + CONFIG.LOGO + '" alt=""><div><b>' + esc(opt.title || 'Truck status') + '</b><span>' + stamp + '</span></div></div>' +
       '<div class="st"><i style="background:#F7821A"></i><i style="background:#1565D8"></i><i style="background:#B9061E"></i></div>' +
-      '<div class="kp">' + kp('WAIT_ORDER', 'At depot<br>waiting for order') + kp('WAIT_LOADER', 'Order given<br>waiting for loader') + kp('LOADED', 'Loaded<br>to destination') +
-        kp('UNLOADING', 'At destination<br>waiting to unload') + kp('UNLOAD_START', 'Unloading<br>&nbsp;') + kp('RETURNING', 'Returning<br>to depot') + '</div>' +
+      '<div class="kp">' + kp('WAIT_ORDER', 'At depot<br>waiting for order') + kp('WAIT_LOADER', 'Order given<br>waiting for loader') + kp('AT_LOADING', 'At loading<br>point') +
+        kp('LOADED', 'Loaded<br>to destination') + kp(['UNLOADING', 'UNLOAD_START'], 'At destination<br>waiting / unloading') + kp('RETURNING', 'Returning<br>to depot') + '</div>' +
       '<div class="tot">Fleet ' + rows.length + ' trucks' + (rows.some(r => r.own === 'MARKET') ? ' (' + rows.filter(r => r.own !== 'MARKET').length + ' own + ' + rows.filter(r => r.own === 'MARKET').length + ' market)' : '') + ' · ' + mt(rows) + ' MT · Off road ' + off.length + ' · ' + mt(off) + ' MT</div>' +
-      ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
+      ['WAIT_ORDER', 'WAIT_LOADER', 'AT_LOADING', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'UNSET'].map(sect).join('') + offHtml +
       '<div class="f" style="text-align:left">Since = time the truck reached this stage · Hrs = hours in it · ⚠ = over ' + esc0 + ' h' + (rows.some(r => r.est) ? ' · ~ = estimate' : '') +
         (rows.some(r => !Number(r.cap)) ? '<br>⚠ No capacity in Truck Master (counted as 0 MT): ' + esc(rows.filter(r => !Number(r.cap)).map(r => r.no).join(', ')) : '') + '</div>' +
       '<div class="f">JNP Cargo Movers · ' + esc((session() || { user: {} }).user.name || '') + ' · ' + stamp + '</div>';
     const line = k => n(k) ? '\n' + stageOf(k).short + ': ' + n(k) + ' · ' + mt(by[k]) + ' MT' : '';
-    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*' + ['WAIT_ORDER', 'WAIT_LOADER', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].map(line).join('') + '\nOff road: ' + off.length + ' · ' + mt(off) + ' MT';
+    const cap = '*' + (opt.title || 'Truck status') + ' · ' + stamp + '*' + ['WAIT_ORDER', 'WAIT_LOADER', 'AT_LOADING', 'LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING'].map(line).join('') + '\nOff road: ' + off.length + ' · ' + mt(off) + ' MT';
     return { el: box, caption: cap };
   }
   async function shareStatusImage(rows, opt) {

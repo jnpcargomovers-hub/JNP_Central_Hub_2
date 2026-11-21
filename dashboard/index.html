@@ -426,7 +426,7 @@
       else status[t.no] = { st: 'wait', last: L, R: R, el: el };
     });
     // ---- real stages from the Truck Status board (estimates stay only for trucks nobody has tapped yet)
-    const ST_LANE = { WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret' };
+    const ST_LANE = { WAIT_LOADER: 'wl', AT_LOADING: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret' };
     const jr = rows(R.trips).map(j => Object.assign(j, { Truck_No: fixNo(j.Truck_No) })).sort((p, q) => (D(p.Order_At) || 0) - (D(q.Order_At) || 0));
     const jOpen = {}, jDone = {}; jr.forEach(j => { if (j.Stage === 'DONE') jDone[j.Truck_No] = j; else jOpen[j.Truck_No] = j; });
     if (liveEst) fleet.concat(market).forEach(t => {
@@ -451,7 +451,7 @@
 
   /** RIGHT NOW comes from the Truck Status board — the very rows the board and its status image use, so the numbers are identical.
    *  (The old estimate from the last loading + usual round trip is used only if the board can't be read.) */
-  const LANE_OF = { WAIT_ORDER: 'wait', WAIT_LOADER: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret', OFF: 'off', UNSET: 'wait' };
+  const LANE_OF = { WAIT_ORDER: 'wait', WAIT_LOADER: 'wl', AT_LOADING: 'wl', LOADED: 'load', UNLOADING: 'unl', UNLOAD_START: 'unl', RETURNING: 'ret', OFF: 'off', UNSET: 'wait' };
   function applyBoard(M, snap) {
     M.live = null; if (!snap || !snap.rows || !M.liveEst) return;
     const now = new Date(), fl = [], mk = [];
@@ -904,7 +904,7 @@
       pT: loaded.filter(x => x.loadSrc === 'portal').length, bdT: loaded.filter(x => x.loadSrc === 'board').length, eT: loaded.filter(x => x.loadSrc === 'est').length, close: close };
     // check against the board (only when the dates end today)
     if (M.live && to === iso(new Date())) {
-      const bw = M.live.rows.filter(b => b.st === 'WAIT_LOADER' && keepTruck(b.no)), lrOf = b => String(((b.trip || b.pend || {}).LR_No) || '').toUpperCase();
+      const bw = M.live.rows.filter(b => (b.st === 'WAIT_LOADER' || b.st === 'AT_LOADING') && keepTruck(b.no)), lrOf = b => String(((b.trip || b.pend || {}).LR_No) || '').toUpperCase();
       const want = {}; close.forEach(x => want[String(x.lr || '').toUpperCase()] = x);
       const have = {}; bw.forEach(b => have[lrOf(b)] = b);
       r.board = { n: bw.length, mt: Math.round(sum(bw, b => n0(b.mt) || n0(b.cap))),
@@ -1277,7 +1277,20 @@
       (rows.length ? '<button type="button" class="shr btn2" data-s="offAll" style="color:#12804A;background:#E8F6EE">📲 Share full off-road list</button>' : '<div class="okline" style="margin-top:10px">All trucks on road ✓</div>') + '</div>' +
       OFF_GROUPS.map(card).join('');
   }
-  function fleetTab() { return fleetStatus() + offRoadGroups() + fleet(); }
+  function fleetTab() { return fleetStatus() + loadPointTimes() + offRoadGroups() + fleet(); }
+  // 20 Nov: "At loading point" on the Truck Status board → order (LR) → reached loading point → loaded
+  function loadPointTimes() {
+    const inR = j => { const d = D(j.Order_At); return d && iso(d) >= RAW.from && iso(d) <= RAW.to && keepTruck(j.Truck_No); };
+    const L = M.jr.filter(j => inR(j) && j.At_Loading_At), toL = L.filter(j => n0(j.To_Loading_Hrs) > 0 || j.To_Loading_Hrs === 0), ld = L.filter(j => j.Loaded_At && n0(j.Loading_Hrs) >= 0 && j.Loading_Hrs !== '');
+    const all = M.jr.filter(inR), avg = (a, k) => a.length ? sum(a, j => n0(j[k])) / a.length : NaN, med = (a, k) => { const v = a.map(j => n0(j[k])).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+    if (!all.length) return '';
+    if (!L.length) return '<div class="sec card muted2" style="font-size:13px">🏭 Loading-point times: from now on, tap <b>At loading point</b> on the Truck Status board when the truck reaches the plant — this shows the time from order to plant and the loading time.</div>';
+    const slow = ld.slice().sort((a, b) => n0(b.Loading_Hrs) - n0(a.Loading_Hrs)).slice(0, 8);
+    return sec('Loading point', L.length + ' of ' + all.length + ' orders tapped "At loading point"',
+      '<div class="kpis">' + kpi('Order → at loading point', isNaN(avg(toL, 'To_Loading_Hrs')) ? '—' : h1(avg(toL, 'To_Loading_Hrs')), 'average · median ' + (isNaN(med(toL, 'To_Loading_Hrs')) ? '—' : h1(med(toL, 'To_Loading_Hrs'))), 'var(--orange)') +
+      kpi('Loading time', isNaN(avg(ld, 'Loading_Hrs')) ? '—' : h1(avg(ld, 'Loading_Hrs')), 'at loading point → loaded · median ' + (isNaN(med(ld, 'Loading_Hrs')) ? '—' : h1(med(ld, 'Loading_Hrs'))), 'var(--blue)') + '</div>' +
+      (slow.length ? tv('Longest loading', table('tLoadPt', [{ k: 'Truck_No', t: 'Truck' }, { k: 'LR_No', t: 'LR' }, { k: 'Destination', t: 'To' }, { k: 'To_Loading_Hrs', t: 'Order → plant', num: 1, f: v => v === '' ? '—' : h1(n0(v)) }, { k: 'Loading_Hrs', t: 'Loading', num: 1, bar: 1, f: v => h1(n0(v)) }], slow, { sort: 'Loading_Hrs' })) : ''));
+  }
 
   function fleet() {
     const keep = x => keepTruck(x.Truck_No), bdsAll = M.bds.filter(keep), bds = bdsAll.filter(b => b.rm), mnt = M.mnt.filter(keep), tex = M.tex.filter(keep), tyr = M.tyr.filter(keep), fl = M.fleet.filter(t => keepTruck(t.no));

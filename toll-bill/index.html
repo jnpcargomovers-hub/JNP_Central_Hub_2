@@ -36,16 +36,18 @@ tr.tot{font-weight:bold;background:#eaf0f8}tr.click{cursor:pointer}tr.click:hove
 </div><div class="actions"><button id="load">टोल बिल बनाओ</button></div>
 <div class="status" id="status">टोल Excel चुनो — फ़ाइल चुनते ही बिल अपने-आप बनेगा।</div></div>
 
-<div class="card" id="pick" hidden><div class="step"><span class="sn">2</span><h2>महीना और गाड़ी चुनो</h2></div><div class="grid">
-<div><label>टोल शीट (महीना)</label><select id="sheet"></select></div>
+<div class="card" id="pick" hidden><div class="step"><span class="sn">2</span><h2>बिल की तारीख़ और गाड़ी चुनो</h2></div><div class="grid">
+<div><label>From · कब से (ट्रिप शुरू)</label><input id="dFrom" type="date"></div>
+<div><label>To · कब तक (ट्रिप शुरू)</label><input id="dTo" type="date"></div>
 <div><label>गाड़ी नंबर</label><select id="veh"></select></div>
-<div><label>ट्रिप शुरू/ख़त्म करने वाला टोल</label><input id="hub" value="Songir"></div>
+<div><label>ट्रिप शुरू/ख़त्म करने वाले टोल (जहाँ से शुरू, वहीं ख़त्म)</label><input id="hub" value="Songir, Nashirabad, Shirpur"></div>
 <div><label>बिना टोल वाले गाँव/शहर (इनके DI छोड़ दो)</label><input id="notoll" value="Buldhana, Buldana, Nandurbar, Shahada, Jalgaon"></div>
 </div>
+<div class="msg i" style="margin-top:12px">बिल में वही ट्रिप आती हैं जो <b>From–To के बीच शुरू</b> हुईं और <b>पूरी</b> हुईं (Songir से शुरू → Songir पर ख़त्म; Nashirabad → Nashirabad; Shirpur → Shirpur)। From से पहले शुरू हुई ट्रिप पिछले बिल में है। जो ट्रिप अभी पूरी नहीं हुई, वह अगले बिल में आएगी। PDF/Excel डाउनलोड करते ही ये ट्रिप “बिल हो गई” दर्ज हो जाती हैं — अगले बिल में दोबारा नहीं आएँगी, और कोई ट्रिप छूटेगी नहीं।</div>
 <details><summary>PDF के ऊपर की जानकारी (हर गाड़ी की PDF में यही आएगी — बदलना हो तभी बदलो)</summary>
 <div class="grid" style="margin-top:10px"><div><label>Title (ऊपर की हेडिंग)</label><input id="f_title"></div><div><label>Customer Name</label><input id="f_cname"></div><div><label>Customer Mobile</label><input id="f_cmobile"></div><div><label>Statement Duration</label><input id="f_duration"></div><div style="grid-column:1/-1"><label>लोगो (LivQuik / BlackBuck का लोगो पहले से लगा है — बदलना हो तो नई फ़ोटो चुनो)</label><input id="f_logo" type="file" accept="image/*"></div></div><div class="actions"><button id="resetHdr" class="sec" type="button">पहले वाली जानकारी पर लौटो</button></div></details>
 <label class="chk"><input id="keepOther" type="checkbox"> बिना DI वाले टोल (जैसे पास-पास के दो Songir) भी PDF/Excel में रखो</label>
-<div class="actions"><button id="show">ट्रिप बनाओ और दिखाओ</button><button id="pdf" class="sec" disabled>PDF डाउनलोड</button><button id="xls" class="sec" disabled>Excel डाउनलोड</button></div></div>
+<div class="actions"><button id="show">ट्रिप बनाओ और दिखाओ</button><button id="xls" class="sec" disabled>📊 Toll Bill Excel</button><button id="pdf" class="sec" disabled>📄 गाड़ी-वार PDF (सभी — ZIP)</button></div></div>
 
 <div class="card" id="res" hidden style="padding:0;overflow:hidden"><div class="step" style="padding:16px 18px 0"><span class="sn">3</span><h2>नतीजा — बाएँ मेन्यू से हर हिस्सा खोलो</h2></div>
 <div class="app"><nav class="side"><div class="brand"><div class="logo">J</div><div><b>JNP CARGO MOVERS</b><small>टोल बिल सहायक</small></div></div><div id="nav"></div></nav><section class="pane" id="pane"></section></div></div>
@@ -54,6 +56,8 @@ tr.tot{font-weight:bold;background:#eaf0f8}tr.click{cursor:pointer}tr.click:hove
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 
 //CORE_START
@@ -80,24 +84,31 @@ function pgiVal(v){const d=dateVal(v);return d?new Date(d.getFullYear(),d.getMon
 // 2) एक ही शुरुआती टोल पर 2 DI हों तो दोनों उसी ट्रिप में
 // 3) Songir से शुरू हुई ट्रिप अगले Songir टोल पर ख़त्म; Songir से शुरू नहीं (जैसे Nashirabad/Jalgaon-साइड) तो अगली ट्रिप शुरू होने तक
 // 4) पहली ट्रिप से पहले का टोल (पिछले महीने का बचा) और आख़िरी ट्रिप के बाद का टोल (अगले महीने का) छोड़ दिया जाता है
-function analyse(tolls,dis,hubRe,lo,hi){
+function analyse(tolls,dis,hubs,lo,hi){
+ const hubOf=p=>{const q=String(p||'').toLowerCase();return hubs.find(h=>q.includes(h))||''};
  const rows=[...tolls].sort((a,b)=>a.date-b.date),H=36e5,warns=[],info=[],removed=[],by=new Map(),groups=[];
  for(const d of dis){
   const i=d.pgi?rows.findIndex(r=>r.date>=d.pgi):-1;
   if(i<0||rows[i].date-d.pgi>48*H){warns.push(`DI ${d.di} (PGI ${fmtD(d.pgi)}) के बाद 48 घंटे में कोई टोल नहीं मिला`);continue}
   if(!by.has(i))by.set(i,[]);by.get(i).push(d)}
+ // several DIs before the same first toll: the toll trip belongs to the LATEST DI; an earlier DI shares it only if it is the same order
+ // (club order: same LR / "A…A" LR, or loaded within 3 h). Otherwise the earlier DI was a local trip without toll (12T deliveries).
+ const lrB=x=>String(x||'').toUpperCase().replace(/\s/g,'').replace(/^(\d)/,'A$1').replace(/^([A-Z]+\d+)[A-Z]$/,'$1');
+ for(const [i,list] of [...by.entries()]){if(list.length<2)continue;list.sort((x,y)=>x.pgi-y.pgi);const last=list[list.length-1];
+  const keep=list.filter(d=>d===last||lrB(d.lr)===lrB(last.lr)||last.pgi-d.pgi<=3*H),drop=list.filter(d=>!keep.includes(d));
+  if(drop.length){by.set(i,keep);drop.forEach(d=>{d.noToll=true;info.push(`DI ${d.di} (PGI ${fmtDT(d.pgi)}): अगले टोल से पहले इसी गाड़ी का नया DI ${last.di} आया — यह बिना टोल की लोकल ट्रिप मानी`)})}}
  const st=[...by.keys()].sort((a,b)=>a-b);
  if(!st.length)return{groups,warns,info,removed,total:0};
  const inW=r=>(!lo||r.date>=lo)&&(!hi||r.date<=hi),lead=rows.slice(0,st[0]).filter(inW);
  if(lead.length){info.push(`शुरू के ${lead.length} टोल (पिछले महीने की ट्रिप का बचा हुआ) छोड़े`);lead.forEach(r=>removed.push({r,why:'पिछले महीने की ट्रिप का बचा टोल'}))}
  st.forEach((si,k)=>{
-  const last=k===st.length-1,limit=last?rows.length:st[k+1],hubStart=hubRe.test(rows[si].plaza);let end=-1;
-  if(hubStart)for(let j=si+1;j<limit;j++)if(hubRe.test(rows[j].plaza)){end=j;break}
+  const last=k===st.length-1,limit=last?rows.length:st[k+1],hub=hubOf(rows[si].plaza),hubStart=!!hub;let end=-1;
+  if(hubStart)for(let j=si+1;j<limit;j++)if(hubOf(rows[j].plaza)===hub){end=j;break}
   const closed=end>=0;if(!closed)end=limit-1;
-  const t={type:'trip',dis:by.get(si),rows:rows.slice(si,end+1),closed,hubStart};groups.push(t);
+  const t={type:'trip',dis:by.get(si),rows:rows.slice(si,end+1),closed,hubStart,hub};groups.push(t);
   const a=t.rows[0].date,b=t.rows[t.rows.length-1].date,tag=t.dis.map(d=>d.di).join(', ');
-  if(hubStart&&!closed)warns.push(`DI ${tag}: ट्रिप में आख़िरी Songir टोल नहीं मिला`);
-  else if(!hubStart&&last)warns.push(`DI ${tag}: ट्रिप Songir से शुरू नहीं हुई, आख़िरी ट्रिप में बचा सारा टोल जोड़ा गया — जाँच लो`);
+  if(hubStart&&!closed){}   // not completed — handled by the bill period (goes to the next bill)
+  else if(!hubStart&&last)warns.push(`DI ${tag}: ट्रिप ${hubs.join(' / ')} किसी से शुरू नहीं हुई, आख़िरी ट्रिप में बचा सारा टोल जोड़ा गया — जाँच लो`);
   else if((b-a)/864e5>6)warns.push(`DI ${tag}: ट्रिप ${Math.round((b-a)/864e5)} दिन की है — जाँच लो`);
   const rest=rows.slice(end+1,limit);
   if(rest.length){if(last){const rw=rest.filter(inW);if(rw.length){info.push(`आख़िरी ट्रिप के बाद ${rw.length} टोल (${fmtDT(rw[0].date)} से — अगले महीने की ट्रिप) छोड़े`);rw.forEach(r=>removed.push({r,why:'अगले महीने की ट्रिप'}))}}
@@ -106,7 +117,7 @@ function analyse(tolls,dis,hubRe,lo,hi){
  return{groups,warns,info,removed,total:groups.reduce((s,g)=>s+g.rows.reduce((q,r)=>q+r.amount,0),0)}}
 //CORE_END
 
-const $=id=>document.getElementById(id);let PR=[],TB={},ALL=[],RES={},cur='';
+const $=id=>document.getElementById(id);let PR=[],TB={},ALL=[],RES={},cur='',BILLED={},BILLS=[],PERIOD=null;
 const st=t=>$('status').textContent=t;
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function book(f){return XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:false})}
@@ -115,7 +126,7 @@ const col=(hd,names)=>{for(const n of names){const i=hd.findIndex(h=>h===n||h.in
 function readPortal(wb){const out=[];for(const n of wb.SheetNames){const t=table(wb.Sheets[n],r=>r.some(c=>c==='dino'));if(!t)continue;
  const c={di:col(t.hd,['dino']),lr:col(t.hd,['lrno']),pgi:col(t.hd,['pgidate']),truck:col(t.hd,['truckno','vehicleno']),party:col(t.hd,['soldtoparty']),dest:col(t.hd,['destination']),qty:col(t.hd,['quantity'])};
  for(const r of t.rows){const di=String(r[c.di]??'').trim(),tr=vehicle(r[c.truck]);if(!/^\d{6,}$/.test(di)||!tr)continue;
-  out.push({di,lr:String(r[c.lr]??''),pgi:pgiVal(r[c.pgi]),truck:tr,party:String(r[c.party]??''),dest:String(r[c.dest]??''),qty:r[c.qty]})}}return out}
+  out.push({di,lr:String(r[c.lr]??''),pgi:pgiVal(r[c.pgi]),pgiRaw:typeof r[c.pgi]==='string'?r[c.pgi]:'',truck:tr,party:String(r[c.party]??''),dest:String(r[c.dest]??''),qty:r[c.qty]})}}return out}
 function readToll(wb){const out={};for(const n of wb.SheetNames){const t=table(wb.Sheets[n],r=>r.some(c=>c.includes('licenceplate')||/^(truck|vehicle)(no|number)$/.test(c)));if(!t)continue;
  const c={d:col(t.hd,['transactiondatetime','transactiondate','transactiontime']),v:col(t.hd,['licenceplateno','truckno','trucknumber','vehicleno','vehiclenumber']),a:col(t.hd,['activity']),p:col(t.hd,['transactiondescription','description','plazaname']),u:col(t.hd,['uniquetransactionid','transactionid']),m:col(t.hd,['amountdr','amount'])};
  out[n]=t.rows.map(r=>({date:dateVal(r[c.d]),truck:vehicle(r[c.v]),activity:c.a>=0?String(r[c.a]??''):'TRIP',plaza:String(r[c.p]??''),txn:String(r[c.u]??'').replace(/\u00a0/g,'').trim(),amount:Math.abs(Number(String(r[c.m]).replace(/[₹,\s]/g,''))||0)})).filter(x=>x.truck&&x.date)}return out}
@@ -123,7 +134,8 @@ function readToll(wb){const out={};for(const n of wb.SheetNames){const t=table(w
 // DIs of the toll period straight from the Hub (Loader entries synced with the UTCL portal + dispatch paste); a Portal file is optional
 const isoD=d=>`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
 async function hubDIs(lo,hi){const out=await JNP.call('tollDIs',{from:isoD(lo),to:isoD(hi)});
- return{rows:out.rows.map(r=>({di:r.di,lr:r.lr,pgi:pgiVal(r.pgi),truck:vehicle(r.truck),party:r.party,dest:r.dest,qty:r.qty})).filter(r=>r.di&&r.truck),fromPortal:out.fromPortal}}
+ BILLED={};(out.billed||[]).forEach(b=>BILLED[b.di]=b);BILLS=out.bills||[];
+ return{rows:out.rows.map(r=>({di:r.di,lr:r.lr,pgi:pgiVal(r.pgi),pgiRaw:r.pgiRaw||'',truck:vehicle(r.truck),party:r.party,dest:r.dest,qty:r.qty})).filter(r=>r.di&&r.truck),fromPortal:out.fromPortal}}
 $('load').onclick=async()=>{try{
  st('फ़ाइलें पढ़ रहा हूँ...');const pf=$('portal').files[0],tf=$('toll').files[0];if(!tf)throw Error('टोल Excel चुनो।');
  TB=readToll(await book(tf));{const seen=new Set();ALL=[];for(const n of Object.keys(TB))for(const r of TB[n]){const k=r.txn+'|'+(+r.date);if(seen.has(k))continue;seen.add(k);ALL.push(r)}}
@@ -133,16 +145,19 @@ $('load').onclick=async()=>{try{
  const lo2=new Date(lo.getFullYear(),lo.getMonth(),1),hub=await hubDIs(new Date(lo2.getTime()-3*864e5),hi);PR=hub.rows;
  if(pf){const own=readPortal(await book(pf)),have=new Set(PR.map(x=>x.di));own.forEach(x=>{if(!have.has(x.di))PR.push(x)})}
  if(!PR.length)throw Error('इन तारीख़ों के DI Hub में नहीं मिले — Portal Sync में dispatch paste हुआ है? या Portal Excel भी चुनो।');
- $('sheet').innerHTML=Object.keys(TB).map(n=>`<option>${safe(n)}</option>`).join('');$('sheet').selectedIndex=Object.keys(TB).length-1;
- $('pick').hidden=false;$('res').hidden=true;loadHdr();onSheet();st(`Hub${pf?' + Portal फ़ाइल':''} से ${PR.length} DI, ${new Set(PR.map(x=>x.truck)).size} गाड़ियाँ | टोल शीट: ${Object.keys(TB).join(', ')} — बिल अपने-आप बना दिया ✔`);
+ {const d=hi.getDate()>=16;const F=d?new Date(hi.getFullYear(),hi.getMonth(),1):new Date(hi.getFullYear(),hi.getMonth()-1,15),T=d?new Date(hi.getFullYear(),hi.getMonth(),15):new Date(hi.getFullYear(),hi.getMonth(),0);
+  if(!$('dFrom').value)$('dFrom').value=isoD(F);if(!$('dTo').value)$('dTo').value=isoD(T)}
+ $('pick').hidden=false;$('res').hidden=true;loadHdr();onSheet();setDuration();st(`Hub${pf?' + Portal फ़ाइल':''} से ${PR.length} DI, ${new Set(PR.map(x=>x.truck)).size} गाड़ियाँ | टोल शीट: ${Object.keys(TB).join(', ')} — बिल अपने-आप बना दिया ✔`);
  $('show').onclick();
 }catch(e){st('Error: '+e.message)}};
 $('toll').onchange=()=>{if($('toll').files[0])$('load').onclick()};
 (async()=>{try{await JNP.requireModule('FIN-06')}catch(e){}})();
 
-function onSheet(){const rows=TB[$('sheet').value],pv=new Set(PR.map(x=>x.truck)),tv=[...new Set(rows.map(x=>x.truck))].filter(x=>pv.has(x)).sort();
- $('veh').innerHTML='<option value="">— सभी गाड़ियाँ —</option>'+tv.map(x=>`<option>${x}</option>`).join('')}
-$('sheet').onchange=onSheet;
+function onSheet(){const pv=new Set(PR.map(x=>x.truck)),cur=$('veh').value,tv=[...new Set(ALL.map(x=>x.truck))].filter(x=>pv.has(x)).sort();
+ $('veh').innerHTML='<option value="">— सभी गाड़ियाँ —</option>'+tv.map(x=>`<option${x===cur?' selected':''}>${x}</option>`).join('')}
+const MONU=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function setDuration(){const f=dateVal($('dFrom').value),t=dateVal($('dTo').value);if(!f||!t)return;const g=d=>`${p2(d.getDate())} ${MONU[d.getMonth()]}-${p2(d.getFullYear()%100)}`;$('f_duration').value=`${g(f)} - ${g(t).replace('-',' ')}`;saveHdr()}
+['dFrom','dTo'].forEach(id=>$(id).addEventListener('change',()=>{setDuration();if(Object.keys(RES).length)$('show').onclick()}));
 $('resetHdr').onclick=()=>{FK.forEach(k=>$('f_'+k).value=DEF[k]);saveHdr()};
 const HK='jnpcHdr2',NK='jnpcNoToll';
 const FK=['title','cname','cmobile','duration'],DEF={title:'FASTAG ACCOUNT SUMMARY',cname:'J N P Cargo Movers Private Limited',cmobile:'8265037455',duration:'01 AUG-26 - 05 SEP 26'};
@@ -153,7 +168,7 @@ function loadHdr(){try{const n=localStorage.getItem(NK);if(n)$('notoll').value=n
 function saveHdr(){try{localStorage.setItem(HK,JSON.stringify(Object.fromEntries(FK.map(k=>[k,$('f_'+k).value]))))}catch(e){}}
 $('f_logo').onchange=()=>{const f=$('f_logo').files[0];if(!f)return;const r=new FileReader();r.onload=()=>{setLogo(r.result);try{localStorage.setItem(HK+'Logo',r.result)}catch(e){}};r.readAsDataURL(f)};
 function xlsHdr(h){return[[h.title],['Customer Name :',h.cname],['Customer Mobile :',h.cmobile],['Statement Duration :',h.duration]]}
-const MAIN={gap:0,head:['Transaction Time','Amount','Description','Truck No','Transaction ID'],styles:{fontSize:8,cellPadding:{top:4,bottom:4,left:3,right:3},halign:'center',valign:'middle',lineColor:[0,0,0],lineWidth:.6,textColor:0,fontStyle:'bold'},headStyles:{fillColor:[219,229,241],textColor:0},cols:{0:{cellWidth:110},1:{cellWidth:66},2:{cellWidth:164},3:{cellWidth:102},4:{cellWidth:93}},alt:{fillColor:[226,226,226]}};
+const MAIN={gap:0,head:['Transaction Time','Amount','Description','Truck No','Transaction ID'],styles:{fontSize:8,cellPadding:{top:4,bottom:4,left:3,right:3},halign:'center',valign:'middle',lineColor:[0,0,0],lineWidth:.6,textColor:0,fontStyle:'bold'},headStyles:{fillColor:[219,229,241],textColor:0},cols:{0:{cellWidth:98},1:{cellWidth:48},2:{cellWidth:205},3:{cellWidth:88},4:{cellWidth:96}},alt:{fillColor:[226,226,226]}};
 const XCOLS=MAIN.head;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const fmtJ=d=>{if(!d)return'';let h=d.getHours();const ap=h>=12?'PM':'AM';h=h%12||12;return `${p2(d.getDate())} ${MON[d.getMonth()]} ${p2(d.getFullYear()%100)} ${p2(h)}:${p2(d.getMinutes())} ${ap}`};
@@ -163,24 +178,58 @@ const _rh=$('resetHdr').onclick;$('resetHdr').onclick=()=>{_rh();try{localStorag
 
 function hdrInfo(){return Object.fromEntries(FK.map(k=>[k,$('f_'+k).value]))}
 
-const TABS=[['di','c1','🧾','DI-वाइज़ कुल टोल'],['trips','c2','🚚','ट्रिप सूची'],['warn','c3','⚠️','चेतावनी / सूचना'],['rem','c4','🗑️','हटाए गए टोल'],['all','c5','🚛','सभी गाड़ियाँ']];
+const TABS=[['bill','c1','📋','बिल शीट (Excel जैसी)'],['di','c1','🧾','DI-वाइज़ कुल टोल'],['trips','c2','🚚','ट्रिप सूची'],['warn','c3','⚠️','चेतावनी / सूचना'],['rem','c4','🗑️','हटाए गए टोल'],['all','c5','🚛','सभी गाड़ियाँ']];
 let tab='di';
 const diTxt=g=>g.dis?g.dis.map(d=>d.di).join(', '):'';
 const diRows=v=>RES[v].groups.filter(g=>g.type==='trip').map(g=>({di:g.dis.map(d=>d.di).join(' + '),start:g.rows[0].date,n:g.rows.length,amt:g.rows.reduce((s,r)=>s+r.amount,0)}));
 const remRows=v=>RES[v].removed.filter(x=>!(x.other&&$('keepOther').checked));
 $('show').onclick=()=>{try{
- saveHdr();const hubRe=new RegExp($('hub').value.trim()||'Songir','i'),sh=TB[$('sheet').value];RES={};
- const ds=sh.map(x=>+x.date),m0=new Date(Math.min(...ds)),mS=new Date(m0.getFullYear(),m0.getMonth(),1),mE=new Date(m0.getFullYear(),m0.getMonth()+1,1);
+ saveHdr();const hubs=$('hub').value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);if(!hubs.length)hubs.push('songir');RES={};
+ const F=dateVal($('dFrom').value),T0=dateVal($('dTo').value);if(!F||!T0)throw Error('From और To तारीख़ चुनो।');if(T0<F)throw Error('To तारीख़ From से पहले है।');
+ const TE=new Date(T0.getFullYear(),T0.getMonth(),T0.getDate(),23,59,59),key=isoD(F)+'_'+isoD(T0),D=864e5,dayOf=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
+ const stEnd=new Date(Math.max(...ALL.map(r=>+r.date)));PERIOD={from:isoD(F),to:isoD(T0),key,F,T0};
  const byV={};ALL.forEach(r=>(byV[r.truck]??=[]).push(r));
  const nt=$('notoll').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),isNT=d=>nt.some(k=>String(d.dest).toLowerCase().includes(k));
  try{localStorage.setItem(NK,$('notoll').value)}catch(e){}
- for(const v of Object.keys(byV)){const all=PR.filter(x=>x.truck===v&&x.pgi&&x.pgi>=mS&&x.pgi<mE),dis=all.filter(d=>!isNT(d)),sk=all.filter(isNT);if(!all.length)continue;
-  const a=analyse(byV[v],dis.map(x=>({...x})),hubRe,new Date(Math.min(...ds)),new Date(Math.max(...ds)));a.nDI=dis.length;
-  sk.forEach(d=>{const t=byV[v].filter(r=>r.date>=d.pgi&&r.date-d.pgi<=48*36e5).sort((x,y)=>x.date-y.date)[0];
-   if(t)a.warns.push(`DI ${d.di} (${d.dest}) बिना-टोल जगह का है, इसलिए छोड़ा — पर PGI के बाद टोल मिला (${fmtDT(t.date)} ${t.plaza.replace('Plaza Name:','')}), जाँच लो`);
-   else a.info.push(`DI ${d.di} (${d.dest}) बिना-टोल जगह का है — छोड़ा`)});
-  RES[v]=a}
- if(!Object.keys(RES).length)throw Error('इस महीने में Portal और टोल दोनों में मिलने वाली कोई गाड़ी/DI नहीं मिली।');
+ // ---- which DIs belong to THIS bill: PGI date From–To (like the dispatch list), plus DIs of an earlier bill that were not complete then
+ const elsewhere=d=>BILLED[d.di]&&BILLED[d.di].key!==key;
+ const carryOK=d=>d.pgi<F&&d.pgi>=new Date(F.getTime()-25*D)&&!BILLED[d.di]&&BILLS.some(b=>b.key!==key&&isoD(d.pgi)>=b.from&&isoD(d.pgi)<=b.to);
+ const inBill=d=>d.pgi&&!elsewhere(d)&&((d.pgi>=F&&d.pgi<=TE)||carryOK(d));
+ const uniqDI={};PR.forEach(d=>{if(d.di&&d.truck&&!uniqDI[d.di])uniqDI[d.di]=d});const P=Object.values(uniqDI);
+ const trucks=[...new Set(P.filter(inBill).map(d=>d.truck))].sort();
+ const before=P.filter(d=>d.pgi&&d.pgi>=F&&d.pgi<=TE&&elsewhere(d));
+ for(const v of trucks){
+  const ctx=P.filter(d=>d.truck===v&&d.pgi&&d.pgi>=new Date(F.getTime()-25*D)&&d.pgi<=new Date(TE.getTime()+5*D)),billSet=new Set(ctx.filter(inBill).map(d=>d.di));
+  const tolls=byV[v]||[],a=tolls.length?analyse(tolls,ctx.filter(d=>!isNT(d)).map(x=>({...x})),hubs,F,TE):{groups:[],warns:[],info:[],removed:[],total:0};
+  const keepG=[],skip=[],tripOf={};a.removed=a.removed.filter(x=>x.r.date>=F&&x.r.date<=TE);
+  a.groups.forEach(g=>{
+   if(g.type!=='trip'){if(g.rows[0].date>=F&&g.rows[0].date<=TE)keepG.push(g);return}
+   const mine=g.dis.filter(d=>billSet.has(d.di)),tag=g.dis.map(d=>d.di).join(', ');
+   let why='';
+   if(!mine.length){const o=g.dis.map(d=>BILLED[d.di]).find(Boolean);why=o?`पहले ही बिल ${o.key.replace('_',' → ')} में है`:g.dis.every(d=>d.pgi>TE)?'To के बाद का DI — अगले बिल में':'From से पहले का DI — पिछले बिल की ट्रिप'}
+   else if(g.hubStart&&!g.closed){
+    // no return toll at the same plaza — but if the truck already loaded its NEXT DI, it obviously came back (return-free road / round-trip pass like Shirpur ₹440)
+    const lastPgi=Math.max(...g.dis.map(d=>+d.pgi)),next=P.find(d=>d.truck===v&&d.pgi&&+d.pgi>lastPgi+3*36e5&&d.pgi<=stEnd);   // only a next DI the statement covers
+    if(next){g.closed=true;g.closedBy=next.di}else why=`अभी पूरी नहीं हुई (${g.hub} पर वापस नहीं आई, टोल ${fmtDT(stEnd)} तक, अगला DI भी नहीं) — अगले बिल में आएगी`}
+   if(why){if(mine.length)skip.push({tag,start:g.rows[0].date,n:g.rows.length,amt:g.rows.reduce((s,r)=>s+r.amount,0),why});
+    g.rows.forEach(r=>{if(r.date>=F&&r.date<=TE)a.removed.push({r,why:'DI '+tag+': '+why})});mine.forEach(d=>tripOf[d.di]='skip');return}
+   if(mine.some(d=>d.pgi<F))a.info.push(`DI ${tag}: पिछले बिल के समय यह ट्रिप पूरी नहीं थी — इस बिल में जोड़ी`);
+   g.dis=mine;keepG.push(g);mine.forEach(d=>tripOf[d.di]=g)});
+  // ---- the bill sheet rows (one per DI, like the dispatch list); a club order's DIs share one trip amount
+  const bill=[];ctx.filter(d=>billSet.has(d.di)).sort((x,y)=>x.pgi-y.pgi).forEach(d=>{const g=tripOf[d.di];if(g==='skip')return;
+   bill.push({...d,g:g||null,why:g?'':isNT(d)?'बिना-टोल जगह':!tolls.length?'इस गाड़ी का FASTag टोल नहीं':'टोल नहीं (लोकल ट्रिप / 48 घंटे में टोल नहीं)'})});
+  a.groups=keepG;a.skip=skip;a.bill=bill;a.total=keepG.filter(g=>g.type==='trip').reduce((s,g)=>s+g.rows.reduce((q,r)=>q+r.amount,0),0);
+  skip.forEach(x=>a.info.push(`DI ${x.tag} (${fmtD(x.start)}, ${x.n} टोल, ₹${amt(x.amt)}): ${x.why}`));
+  a.nDI=bill.length;
+  ctx.filter(d=>billSet.has(d.di)&&isNT(d)).forEach(d=>{const t=tolls.filter(r=>r.date>=d.pgi&&r.date-d.pgi<=48*36e5).sort((x,y)=>x.date-y.date)[0];
+   if(t)a.warns.push(`DI ${d.di} (${d.dest}) बिना-टोल जगह का है, इसलिए टोल नहीं जोड़ा — पर PGI के बाद टोल मिला (${fmtDT(t.date)} ${t.plaza.replace('Plaza Name:','')}), जाँच लो`)});
+  if(bill.length||skip.length)RES[v]=a}
+ if(!Object.keys(RES).length)throw Error('इन तारीख़ों के कोई DI नहीं मिले — Hub में portal sync हुआ है? या Portal Excel भी चुनो।');
+ // Statement Duration on every PDF: From → the last toll in this bill (return tolls after To are part of the trip)
+ {const last=Math.max(+F,...Object.values(RES).flatMap(q=>q.groups.filter(g=>g.type==='trip').map(g=>+g.rows[g.rows.length-1].date)));PERIOD.last=new Date(last);
+  const u=d=>`${p2(d.getDate())}-${MONU[d.getMonth()]}-${p2(d.getFullYear()%100)}`;$('f_duration').value=`${u(F)} TO ${u(PERIOD.last)}`;saveHdr()}
+ {const nt2=Object.values(RES).reduce((s,q)=>s+q.groups.filter(g=>g.type==='trip').length,0),nd=Object.values(RES).reduce((s,q)=>s+q.bill.length,0),ns=Object.values(RES).reduce((s,q)=>s+q.skip.length,0);
+  st(`बिल ${fmtD(F)} – ${fmtD(T0)}: ${nd} DI, ${nt2} टोल-ट्रिप, ${Object.keys(RES).length} गाड़ियाँ`+(ns?` · ${ns} ट्रिप अगले बिल में (अभी पूरी नहीं)`:'')+(before.length?` · ${before.length} DI पहले ही दूसरे बिल में`:'')+` · टोल स्टेटमेंट ${fmtDT(stEnd)} तक`)}
  $('res').hidden=false;$('pdf').disabled=$('xls').disabled=false;tab=$('veh').value&&RES[$('veh').value]?'di':'all';renderApp();$('res').scrollIntoView({behavior:'smooth'});
 }catch(e){st('Error: '+e.message)}};
 $('veh').onchange=()=>{if(Object.keys(RES).length){tab=$('veh').value?(tab==='all'?'di':tab):'all';renderApp()}};
@@ -193,7 +242,11 @@ function renderApp(){
  document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{tab=b.dataset.t;renderApp()});
  let h='';
  if(tab==='all'){
-  h='<h2>सभी गाड़ियाँ</h2><div class="sub">किसी गाड़ी पर क्लिक करो → उसका DI-वाइज़ टोल खुलेगा</div>'+tb(['गाड़ी','ट्रिप','DI','टोल एंट्री','कुल टोल ₹','चेतावनी'],Object.keys(RES).sort().map(k=>{const q=RES[k],T=q.groups.filter(g=>g.type==='trip');return`<tr class="click ${q.warns.length?'w':''}" data-v="${k}"><td>${k}</td><td>${T.length}</td><td>${q.nDI}</td><td>${T.reduce((s,g)=>s+g.rows.length,0)}</td><td class="num">${amt(T.reduce((s,g)=>s+g.rows.reduce((z,x)=>z+x.amount,0),0))}</td><td>${q.warns.length}</td></tr>`}))}
+  h='<h2>सभी गाड़ियाँ</h2><div class="sub">किसी गाड़ी पर क्लिक करो → उसका DI-वाइज़ टोल खुलेगा</div>'+tb(['गाड़ी','DI','टोल-ट्रिप','टोल एंट्री','कुल टोल ₹','चेतावनी','PDF'],Object.keys(RES).sort().map(k=>{const q=RES[k],T=q.groups.filter(g=>g.type==='trip');return`<tr class="click ${q.warns.length?'w':''}" data-v="${k}"><td>${k}</td><td>${q.nDI}</td><td>${T.length}</td><td>${T.reduce((s,g)=>s+g.rows.length,0)}</td><td class="num">${amt(T.reduce((s,g)=>s+g.rows.reduce((z,x)=>z+x.amount,0),0))}</td><td>${q.warns.length}</td><td>${T.length?`<button class="sec" style="padding:5px 9px" data-pdf="${k}">📄 ${k.slice(-4)}.pdf</button>`:'—'}</td></tr>`}))}
+ else if(tab==='bill'){const vs=v?[v]:Object.keys(RES).sort(),rows=[];let tq=0,ta=0;
+  vs.forEach((k,i)=>{billRows(k).forEach(x=>{rows.push(tr([x.di,x.lr,x.pgiTxt,x.party,x.dest,x.truck,x.qty,x.amtTxt],[6,7],x.amount===''?'w':'',[3,4]));tq+=Number(x.qty)||0;ta+=Number(x.amount)||0});if(i<vs.length-1)rows.push('<tr><td colspan="8" style="background:#f8fafc;padding:3px"></td></tr>')});
+  rows.push(tr(['TOTAL','','','','','',amt(Math.round(tq*100)/100),amt(ta)],[6,7],'tot'));
+  h=`<h2>${safe(billTitle())}</h2><div class="sub">Excel में यही आएगा — हर DI एक लाइन, गाड़ी-वार; क्लब ऑर्डर (एक ट्रिप, दो DI) की रकम एक बार (Excel में दोनों लाइनों पर मर्ज)। पीली लाइन = टोल नहीं (कारण होवर करें)।</div>`+tb(['DI No','LR No','PGI Date','Sold To Party','Destination','Truck No','Quantity','AMOUNT'],rows)}
  else if(!v)h='<div class="msg i">ऊपर “गाड़ी नंबर” में एक गाड़ी चुनो, या “सभी गाड़ियाँ” में किसी गाड़ी पर क्लिक करो।</div>';
  else if(tab==='di'){const d=diRows(v),n=d.reduce((s,x)=>s+x.n,0),a=d.reduce((s,x)=>s+x.amt,0);
   h=`<h2>DI-वाइज़ कुल टोल — ${v}</h2><div class="sub">Portal फ़ाइल में भरने के लिए: हर DI पर कितने टोल लगे और कुल रकम</div><div class="kpis"><div class="kpi">कुल DI / ट्रिप<b>${d.length}</b></div><div class="kpi">कुल टोल एंट्री<b>${n}</b></div><div class="kpi">कुल रकम ₹<b>${amt(a)}</b></div></div>`+
@@ -201,7 +254,12 @@ function renderApp(){
  else if(tab==='trips')h=`<h2>ट्रिप सूची — ${v}</h2><div class="sub">हर ट्रिप: कौन सा DI, कहाँ से कहाँ, कितना टोल (लाल = आख़िरी Songir नहीं मिला)</div>`+tb(['DI No','Party','Destination','शुरू','ख़त्म','टोल','₹'],r.groups.filter(g=>g.type==='trip').map(g=>tr([diTxt(g),[...new Set(g.dis.map(d=>d.party))].join(', '),[...new Set(g.dis.map(d=>d.dest))].join(', '),fmtDT(g.rows[0].date),fmtDT(g.rows[g.rows.length-1].date),g.rows.length,amt(g.rows.reduce((s,x)=>s+x.amount,0))],[5,6],g.hubStart&&!g.closed?'bad':'',[1,2])));
  else if(tab==='warn')h=`<h2>चेतावनी / सूचना — ${v}</h2><div class="sub">PDF बनाने से पहले इन्हें एक बार देख लो</div>`+(r.warns.length?r.warns.map(w=>`<div class="msg">⚠ ${safe(w)}</div>`).join(''):'<div class="msg ok">कोई चेतावनी नहीं ✔</div>')+r.info.map(w=>`<div class="msg i">ℹ ${safe(w)}</div>`).join('');
  else if(tab==='rem')h=`<h2>हटाए गए टोल — ${v}</h2><div class="sub">ये टोल बिल/PDF में नहीं आएँगे (और कारण)</div>`+(rm.length?tb(['तारीख-समय','प्लाज़ा','₹','क्यों हटाया'],rm.map(x=>tr([fmtDT(x.r.date),x.r.plaza,amt(x.r.amount),x.why],[2],'w'))):'<div class="msg ok">कोई टोल नहीं हटा</div>');
- $('pane').innerHTML=h;$('pane').querySelectorAll('tr.click').forEach(row=>row.onclick=()=>{$('veh').value=row.dataset.v;tab='di';renderApp()})}
+ $('pane').innerHTML=h;$('pane').querySelectorAll('[data-pdf]').forEach(b=>b.onclick=e=>{e.stopPropagation();savePdf([b.dataset.pdf])});
+ $('pane').querySelectorAll('tr.click').forEach(row=>row.onclick=()=>{$('veh').value=row.dataset.v;tab='di';renderApp()})}
+// one row per DI; a trip with two DIs (club order) shows its amount on the first row only (Excel: merged)
+function billRows(v){const out=[],seen=new Set();(RES[v].bill||[]).forEach(d=>{const g=d.g,a=g?g.rows.reduce((s,r)=>s+r.amount,0):'',first=g&&!seen.has(g);if(g)seen.add(g);
+ out.push({...d,g,pgiTxt:d.pgiRaw||fmtDT(d.pgi,true).replace(/^(\d\d)-(\d\d)-(\d{4})/,'$3-$2-$1'),amount:g?(first?a:null):'',amtTxt:g?(first?amt(a):'↑'):'',span:g?(first?g.dis.length:0):1})});return out}
+function billTitle(){const F=PERIOD.F,T=PERIOD.T0,m=d=>MONU[d.getMonth()];return `${p2(F.getDate())} ${m(F)} TO ${p2(T.getDate())} ${m(T)} ${T.getFullYear()}  TOLL BILL`}
 
 const keep=v=>RES[v].groups.filter(g=>g.type==='trip'||$('keepOther').checked);
 function body(v){const out=[];for(const g of keep(v))g.rows.forEach((r,i)=>{const start=g.type==='trip'&&i===0;
@@ -216,22 +274,51 @@ function hdrBlock(doc,h,y0){
  [['Customer Name',h.cname,98,52],['Customer Mobile',h.cmobile,102,73],['Statement Duration',h.duration,108,95]].forEach(r=>{doc.text(r[0],x+4,y0+r[3]);doc.text(': '+r[1],x+r[2],y0+r[3])});
  return y0+ht}
 
-$('pdf').onclick=()=>{try{
- const vs=$('veh').value?[$('veh').value]:Object.keys(RES).sort(),h=hdrInfo(),{jsPDF}=window.jspdf,doc=new jsPDF({unit:'pt',format:'a4'});
- vs.forEach((v,k)=>{if(k)doc.addPage();const b=body(v),bc=b.map(x=>x.cells),g=(t,o={})=>({content:t,styles:{fontStyle:'bold',...o}});
-  const gy=[192,192,192],hy=hdrBlock(doc,h,28);
-  doc.autoTable({startY:hy+MAIN.gap,margin:{left:27,right:27},theme:'grid',showHead:'firstPage',styles:MAIN.styles,headStyles:MAIN.headStyles,columnStyles:MAIN.cols,alternateRowStyles:MAIN.alt,head:[MAIN.head],body:bc,
-   didDrawCell:d=>{try{if(d.section!=='body')return;const raw=d.row.raw,byRaw=Array.isArray(raw)&&bc.includes(raw),i=byRaw?bc.indexOf(raw):d.row.index;
-    if(i>0&&b[i]&&b[i].start){doc.setLineWidth(1.6);doc.setDrawColor(0);doc.line(d.cell.x,d.cell.y,d.cell.x+d.cell.width,d.cell.y)}}catch(e){}}});
- });
- doc.save(vs.length>1?'JNP_TOLL_ALL.pdf':`${vs[0]}_TOLL.pdf`);
-}catch(e){alert('PDF Error: '+e.message)}};
-$('xls').onclick=()=>{const vs=$('veh').value?[$('veh').value]:Object.keys(RES).sort(),h=hdrInfo(),wb=XLSX.utils.book_new(),T=[],S=[['Vehicle','DI No','LR No','Party','Destination','Qty','Start','End','Toll Entries','Toll Amount']];
- vs.forEach(v=>{T.push(...xlsHdr(h),[],XCOLS);
-  body(v).forEach(x=>T.push(xlsRow([...x.cells])));T.push([],[]);
-  RES[v].groups.filter(g=>g.type==='trip').forEach(g=>{const a=g.rows[0],b=g.rows[g.rows.length-1];S.push([v,diTxt(g),g.dis.map(d=>d.lr).join(', '),g.dis.map(d=>d.party).join(', '),g.dis.map(d=>d.dest).join(', '),g.dis.map(d=>d.qty).join(', '),fmtDT(a.date),fmtDT(b.date),g.rows.length,g.rows.reduce((s,x)=>s+x.amount,0)])})});
- XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(T),'Toll Statement');XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(S),'Trip Summary');
- {const Q=[['Vehicle','DI No','Trip Start','Total Toll Entries','Total Toll Amount']];let tn=0,ta=0;vs.forEach(v=>diRows(v).forEach(x=>{Q.push([v,x.di,fmtD(x.start),x.n,x.amt]);tn+=x.n;ta+=x.amt}));Q.push(['Grand Total','','',tn,ta]);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(Q),'DI Total')}
- XLSX.writeFile(wb,vs.length>1?'JNP_TOLL_ALL.xlsx':`${vs[0]}_TOLL.xlsx`)};
+function pdfDoc(v){const h=hdrInfo(),{jsPDF}=window.jspdf,doc=new jsPDF({unit:'pt',format:'a4'});
+ const b=body(v),bc=b.map(x=>x.cells),hy=hdrBlock(doc,h,28);
+ doc.autoTable({startY:hy+MAIN.gap,margin:{left:27,right:27},theme:'grid',showHead:'firstPage',styles:MAIN.styles,headStyles:MAIN.headStyles,columnStyles:MAIN.cols,alternateRowStyles:MAIN.alt,head:[MAIN.head],body:bc,
+  didDrawCell:d=>{try{if(d.section!=='body')return;const raw=d.row.raw,byRaw=Array.isArray(raw)&&bc.includes(raw),i=byRaw?bc.indexOf(raw):d.row.index;
+   if(i>0&&b[i]&&b[i].start){doc.setLineWidth(1.6);doc.setDrawColor(0);doc.line(d.cell.x,d.cell.y,d.cell.x+d.cell.width,d.cell.y)}}catch(e){}}});
+ return doc}
+async function savePdf(vs){try{
+ vs=vs.filter(v=>RES[v]&&RES[v].groups.some(g=>g.type==='trip'));if(!vs.length)throw Error('इन गाड़ियों की कोई टोल-ट्रिप नहीं।');
+ if(vs.length===1){pdfDoc(vs[0]).save(`${vs[0].slice(-4)}.pdf`)}
+ else{if(typeof JSZip==='undefined')throw Error('ZIP लाइब्रेरी नहीं लोड हुई — इंटरनेट देखो');const z=new JSZip();vs.forEach(v=>z.file(`${v.slice(-4)}.pdf`,pdfDoc(v).output('arraybuffer')));
+  const blob=await z.generateAsync({type:'blob'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`TOLL_PDF_${PERIOD.key}.zip`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+ markBilled(vs);
+}catch(e){alert('PDF Error: '+e.message)}}
+$('pdf').onclick=()=>savePdf($('veh').value?[$('veh').value]:Object.keys(RES).sort());
+// the trips of this bill are written to the Hub register (Ops › Toll_Bills) so the next bill neither repeats nor skips them
+async function markBilled(vs){if(!PERIOD)return;const rows=[];
+ vs.forEach(v=>{if(!RES[v])return;const seen=new Set();(RES[v].bill||[]).forEach(d=>{const g=d.g;
+  if(g){if(seen.has(g))return;seen.add(g);const a=g.rows[0],b=g.rows[g.rows.length-1];rows.push({truck:v,di:g.dis.map(x=>x.di).join(', '),lr:g.dis.map(x=>x.lr).join(', '),start:fmtDT(a.date),end:fmtDT(b.date),n:g.rows.length,amt:g.rows.reduce((s,x)=>s+x.amount,0)})}
+  else rows.push({truck:v,di:d.di,lr:d.lr,start:fmtDT(d.pgi),end:'',n:0,amt:0})})});
+ try{const o=await JNP.call('tollMark',{from:PERIOD.from,to:PERIOD.to,rows});rows.forEach(r=>r.di.split(', ').forEach(d=>BILLED[d]={di:d,key:o.key}));if(!BILLS.some(b=>b.key===o.key))BILLS.push({key:o.key,from:PERIOD.from,to:PERIOD.to});
+  st(`✔ ${o.saved} लाइन बिल ${PERIOD.from} → ${PERIOD.to} में दर्ज — ये DI अगले बिल में दोबारा नहीं आएँगे`)}
+ catch(e){alert('बिल डाउनलोड हो गया, पर Hub में दर्ज नहीं हुआ: '+e.message+'\nइंटरनेट देखकर दोबारा डाउनलोड करो।')}}
+$('xls').onclick=async()=>{try{
+ if(typeof ExcelJS==='undefined')throw Error('Excel लाइब्रेरी नहीं लोड हुई — इंटरनेट देखो');
+ const vs=$('veh').value?[$('veh').value]:Object.keys(RES).sort(),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Sheet1');
+ const thin={style:'thin'},med={style:'medium'},bAll=x=>({top:x,left:x,bottom:x,right:x}),font={name:'Calibri',size:11,bold:true};
+ ws.columns=[13.4,9.4,25.7,47.3,35.1,13.4,10.9,10].map(w=>({width:w}));
+ ws.mergeCells('A1:H1');const t=ws.getCell('A1');t.value=billTitle();t.font={name:'Calibri',size:18,bold:true};t.alignment={horizontal:'center',vertical:'middle'};t.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};t.border=bAll(med);ws.getRow(1).height=28;
+ const hd=ws.addRow(['DI No','LR No','PGI Date','Sold To Party','Destination','Truck No','Quantity','AMOUNT']);hd.eachCell(c=>{c.font=font;c.alignment={horizontal:'center',vertical:'middle'};c.border=bAll(med)});
+ let tq=0,ta=0;
+ vs.forEach((v,i)=>{billRows(v).forEach(x=>{const r=ws.addRow([Number(x.di)||x.di,x.lr,x.pgiTxt,x.party,x.dest,x.truck,Number(x.qty)||x.qty,x.amount===''||x.amount===null?null:x.amount]);
+   r.eachCell({includeEmpty:true},(c,n)=>{if(n>8)return;c.font=font;c.alignment={horizontal:'center',vertical:'middle',wrapText:n===4||n===5};c.border=bAll(thin)});r.getCell(1).numFmt='0';
+   if(x.span>1)ws.mergeCells(r.number,8,r.number+x.span-1,8);if(x.amount===''&&x.why)r.getCell(8).note=x.why;
+   tq+=Number(x.qty)||0;ta+=Number(x.amount)||0});
+  if(i<vs.length-1)ws.addRow([])});
+ const tr2=ws.addRow(['TOTAL','','','','','',Math.round(tq*100)/100,ta]),rn=tr2.number;ws.mergeCells(rn,1,rn,6);
+ tr2.eachCell({includeEmpty:true},(c,n)=>{if(n>8)return;c.font={...font,size:12};c.alignment={horizontal:'center',vertical:'middle'};c.border=bAll(med)});
+ // sheet 2: every toll of every trip (what the PDFs show), for checking
+ const w2=wb.addWorksheet('Trip details');w2.columns=[14,26,20,10,42,22].map(w=>({width:w}));
+ w2.addRow(['Truck No','DI No','Transaction Time','Amount','Description','Transaction ID']).eachCell(c=>{c.font=font;c.border=bAll(thin)});
+ vs.forEach(v=>RES[v].groups.filter(g=>g.type==='trip').forEach(g=>{g.rows.forEach((r,i)=>{const x=w2.addRow([v,i?'':g.dis.map(d=>d.di).join(' + '),fmtJ(r.date),r.amount,r.plaza,r.txn]);x.eachCell({includeEmpty:true},(c,n)=>{if(n>6)return;c.border={...bAll(thin),top:i?thin:med}})});
+  const s2=w2.addRow(['','Trip total','',g.rows.reduce((s,r)=>s+r.amount,0),g.closed?`${g.hub||''} → ${g.hub||''}`:'(not closed)','']);s2.font={bold:true}}));
+ const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);a.download=(vs.length>1?billTitle():`${vs[0]} ${billTitle()}`)+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+ markBilled(vs);
+}catch(e){alert('Excel Error: '+e.message)}};
 
 </script></body></html>
