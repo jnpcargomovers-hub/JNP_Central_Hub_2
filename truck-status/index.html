@@ -99,7 +99,7 @@
       const L = S(k);
       const lateA = a.filter(late), kb = a.filter(r => r.cargo === 'BULK').length;
       return '<div class="lane" style="--c:' + L.c + '"><h3>' + L.icon + ' ' + E(L.en) + '<span class="n">' + a.length + ' · ' + mtOf(a) + ' MT</span><small>' + L.hi + ' · Bulk ' + kb + ' · Bag ' + (a.length - kb) + '</small></h3>' +
-        (DATA.canMove && (k === 'UNLOADING' || (k === 'UNLOAD_START' && !show.some(r => r.st === 'UNLOADING'))) ? '<button type="button" class="mini red grp" data-g="UNLOAD_ALL">📣 Unloading message — ' + unloadRows().length + ' trucks · ' + mtOf(unloadRows()) + ' MT at destination</button>' :
+        (DATA.canMove && (k === 'UNLOADING' || (k === 'UNLOAD_START' && !show.some(r => r.st === 'UNLOADING'))) ? unloadBtns() :
           DATA.canMove && lateA.length > 1 ? '<button type="button" class="mini red grp" data-g="' + k + '">📣 Escalate all ' + lateA.length + ' (' + mtOf(lateA) + ' MT) waiting over ' + escH() + ' h</button>' : '') + a.map(rowHtml).join('') + '</div>';
     }).join('') || (filt === 'OFF' ? '' : '<div class="card muted">No trucks here.</div>');
     // off road: only a size-wise summary, at the bottom
@@ -160,7 +160,7 @@
   $('lanes').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); });
   document.addEventListener('focusout', () => setTimeout(() => { if (redrawLater && !typing()) draw(); }, 300));
   $('lanes').addEventListener('click', e => {
-    const g = e.target.closest('button.grp'); if (g) { const k = g.dataset.g; groupSheet(k, ROWS.filter(r => r.st === k && late(r) && (cargoF === 'All' || r.cargo === cargoF))); return; }
+    const g = e.target.closest('button.grp'); if (g) { const k = g.dataset.g; if (k === 'UNLOAD_ALL') { groupSheet(k, null, g.dataset.cg); return; } groupSheet(k, ROWS.filter(r => r.st === k && late(r) && (cargoF === 'All' || r.cargo === cargoF))); return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const { r } = rowOf(b); if (!r) return;
     if (b.dataset.a === 'esc') escSheet(r); else if (b.dataset.a === 'open') detail(r);
   });
@@ -210,7 +210,7 @@
       close(); msg.innerHTML = '<span class="okline">✓ Saved · ' + E(out && out.kept ? 'depot time saved · LR ' + out.kept + ' still waiting for loader' : out && out.reopened ? LABEL[to] + ' · LR ' + out.reopened + ' reopened' : LABEL[to]) + '</span>'; setTimeout(() => load(), 500);
     }).then(() => { const er = $('sErr'); if (er && !er.classList.contains('hidden') && /Loader entry|लोडर/.test(er.textContent)) er.innerHTML += ' <a href="../loader/?truck=' + encodeURIComponent(r.no) + '">📝 Loader entry ›</a>'; });
   }
-  window.__tb = { rows: () => ROWS, data: () => DATA, step: (r, to) => stepSheet(r, to, document.createElement('div')), unloadText: a => unloadText(a), unloadRows: () => unloadRows() };   // used by the test scripts
+  window.__tb = { rows: () => ROWS, data: () => DATA, step: (r, to) => stepSheet(r, to, document.createElement('div')), unloadText: a => unloadText(a), unloadRows: c => unloadRows(c) };   // used by the test scripts
   // ---------- manual change (21 Nov): the board has no open order for this truck — the team picks the LR and writes what happened
   function manualSheet(r, to, msg, recent) {
     const now = new Date();
@@ -266,7 +266,10 @@
       '\n\nRequesting your support to please ' + c[1].replace(' it ', ' them ').replace('an order', 'orders') + '.\n\nRegards,\nJNP Cargo Movers';
   }
   // 21 Nov: one message for ALL trucks at destination, grouped by hours waiting (>30, >20, >12, others) — destination & party from the portal
-  const unloadRows = () => ROWS.filter(r => r.st === 'UNLOADING' || r.st === 'UNLOAD_START');
+  // 21 Nov: bulk and bag unloading messages go to different groups, so each is built separately
+  const CG = { BULK: '🔵 Bulk', BAG: '🟠 Bag' };
+  const unloadRows = c => ROWS.filter(r => (r.st === 'UNLOADING' || r.st === 'UNLOAD_START') && (!c || r.cargo === c));
+  const unloadBtns = () => (cargoF === 'All' ? ['BULK', 'BAG'] : [cargoF]).map(c => { const a = unloadRows(c); return a.length ? '<button type="button" class="mini red grp" data-g="UNLOAD_ALL" data-cg="' + c + '">📣 ' + CG[c] + ' unloading message — ' + a.length + ' trucks · ' + mtOf(a) + ' MT</button>' : ''; }).join('');
   const tc = x => String(x || '').toLowerCase().replace(/\b([a-z])/g, m => m.toUpperCase());
   const destTxt = d => tc(String(d || '').replace(/_\d+-\d+$/, '').replace(/\s*-\s*$/, '').trim()) || '—';
   const partyTxt = p => { const w = String(p || '').trim().split(/\s+/).filter(Boolean), o = []; for (const x of w) { o.push(x); if (x.length >= 4) break; } return tc(o.join(' ')) || '—'; };
@@ -287,9 +290,9 @@
       '<button class="btn red" type="button" id="eGo">📲 Share on WhatsApp</button>');
     $('eGo').onclick = async () => { const txt = $('eT').value; try { await JNP.call('tripEscalate', { trucks: [r.no], stage: r.st, text: txt }); } catch (e) { } JNP.whatsapp(txt); close(); load(); };
   }
-  function groupSheet(k, a) {
-    if (k === 'UNLOAD_ALL') { a = unloadRows(); k = 'UNLOADING'; if (!a.length) return;
-      sheet('<h3>📣 Unloading message · ' + a.length + ' trucks</h3><div class="sub">' + mtOf(a) + ' MT at destination · grouped by hours waiting</div>' +
+  function groupSheet(k, a, cg) {
+    if (k === 'UNLOAD_ALL') { cg = cg || (cargoF === 'All' ? 'BULK' : cargoF); a = unloadRows(cg); k = 'UNLOADING'; if (!a.length) return;
+      sheet('<h3>📣 ' + CG[cg] + ' unloading message · ' + a.length + ' trucks</h3><div class="sub">' + mtOf(a) + ' MT at destination · grouped by hours waiting</div>' +
         '<div class="field"><label>Message (you can change it)</label><textarea id="eT" class="input" rows="16">' + E(unloadText(a)) + '</textarea></div>' +
         '<button class="btn red" type="button" id="eGo">📲 Share on WhatsApp</button>');
       $('eGo').onclick = async () => { const txt = $('eT').value; try { await JNP.call('tripEscalate', { trucks: a.filter(r => r.hrs > 12).map(r => r.no), stage: 'UNLOADING', text: txt }); } catch (e) { } JNP.whatsapp(txt); close(); load(); };
