@@ -72,7 +72,13 @@
       JNP.toast(o.updated + ' LRs updated · ' + o.corrected + ' corrected (' + (o.renamed || 0) + ' LR changed) · ' + o.moved + ' trucks moved on the board', 'ok', 6000); await load();
     });
     const sec = (title, sub, open, body) => '<details class="card"' + (open ? ' open' : '') + '><summary>' + title + ' <small>' + sub + '</small></summary>' + body + '</details>';
+    const fl = { DI_No: 'DI', Actual_Qty_MT: 'Actual MT', Party_Contact: 'Party phone', PGI_At: 'PGI', EPOD_Status: 'EPOD', EPOD_At: 'EPOD date', Freight_Amount: 'Freight', Final_Freight: 'Final freight', Bill_No: 'Bill no.', Unloading_Terms: 'Terms' };
     $('lists').innerHTML =
+      ((P.updates || []).length ? sec('🔄 What Apply will fill', (P.updates || []).length + ' LRs · Loader entry now → portal value', false,
+        '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Field</th><th>Now</th><th>Portal</th></tr>' +
+        P.updates.map(x => { const d = x.diff && x.diff.length ? x.diff : [['', x.first ? 'first match' : '—', '']];
+          return d.map((f, i) => '<tr><td class="n">' + (i ? '' : E(x.lr) + '<br><small class="hint">' + E(String(x.truck || '').slice(-4)) + '</small>') + '</td><td>' + E(fl[f[0]] || f[0].replace(/_/g, ' ')) + '</td><td class="old">' + E(f[1] || '—') + '</td><td class="new">' + E(f[2] || '') + '</td></tr>').join(''); }).join('') +
+        '</table></div>') : '') +
       (P.corrections.length ? sec('✏️ Corrections · सुधार', P.corrections.length + ' Loader entries differ from the portal', true,
         '<div class="scroll"><table class="tbl"><tr><th>LR</th><th>Field</th><th>Loader</th><th>Portal (actual)</th></tr>' +
         P.corrections.map(x => x.fix.map((f, i) => '<tr><td class="n">' + (i ? '' : E(x.lr)) + '</td><td>' + E(lbl[f[0]] || f[0]) + '</td><td class="old">' + E(f[1] || '—') + '</td><td class="new">' + E(f[2]) + '</td></tr>').join('') +
