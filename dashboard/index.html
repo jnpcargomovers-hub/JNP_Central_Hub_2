@@ -288,7 +288,7 @@
   ['change', 'input', 'blur'].forEach(ev => { $('from').addEventListener(ev, onDate); $('to').addEventListener(ev, onDate); });
   $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
 
-  const TABS = [{ id: 'finance', i: '💰', label: 'Financial' }, { id: 'overview', i: '📊', label: 'Operations' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }];
+  const TABS = [{ id: 'finance', i: '💰', label: 'Financial' }, { id: 'overview', i: '📊', label: 'Operations' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }, { id: 'loading', i: '⏱️', label: 'Loading' }];
   let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
   if (!TABS.some(t => t.id === tab)) tab = 'overview';
   const allowed = () => (RAW && RAW.sections) || TABS.map(t => t.id);
@@ -350,7 +350,7 @@
         rev: fr || n0(r.Rate) * mt, consignee: r.Party || (b ? b.Consignee : ''), unload: un, tat: un && at ? hrs(at, un) : NaN, delivered: i ? n0(i.Qty_Delivered_MT) : NaN, shortKg: i ? n0(i.Shortage_KG) : 0,
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By, hasDoc: !!(b || i), bAt: b && b.Created_At ? D(b.Created_At) : null,
         pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null,
-        dRate: n0(r.Diesel_Rate), defL: n0(r.DEF_Ltr), defRate: n0(r.DEF_Rate) };
+        dRate: n0(r.Diesel_Rate), defL: n0(r.DEF_Ltr), defRate: n0(r.DEF_Rate), di: String(r.DI_No || '') };
     }).sort((a, b) => a.at - b.at);
     // Gross profit per trip = revenue − diesel ₹ − DEF ₹ − trip advance (extra diesel is added at truck / fleet level)
     all.forEach(x => {
@@ -378,6 +378,7 @@
     // listed apart (notOnPortal) and are NOT added to trips / MT / revenue.
     const trips = all.filter(x => x.onPortal && x.dday >= R.from && x.dday <= R.to);
     const notOnPortal = all.filter(x => !x.onPortal && x.day >= R.from && x.day <= R.to);
+    const orders = all.filter(x => x.day >= R.from && x.day <= R.to);   // 23 Nov: orders received = Loader entries on their order day (MT at truck size)
     const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
     // fleet
     const loadedNow = new Set(all.filter(x => x.day >= R.from && x.day <= R.to).map(x => x.truck));
@@ -443,10 +444,10 @@
       // no portal / board time, but the trip clearly went (builty or delivery made, a later loading, or the journey moved on) → builty time, else its order day
       const went = !x.pgi && !jl && (x.hasDoc || x.hasNext || (j && ['LOADED', 'UNLOADING', 'UNLOAD_START', 'RETURNING', 'DONE'].indexOf(j.Stage) >= 0));
       x.loadAt = x.pgi || jl || (went ? (x.bAt && !isNaN(x.bAt) ? x.bAt : x.at) : null); x.loadSrc = x.pgi ? 'portal' : jl ? 'board' : went ? 'est' : ''; x.loadDay = x.loadAt ? iso(x.loadAt) : '';
-      x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; });
+      x.loadMt = x.act || (j && n0(j.Qty_MT)) || x.mt; x.orderRev = x.frPortal ? x.rev : x.rate * x.bookMt; });
     const portalInfo = { lastPgi: all.reduce((m, x) => x.pgi && (!m || x.pgi > m) ? x.pgi : m, null), lastSync: all.reduce((m, x) => x.synced && !isNaN(x.synced) && (!m || x.synced > m) ? x.synced : m, null) };
     const mktActive = market.filter(t => ['wl', 'load', 'unl', 'ret'].indexOf((status[t.no] || {}).st) >= 0);
-    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor, extraAmt, rateAt, notOnPortal };
+    return { R, from, to, end, days, portalInfo, truckM, destM, trips, all, byTruck, byDriver, lastTrip, fleet, market, mktActive, jr, bds, mnt, tex, tyr, opsExp: rows(R.opsExp), hand: rows(R.handover), status, asOf, isNow, liveEst, rotDest, rotAll, rotFor, extraAmt, rateAt, notOnPortal, orders };
   }
 
   /** RIGHT NOW comes from the Truck Status board — the very rows the board and its status image use, so the numbers are identical.
@@ -517,7 +518,7 @@
     for (let v = 0; v <= top; v += step) { const y = P.t + ih - ih * v / top; g += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--grid)"/><text x="' + (P.l - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="#5D6877">' + (top >= 1e5 ? fmtShort(v) : fmt(v)) + '</text>'; }
     let bars = '', segTxt = '', totTxt = '';
     // numbers on the bars: each part inside its segment (when it fits), the total above the bar
-    const lab = v => top >= 1e5 ? (v / 1e5 < 10 ? (v / 1e5).toFixed(1) : String(Math.round(v / 1e5))) : fmt(v);   // ₹ charts: numbers in lakh
+    const lab = v => top >= 1e5 ? (v / 1e5 < 10 ? (v / 1e5).toFixed(1) : String(Math.round(v / 1e5))) : fmt(v, opt.dec);   // ₹ charts: numbers in lakh
     cats.forEach((c, i) => {
       let y0 = P.t + ih; const x = P.l + gap * i + (gap - bw) / 2;
       series.forEach((s, k) => {
@@ -538,7 +539,7 @@
       el.addEventListener('mousemove', e => {
         const r = e.target.closest('.hit'); if (!r) { tip.classList.add('hidden'); return; }
         const i = Number(r.dataset.i), bb = svg.getBoundingClientRect(), sc = bb.width / W;
-        tip.innerHTML = '<b>' + E(opt.label ? opt.label(cats[i]) : cats[i]) + ' · ' + fmt(tot[i]) + ' ' + (opt.unit || '') + '</b>' + series.map(s => '<span style="display:block"><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + s.color + ';margin-right:5px"></i>' + E(s.name) + ': ' + fmt(s.values[i]) + '</span>').join('');
+        tip.innerHTML = '<b>' + E(opt.label ? opt.label(cats[i]) : cats[i]) + ' · ' + fmt(tot[i], opt.dec) + ' ' + (opt.unit || '') + '</b>' + series.map(s => '<span style="display:block"><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + s.color + ';margin-right:5px"></i>' + E(s.name) + ': ' + fmt(s.values[i], opt.dec) + '</span>').join('');
         tip.style.left = ((P.l + gap * i + gap / 2) * sc) + 'px'; tip.style.top = ((P.t + ih - ih * tot[i] / top) * sc) + 'px'; tip.classList.remove('hidden');
       });
       el.addEventListener('mouseleave', () => tip.classList.add('hidden'));
@@ -607,9 +608,9 @@
     $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
     const T = M.trips.filter(keepT);
     SHARE = {}; SHN = 0;
-    const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab }[tab] || overview;
+    const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab, loading: loadingTab }[tab] || overview;
     const np = (M.notOnPortal || []).filter(keepT), pi = M.portalInfo || {}, tm = d => d ? JNP.dmy(iso(d)).slice(0, 5) + ' ' + String(d.getHours()).padStart(2, '0') + ':00' : '';
-    const band = '<div class="card" style="padding:10px 14px;margin-bottom:10px;font-size:13px;border-left:4px solid var(--blue)">📋 Trips, MT and revenue = <b>UTCL portal, by PGI date</b>' +
+    const band = tab === 'loading' ? '' : '<div class="card" style="padding:10px 14px;margin-bottom:10px;font-size:13px;border-left:4px solid var(--blue)">📋 Trips, MT and revenue = <b>UTCL portal, by PGI date</b> · <b>Orders received</b> (Loader entries, by order day) shown in their own charts' +
       (pi.lastPgi ? ' · portal has loadings till <b>' + tm(pi.lastPgi) + '</b>' : ' · portal not synced yet') +
       (np.length ? '<br><span style="color:var(--orange)">⏳ <b>' + np.length + ' truck' + (np.length > 1 ? 's' : '') + '</b> loaded in these dates, not on the portal yet (' + fmt(sum(np, x => x.cap || x.mt), 0) + ' MT at truck size) — not counted above: ' +
         np.slice(0, 12).map(x => E(x.lr) + ' ' + E(String(x.truck).slice(-4))).join(', ') + (np.length > 12 ? ' …' : '') + '</span>' : '') + '</div>';
@@ -950,7 +951,7 @@
     const bds = M.bds.filter(b => keepTruck(b.Truck_No) && b.rm), downH = sum(bds, b => b.inHrs);
     const offDrv = M.bds.filter(b => keepTruck(b.Truck_No) && b.Off_Road_Type === 'Driver not available');
     const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
-    const by = (lt) => dates.map(d => T.filter(x => x.day === d && x.load === lt).length);
+    const by = (lt) => dates.map(d => T.filter(x => x.dday === d && x.load === lt).length), O = (M.orders || []).filter(keepT);
     const lo = liveOff(), u = utilSum(utilRows(T));
     const perf = T.length ? sec('Performance', 'top by trips · tap any name for its profile', '<div class="cgrid3">' + ['truck', 'driver', 'dest'].map(dm =>
         '<div class="qs" data-d="' + dm + '"><div class="muted2" style="margin-bottom:6px;font-weight:700">' + DIM[dm].l + 's</div>' + hbar(metItems(T, dm, 'trips'), { top: 5, click: 1 }) + '</div>').join('') + '</div>' +
@@ -961,9 +962,9 @@
     SHARE.kp0 = { title: 'Headline numbers', fn: 'kpis' };
     return '<div class="card repbar"><div><b>📋 Operations report</b><small>Trips · tons · rotation · utilisation · off-road</small></div><button type="button" id="opsRep">📷 Share report</button></div>' +
       '<div class="cgrid">' +
-      sec('Trips', 'Bulk vs Bag · Own vs Market', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
-      sec('MT lifted', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + '<div class="muted2" style="margin-top:6px">' + (a.portal ? '✓ ' + a.portal + ' of ' + a.trips + ' trips confirmed on UTCL portal' : 'Not yet synced with UTCL portal') + (a.est ? ' · ' + a.est + ' trips use truck capacity (no portal / builty yet)' : '') + '</div>', () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
-      '</div>' +
+      sec('Trips · portal dispatch', 'Bulk vs Bag · Own vs Market · PGI date', splitCharts(T, () => 1, v => fmt(v), 'trips'), () => splitText(T, () => 1, v => fmt(v))) +
+      sec('MT lifted · portal dispatch', 'Bulk vs Bag · Own vs Market · actual MT', splitCharts(T, x => x.mt, v => fmt(v, 0), 'MT') + '<div class="muted2" style="margin-top:6px">' + (a.portal ? '✓ ' + a.portal + ' of ' + a.trips + ' trips confirmed on UTCL portal' : 'Not yet synced with UTCL portal') + (a.est ? ' · ' + a.est + ' trips use truck capacity (no portal / builty yet)' : '') + '</div>', () => splitText(T, x => x.mt, v => fmt(v, 0) + ' MT')) +
+      '</div>' + ordersVsPortal(T) +
       bookDispCard() +
       '<div class="kwrap"><div class="khead"><b>Headline numbers</b><button type="button" class="shr" data-s="kp0">📲 Share</button></div><div class="kpis" id="kp">' +
       kpi('Fleet utilisation', pct(u.u), u.trips + ' of ' + fmt(u.target, 0) + ' expected trips', 'var(--navy)') +
@@ -978,12 +979,133 @@
         const top = Object.keys(c).sort((p, q) => c[q] - c[p]), mx = top.length ? c[top[0]] : 0, worst = top.filter(t => c[t] === mx);
         return kpi('Breakdowns', fmt(bb.length), bb.length ? 'most: <b>' + worst.slice(0, 3).map(t => E(t.slice(-4))).join(', ') + '</b> (' + mx + (worst.length > 1 ? ' each' : '') + ')' + (top.length > 1 ? ' · ' + top.length + ' trucks had one' : '') : 'none in these dates', 'var(--red)'); })() +
       '</div></div>' + fleetStatus() + pendingLRCard() + utilSection(T) + rotationSection(T) + perf +
-      sec('Trips per day', 'Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Trips per day' })) +
+      '<div class="cgrid">' +
+      sec('Portal dispatch per day', 'trips by PGI date · Bulk vs Bag', columns('cDaily', dates, [{ name: 'Bulk', color: 'var(--s1)', values: by('BULK') }, { name: 'Bag', color: 'var(--s2)', values: by('BAG') }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Portal dispatch per day' })) +
+      sec('Orders received per day', 'Loader entries by order day · Bulk vs Bag', columns('cOrd', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => O.filter(x => x.day === d && x.load === 'BULK').length) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => O.filter(x => x.day === d && x.load === 'BAG').length) }], { unit: 'trips', label: d => d.slice(8, 10) + '/' + d.slice(5, 7), title: 'Orders received per day' })) +
+      sec('Portal MT per day', 'actual MT by PGI date', columns('cDailyMt', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.dday === d && x.load === 'BULK'), x => x.mt)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.dday === d && x.load === 'BAG'), x => x.mt)) }], { unit: 'MT', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      sec('Orders MT per day', 'at truck size, by order day', columns('cOrdMt', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(O.filter(x => x.day === d && x.load === 'BULK'), x => x.bookMt)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(O.filter(x => x.day === d && x.load === 'BAG'), x => x.bookMt)) }], { unit: 'MT', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      '</div>' +
       '<div class="cgrid">' + sec('Trips by size', 'Bulk vs Bag in each size', stackByClass(T, () => 1, v => fmt(v))) + sec('MT by size', 'Bulk vs Bag in each size', stackByClass(T, x => x.mt, v => fmt(v, 0) + ' MT')) + '</div>' +
       '';
   }
+  // ---------- 23 Nov: ORDERS RECEIVED (Loader entries, order day, truck size) next to PORTAL DISPATCH (UTCL, PGI date, actual MT)
+  function ordersVsPortal(T) {
+    const O = (M.orders || []).filter(keepT), oMt = sum(O, x => x.bookMt), pMt = sum(T, x => x.mt), conv = O.filter(x => x.onPortal).length;
+    SHARE.kpOP = { title: 'Orders received vs portal dispatch', fn: () => 'Orders received: ' + O.length + ' · ' + fmt(oMt, 0) + ' MT (truck size)\nPortal dispatch: ' + T.length + ' · ' + fmt(pMt, 0) + ' MT (actual)\nOrders already on the portal: ' + conv + ' of ' + O.length };
+    return '<div class="kwrap"><div class="khead"><b>Orders received vs portal dispatch</b><button type="button" class="shr" data-s="kpOP">📲 Share</button></div><div class="kpis">' +
+      kpi('Orders received', fmt(O.length) + ' trips', fmt(oMt, 0) + ' MT at truck size · Loader entries by order day', 'var(--blue)') +
+      kpi('Portal dispatch', fmt(T.length) + ' trips', fmt(pMt, 0) + ' MT actual · UTCL by PGI date', 'var(--navy)') +
+      kpi('Orders on portal', O.length ? pct(conv / O.length) : '—', conv + ' of ' + O.length + ' orders of these dates already dispatched', 'var(--ok)') +
+      kpi('Difference', fmt(O.length - T.length) + ' trips', fmt(oMt - pMt, 0) + ' MT · orders − portal (timing + size vs actual)', 'var(--orange)') +
+      '</div></div>' +
+      '<div class="cgrid">' + sec('Trips · orders received', 'Bulk vs Bag · Own vs Market · order day', splitCharts(O, () => 1, v => fmt(v), 'orders'), () => splitText(O, () => 1, v => fmt(v))) +
+      sec('MT · orders received', 'at truck size', splitCharts(O, x => x.bookMt, v => fmt(v, 0), 'MT'), () => splitText(O, x => x.bookMt, v => fmt(v, 0) + ' MT')) + '</div>';
+  }
+  function ordersVsPortalMoney(T) {
+    const O = (M.orders || []).filter(keepT), ov = sum(O, x => x.orderRev), pv = sum(T, x => x.rev);
+    SHARE.kpOPm = { title: 'Order value vs portal revenue', fn: 'kpis' };
+    return '<div class="kwrap"><div class="khead"><b>Order value vs portal revenue</b><button type="button" class="shr" data-s="kpOPm">📲 Share</button></div><div class="kpis">' +
+      kpi('Orders received value', inr(ov), O.length + ' orders · loader rate × truck size (portal freight where known)', 'var(--blue)') +
+      kpi('Portal revenue', inr(pv), T.length + ' trips · UTCL freight, by PGI date', 'var(--navy)') +
+      kpi('Difference', inr(ov - pv), 'orders − portal', 'var(--orange)') + '</div></div>';
+  }
+
+  // ---------- 23 Nov: LOADING ANALYSIS — UTCL PMR report (yard in → gate in → loading → gate out), kept for good in PMR_History
+  const hm = h => isNaN(h) || h === null ? '—' : (h < 0 ? '-' : '') + Math.floor(Math.abs(h)) + 'h ' + String(Math.round((Math.abs(h) % 1) * 60)).padStart(2, '0') + 'm';
+  function loadTargets() {
+    const t = { order: 1, queue: 1, driver: 0.5, plant: 2 };
+    String((RAW.settings || {}).Loading_Targets || '').split(',').forEach(p => { const m = p.match(/(\w+)\s*=\s*([\d.]+)/); if (!m) return; const k = { order: 'order', di: 'order', queue: 'queue', driver: 'driver', plant: 'plant' }[m[1].toLowerCase()]; if (k) t[k] = Number(m[2]); });
+    return t;
+  }
+  /** one row per PMR trip. Times are UTCL's: yard in → DI (order) → ready queue (called in) → gate in → loading in → loading out → gate out.
+   *  Our Loader entry is made at the plant (matches the DI), so it gives the driver and LR, not an earlier order time. */
+  function pmrTrips() {
+    const P = rows(RAW.pmr), TG = loadTargets(), lBy = {}, jBy = {};
+    M.all.forEach(x => (lBy[x.truck] = lBy[x.truck] || []).push(x));
+    (M.jr || []).forEach(j => (jBy[j.Truck_No] = jBy[j.Truck_No] || []).push(j));
+    const ok = (a, b, max) => { if (!a || !b) return NaN; const h = hrs(a, b); return h >= 0 && h < (max || 48) ? h : (h < 0 && h > -0.5 ? 0 : NaN); };
+    return P.map(p => {
+      const no = JNP.normTruck(p.Truck_No), t = M.truckM[no] || {};
+      const yi = D(p.YardIn), di = D(p.Delivery_At), rq = D(p.Ready_Queue_At), gi = D(p.GateIn), li = D(p.LoadingIn), lo = D(p.LoadingOut), go = D(p.GateOut), ref = yi || gi;
+      const L = (lBy[no] || []).find(x => x.di && p.Delivery_No && x.di.indexOf(p.Delivery_No) >= 0) || (lBy[no] || []).filter(x => x.at && ref && Math.abs(x.at - ref) < 6 * 36e5).pop();
+      const j = (jBy[no] || []).filter(j => { const o = D(j.Order_At); return o && ref && Math.abs(o - ref) < 12 * 36e5; }).pop();
+      const r = { trip: p.Trip_ID, di: p.Delivery_No, truck: no, cls: classOf(t.cap), load: (t.cargo || (/^(LC|BULK)/i.test(p.Pack_Type) ? 'BULK' : 'BAG')) === 'BULK' ? 'BULK' : 'BAG',
+        driver: (L && L.driver) || (j && j.Driver_Name) || '', lr: (L && L.lr) || (j && j.LR_No) || '', dest: p.Destination, loader: p.Loader, mt: n0(p.Net_Weight) || n0(p.Qty),
+        yi: yi, dI: di, rq: rq, gi: gi, li: li, lo: lo, go: go, day: ref ? iso(ref) : '',
+        orderW: ok(yi, di), queue: ok(di && yi && di < yi ? yi : di, rq), drv: ok(rq, gi, 12), yard: ok(yi, gi),
+        inLoad: ok(gi, li, 24), loadH: ok(li, lo, 24), exit: ok(lo, go, 24), plant: ok(gi, go, 24), total: ok(yi, go, 72) };
+      r.wOrder = isNaN(r.orderW) ? 0 : Math.max(0, r.orderW - TG.order); r.wQueue = isNaN(r.queue) ? 0 : Math.max(0, r.queue - TG.queue);
+      r.wDrv = isNaN(r.drv) ? 0 : Math.max(0, r.drv - TG.driver); r.wPlant = isNaN(r.plant) ? 0 : Math.max(0, r.plant - TG.plant);
+      r.waste = r.wOrder + r.wQueue + r.wDrv + r.wPlant;
+      return r;
+    }).filter(r => r.day >= RAW.from && r.day <= RAW.to && (fLoad === 'All' || r.load === fLoad) && (!fSize.size || fSize.has(r.cls))).sort((a, b) => (a.yi || a.gi) - (b.yi || b.gi));
+  }
+  function pmrUploadCard() {
+    const pm = RAW.pmr || {}, can = true;
+    setTimeout(() => { const f = $('pmrFile'); if (f) f.onchange = () => pmrUpload(f); }, 0);
+    return '<div class="card" style="margin-bottom:10px"><div class="khead"><b>📥 UTCL PMR report</b></div>' +
+      '<div class="muted2">The portal keeps only 7 days — add the PMR file at least once a week; every trip is kept for good (JNP_Ops_DB › PMR_History). ' +
+      (pm.n ? 'History: <b>' + fmt(pm.n) + ' trips</b> from ' + JNP.dmy(String(pm.first).slice(0, 10)) + ' to ' + JNP.dmy(String(pm.last).slice(0, 10)) + '.' : '<b>No PMR data yet.</b>') +
+      ' Or paste the whole file in JNP_Ops_DB › <b>PMR Paste</b> (A1).</div>' +
+      (can ? '<label class="btn2" style="display:inline-block;margin-top:8px;cursor:pointer">⬆️ Upload PMR Excel<input type="file" id="pmrFile" accept=".xlsx,.xls,.csv" style="display:none"></label><span id="pmrMsg" class="muted2" style="margin-left:8px"></span>' : '') + '</div>';
+  }
+  let XL = null;
+  const loadXlsx = () => window.XLSX ? Promise.resolve() : (XL = XL || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; s.onload = res; s.onerror = () => { XL = null; rej(new Error('Could not load the Excel reader — check internet')); }; document.head.appendChild(s); }));
+  async function pmrUpload(inp) {
+    const f = inp.files && inp.files[0], msg = $('pmrMsg'); if (!f) return;
+    msg.textContent = 'Reading ' + f.name + '…';
+    try {
+      await loadXlsx();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames.find(n => /PMR/i.test(n)) || wb.SheetNames[0]];
+      const p2 = n => String(n).padStart(2, '0');
+      const serial = v => { const d = new Date(Math.round((v - 25569) * 864e5)); return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate()) + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + ':' + p2(d.getUTCSeconds()); };
+      const a = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+      const h = a.findIndex(r => r.indexOf('Trip ID') >= 0); if (h < 0) throw new Error('This is not the UTCL PMR report (no "Trip ID" column)');
+      const hd = a[h], dc = ['Delivery Date', 'Ready Queue Date Time', 'Seal Date', 'PGI Date', 'YardIn', 'YardOut', 'GateIn', 'TareWeight', 'LoadingIn', 'LoadingOut', 'GrossWeight', 'GateOut'].map(c => hd.indexOf(c));
+      const out = [hd.map(String)].concat(a.slice(h + 1).filter(r => r.some(x => x !== '')).map(r => r.map((v, i) => dc.indexOf(i) >= 0 && typeof v === 'number' && v > 30000 ? serial(v) : (typeof v === 'number' && i === hd.indexOf('Trip ID') ? String(v) : v))));
+      msg.textContent = 'Saving ' + (out.length - 1) + ' trips…';
+      const r = await JNP.call('pmrUpload', { rows: out });
+      JNP.toast(r.inFile + ' trips in the file · ' + r.added + ' new · ' + r.updated + ' updated · ' + r.total + ' in history', 'ok', 6000);
+      load(true);
+    } catch (e) { msg.innerHTML = '<span class="err">' + E(e.message) + '</span>'; }
+    inp.value = '';
+  }
+  function loadingTab() {
+    const R = pmrTrips(), TG = loadTargets(), A = k => avg(R.map(r => r[k]).filter(v => !isNaN(v)));
+    const head = pmrUploadCard();
+    if (!R.length) return head + '<div class="card muted">No PMR trips in these dates' + (fLoad !== 'All' || fSize.size ? ' for these filters' : '') + '. Upload the PMR report above.</div>';
+    const wO = sum(R, r => r.wOrder), wQ = sum(R, r => r.wQueue), wD = sum(R, r => r.wDrv), wP = sum(R, r => r.wPlant), wT = wO + wQ + wD + wP;
+    SHARE.kpLd = { title: 'Loading time', fn: 'kpis' };
+    const kp = '<div class="kwrap"><div class="khead"><b>Loading time at the plant · ' + R.length + ' trips</b><button type="button" class="shr" data-s="kpLd">📲 Share</button></div><div class="kpis">' +
+      kpi('Yard in → order (DI)', hm(A('orderW')), 'waiting in the yard for the order · target ' + hm(TG.order), 'var(--blue)') +
+      kpi('Order → called in', hm(A('queue')), 'DI → ready queue · target ' + hm(TG.queue), 'var(--orange)') +
+      kpi('Called in → gate in', hm(A('drv')), 'driver response · target ' + hm(TG.driver), 'var(--s4)') +
+      kpi('Inside plant', hm(A('plant')), 'gate in → gate out · target ' + hm(TG.plant) + '<br>tare → loader ' + hm(A('inLoad')) + ' · loading ' + hm(A('loadH')) + ' · exit ' + hm(A('exit')), 'var(--navy)') +
+      kpi('Yard in → gate out', hm(A('total')), 'whole time at the plant (yard wait ' + hm(A('yard')) + ')', 'var(--blue)') +
+      kpi('Time lost', fmt(wT, 0) + ' h', 'over target: order ' + fmt(wO, 0) + ' h · queue ' + fmt(wQ, 0) + ' h · driver ' + fmt(wD, 0) + ' h · plant ' + fmt(wP, 0) + ' h · ≈ ' + fmt(wT / 24, 1) + ' truck-days', 'var(--red)') +
+      '</div><div class="muted2" style="margin-top:4px">All times from the UTCL PMR report. Targets: Settings › <b>Loading_Targets</b> (Order=1, Queue=1, Driver=0.5, Plant=2 hours).</div></div>';
+    const dates = []; for (let d = new Date(M.from); d <= M.to; d = new Date(d.getTime() + 864e5)) dates.push(iso(d));
+    const dayAvg = k => dates.map(d => { const v = R.filter(r => r.day === d).map(r => r[k]).filter(x => !isNaN(x)); return v.length ? avg(v) : 0; });
+    const chart = sec('Where the time goes · per day', 'average hours per trip at the plant (by yard-in day)', columns('cLd', dates, [{ name: 'Yard in → order', color: 'var(--s1)', values: dayAvg('orderW') }, { name: 'Order → called in', color: 'var(--s4)', values: dayAvg('queue') }, { name: 'Called in → gate in', color: 'var(--s5)', values: dayAvg('drv') }, { name: 'Inside plant', color: 'var(--s3)', values: dayAvg('plant') }], { unit: 'h', dec: 1, label: d => d.slice(8, 10) + '/' + d.slice(5, 7) }));
+    const group = key => { const m = {}; R.forEach(r => { const k = r[key] || '(not known)'; const g = m[k] = m[k] || { key: k, trips: 0, list: [] }; g.trips++; g.list.push(r); });
+      return Object.values(m).map(g => { const a = f => avg(g.list.map(r => r[f]).filter(v => !isNaN(v))); return Object.assign(g, { orderW: a('orderW'), queue: a('queue'), drv: a('drv'), plant: a('plant'), loadH: a('loadH'), total: a('total'), wDrv: sum(g.list, r => r.wDrv), waste: sum(g.list, r => r.waste), late: g.list.filter(r => r.wDrv > 0).length, cls: (g.list[0] || {}).cls }); }); };
+    const V = group('truck'), DR = group('driver').filter(g => g.key !== '(not known)'), LP = group('loader').filter(g => g.key !== '(not known)');
+    const hcol = (k, t) => ({ k: k, t: t, num: 1, f: hm });
+    const veh = sec('Vehicles · time lost', 'hours over target per truck (all steps)', hbar(V.map(g => ({ label: g.key, sub: g.cls + ' · ' + g.trips + ' trips · avg ' + hm(g.total) + ' at plant', value: g.waste, color: 'var(--red)', text: fmt(g.waste, 1) + ' h' })), { top: 10 }) +
+      tv('Table view', table('tLdV', [{ k: 'key', t: 'Truck' }, { k: 'trips', t: 'Trips', num: 1 }, hcol('orderW', 'Yard→order'), hcol('queue', 'Order→called'), hcol('drv', 'Called→gate'), hcol('plant', 'Plant'), hcol('total', 'Yard→out'), { k: 'waste', t: 'Lost h', num: 1, bar: 1, f: v => fmt(v, 1), color: () => 'var(--red)' }], V, { sort: 'waste' })));
+    const drv = sec('Drivers · response when called in', 'ready queue → gate in; late = over ' + hm(TG.driver), hbar(DR.map(g => ({ label: g.key, sub: g.trips + ' trips · late ' + g.late, value: g.drv, color: g.drv > TG.driver ? 'var(--red)' : 'var(--ok)', text: hm(g.drv) })), { top: 10, ref: TG.driver, refLabel: 'target ' + hm(TG.driver) }) +
+      tv('Table view', table('tLdD', [{ k: 'key', t: 'Driver' }, { k: 'trips', t: 'Trips', num: 1 }, hcol('drv', 'Avg called→gate'), { k: 'late', t: 'Late', num: 1 }, hcol('total', 'Avg yard→out'), { k: 'wDrv', t: 'Lost h (driver)', num: 1, bar: 1, f: v => fmt(v, 1), color: () => 'var(--red)' }], DR, { sort: 'wDrv' })));
+    const lp = LP.length ? sec('UTCL loading points', 'average loading time (loading in → out)', hbar(LP.map(g => ({ label: g.key, sub: g.trips + ' trips', value: g.loadH, color: 'var(--s3)', text: hm(g.loadH) })), { top: 10 })) : '';
+    const t = d => d ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '—';
+    const worst = R.slice().sort((a, b) => b.waste - a.waste).slice(0, 15).map(r => ({ day: JNP.dmy(r.day).slice(0, 5), truck: r.truck.slice(-4), driver: r.driver, yi: t(r.yi), dI: t(r.dI), rq: t(r.rq), gi: t(r.gi), li: t(r.li), lo: t(r.lo), go: t(r.go), waste: r.waste, total: r.total }));
+    const wt = sec('Trips with most time lost', 'top 15 · UTCL portal times', table('tLdW', [{ k: 'day', t: 'Day' }, { k: 'truck', t: 'Truck' }, { k: 'driver', t: 'Driver' }, { k: 'yi', t: 'Yard in' }, { k: 'dI', t: 'DI' }, { k: 'rq', t: 'Called' }, { k: 'gi', t: 'Gate in' }, { k: 'li', t: 'Load in' }, { k: 'lo', t: 'Load out' }, { k: 'go', t: 'Gate out' }, hcol('total', 'Yard→out'), { k: 'waste', t: 'Lost', num: 1, f: v => fmt(v, 1) + ' h' }], worst, { sort: 'waste' }));
+    return head + kp + chart + '<div class="cgrid">' + veh + drv + '</div>' + lp + wt;
+  }
+
   // ---------- Revenue — management only (Level 1). Never in the ops report.
   function revenueBlock(T, dates) {
+    const O = (M.orders || []).filter(keepT);
     const a = agg(T), spend = sum(M.mnt.filter(m => keepTruck(m.Truck_No)), m => m.Total_Cost) + sum(M.tex.filter(m => keepTruck(m.Truck_No)), m => m.Amount) + sum(M.tyr.filter(m => keepTruck(m.Truck_No)), m => m.Cost);
     SHARE.kpRev = { title: 'Revenue', fn: 'kpis' };
     const sh = s => inr(s).replace('₹', '');
@@ -997,12 +1119,19 @@
       kpi('Maintenance spend', inr(spend), 'jobs + expenses + tyres', 'var(--red)') +
       kpi('Revenue per truck', (() => { const n = new Set(T.map(x => x.truck)).size; return n ? inr(a.rev / n) : '—'; })(), new Set(T.map(x => x.truck)).size + ' trucks ran', 'var(--orange)') +
       '</div></div>' + gpBlock(T) +
-      sec('Revenue split', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.rev, v => sh(v), '₹ freight'), () => splitText(T, x => x.rev, v => inr(v))) +
+      ordersVsPortalMoney(T) +
+      '<div class="cgrid">' +
+      sec('Revenue split · portal dispatch', 'Bulk vs Bag · Own vs Market', splitCharts(T, x => x.rev, v => sh(v), '₹ freight'), () => splitText(T, x => x.rev, v => inr(v))) +
+      sec('Order value split · orders received', 'Bulk vs Bag · Own vs Market · loader rate × truck size', splitCharts(O, x => x.orderRev, v => sh(v), '₹ orders'), () => splitText(O, x => x.orderRev, v => inr(v))) +
+      '</div>' +
       '<div class="cgrid">' +
       sec('₹ per litre diesel', 'by size', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips && g.dieselTrips / g.trips < .7 ? 'diesel on ' + pct(g.dieselTrips / g.trips) + ' trips' : '', value: revPerL(g), color: CLASS_COLOR[c], text: isNaN(revPerL(g)) ? '—' : '₹' + fmt(revPerL(g), 1) }; }), { ref: revPerL(a), refLabel: 'fleet average ₹' + fmt(revPerL(a), 1) + ' / L' })) +
       sec('Revenue by size', '₹', hbar(CLASSES.map(c => c + 'T').map(c => { const g = agg(T.filter(x => x.cls === c)); return { label: c, sub: g.trips + ' trips', value: g.trips ? g.rev : NaN, color: CLASS_COLOR[c], text: inr(g.rev) }; }))) +
       '</div>' +
-      sec('Revenue per day', '₹ lakh, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.day === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      '<div class="cgrid">' +
+      sec('Portal revenue per day', '₹ lakh by PGI date, Bulk vs Bag', columns('cRevO', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(T.filter(x => x.dday === d && x.load === 'BULK'), x => x.rev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(T.filter(x => x.dday === d && x.load === 'BAG'), x => x.rev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      sec('Order value per day', '₹ lakh by order day (loader rate × truck size)', columns('cRevOrd', dates, [{ name: 'Bulk', color: 'var(--s1)', values: dates.map(d => sum(O.filter(x => x.day === d && x.load === 'BULK'), x => x.orderRev)) }, { name: 'Bag', color: 'var(--s2)', values: dates.map(d => sum(O.filter(x => x.day === d && x.load === 'BAG'), x => x.orderRev)) }], { unit: '₹', label: d => d.slice(8, 10) + '/' + d.slice(5, 7) })) +
+      '</div>' +
       '<div class="muted2" style="margin:4px 2px 0">Explore tab → Measure: Freight revenue / ₹ per litre → split by truck, driver, destination, party, own/market…</div>';
   }
 

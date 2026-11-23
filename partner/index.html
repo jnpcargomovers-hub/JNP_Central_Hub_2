@@ -158,8 +158,14 @@
     Object.values(P).forEach(p => { p.xd = Number((D.extraDiesel || {})[p.no]) || 0; p.xdCost = p.xd * (Number(D.dieselRate) || 0); p.down = Number((D.downtime || {})[p.no]) || 0; });
     return Object.values(P);
   };
+  // 23 Nov: trips and freight are from the UTCL dispatch details (PGI date)
+  const basis = () => '<div class="card" style="border-left:4px solid #1D5FBF;font-size:12.5px;padding:10px 12px">📋 ' + E(D.basis || 'Figures are as per UTCL dispatch details.') + '<br><span class="muted">यह आंकड़े UTCL डिस्पैच रिपोर्ट के अनुसार हैं — कटौती और GPS रिकॉर्ड के बाद अंतिम रकम बदल सकती है।</span>' +
+    ((D.pending || []).length ? '<br><b>⏳ ' + D.pending.length + ' order' + (D.pending.length > 1 ? 's' : '') + ' not on the dispatch report yet</b> (not counted): ' + D.pending.map(x => E(String(x.truck).slice(-4)) + ' · ' + E(x.dest) + ' · ' + dmy(x.at)).join(', ') : '') + '</div>';
   function render() {
     if (!D || D.empty) return;
+    render0(); $('view').insertAdjacentHTML('afterbegin', basis());
+  }
+  function render0() {
     const P = perTruck(), T = D.trips, sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
     if (tab === 'ops') {
       const live = D.status.map(s => '<div class="st ' + E(s.st) + '"><b>' + E(s.no) + '</b> · ' + E(s.label) +
