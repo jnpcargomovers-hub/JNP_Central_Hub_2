@@ -26,7 +26,7 @@
   // Which script answers which action (save/list/get/edit go by module code)
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
-    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
+    nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', reimbMeta: 'adm', reimbList: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
     board: 'ops', tollDIs: 'ops', tollMark: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
@@ -72,12 +72,13 @@
     'ADM-01': { icon: '🚨', path: 'challan/' },
     'ADM-02': { icon: '⛽', path: 'extra-diesel/' },
     'ADM-03': { icon: '🧹', path: 'clean-names/', hidden: true },     // no tile: opened from Dashboard › Explore
+    'ADM-04': { icon: '🧾', path: 'reimbursement/' },
   };
   const TILES = [
     { name: 'Operations', hindi: 'ऑपरेशन्स', color: 'var(--ops)', prefix: 'OPS-' },
     { name: 'Repair & Maintenance', hindi: 'रिपेयर और मेंटेनेंस', color: 'var(--rm)', prefix: 'RM-' },
     { name: 'Finance', hindi: 'फाइनेंस', color: 'var(--fin)', prefix: 'FIN-' },
-    { name: 'Challans & Diesel', hindi: 'चालान · डीज़ल', color: 'var(--ops)', prefix: 'ADM-' },
+    { name: 'Admin · Challans · Diesel · Reimbursement', hindi: 'चालान · डीज़ल · खर्च वापसी', color: 'var(--ops)', prefix: 'ADM-' },
     { name: 'Partners (JNP Lines)', hindi: 'पार्टनर', color: 'var(--fin)', prefix: 'PTR-' },
   ];
 
