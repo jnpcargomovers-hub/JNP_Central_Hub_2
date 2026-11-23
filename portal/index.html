@@ -29,14 +29,16 @@
   <div id="hdr"></div>
   <div class="wrap">
     <div class="card">
-      <h3 class="cardh"><span>How to update · कैसे करें</span></h3>
+      <h3 class="cardh"><span>Upload portal files · पोर्टल फाइल अपलोड करें</span></h3>
       <ol class="steps">
-        <li>Download the <b>dispatch report</b> (Transporter Portal, from the start of the month / year till today) → in <b>JNP_Finance_DB › Portal_Loading</b> click <b>A1</b> and paste the <b>whole file</b> over the old one.</li>
-        <li>Download the <b>Daily DI Follow-up</b> → in <b>Daily Paste</b> click <b>A1</b> and paste the whole file. The pending LR list on the dashboard updates by itself.</li>
-        <li>Every 30 minutes the app picks up the new paste by itself: actual MT, PGI, EPOD, bill and freight are filled and trucks move on the board.</li>
-        <li><b>Corrections</b> (LR changed, truck or destination different) wait for you: check the list below → tap <b>Apply</b>.</li>
+        <li>On the UTCL portal download the <b>Dispatch report</b> (any dates — today, the week or 3 months) and the <b>Pending LRs</b> report.</li>
+        <li>Tap the button and pick the file(s) — you can pick both together. The app knows which is which.</li>
+        <li>That's all: history is kept, the Loader entries, truck board and dashboard update at once.</li>
       </ol>
-      <div class="hint" style="margin-top:8px">🔒 Each Loader entry is corrected <b>only once</b>. Pasting the same month again, or 3 months at once, never changes an entry that was already matched — later pastes only add EPOD, bill no. and freight.</div>
+      <label class="btn orange" style="display:block;text-align:center;margin-top:10px;cursor:pointer">⬆️ Upload Dispatch / Pending LRs file(s)<input type="file" id="upFile" accept=".xlsx,.xls,.csv" multiple style="display:none"></label>
+      <div id="upMsg" class="hint" style="margin-top:8px"></div>
+      <div id="hist" class="hint" style="margin-top:6px"></div>
+      <div class="hint" style="margin-top:8px">📅 Upload the dispatch report <b>every day</b>. The portal searches only 3 months back — every DI you upload stays here for good (JNP_Finance_DB › Portal_Loading). Uploading the same days again is safe: nothing doubles.<br>🔒 Each Loader entry is corrected <b>only once</b>. <b>Corrections</b> (LR, truck or destination different) still wait for you below → <b>Apply</b>.</div>
     </div>
     <div id="sum"><div class="card muted">Checking the portal data…</div></div>
     <div id="act"></div>
@@ -46,6 +48,40 @@
 (async function () {
   const $ = id => document.getElementById(id), E = JNP.esc;
   JNP.header($('hdr'), 'UTCL Portal Sync', 'पोर्टल मिलान · LR ↔ DI', { sync: () => load() });
+  // ---------- 23 Nov: upload the portal Excel files (read here, sent as rows; the server merges and keeps history)
+  let XL = null;
+  const loadXlsx = () => window.XLSX ? Promise.resolve() : (XL = XL || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; s.onload = res; s.onerror = () => { XL = null; rej(new Error('Could not load the Excel reader — check internet')); }; document.head.appendChild(s); }));
+  const p2 = n => String(n).padStart(2, '0');
+  const serial = v => { const d = new Date(Math.round((v - 25569) * 864e5)); return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate()) + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + ':' + p2(d.getUTCSeconds()); };
+  const DATE_COLS = ['PGI Date', 'EPOD Date', 'Billing Date', 'EPOD Date Time'], TEXT_COLS = ['DI No', 'Contact No', 'Vendor Code', 'Plant', 'MKT Plant'];
+  async function readPortalFile(f) {
+    await loadXlsx();
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false });
+    const a = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: true });
+    const h = a.findIndex(r => r.indexOf('DI No') >= 0 && r.indexOf('LR No') >= 0); if (h < 0) throw new Error(f.name + ': not a Transporter Portal file');
+    const hd = a[h].map(String), dc = DATE_COLS.map(c => hd.indexOf(c)), tc = TEXT_COLS.map(c => hd.indexOf(c));
+    return [hd].concat(a.slice(h + 1).filter(r => r.some(x => x !== '')).map(r => r.map((v, i) => typeof v === 'number' && dc.indexOf(i) >= 0 && v > 30000 ? serial(v) : (typeof v === 'number' && tc.indexOf(i) >= 0 ? String(v) : v))));
+  }
+  $('upFile').onchange = async () => {
+    const files = [...$('upFile').files]; $('upFile').value = ''; if (!files.length) return;
+    const msg = $('upMsg'), lines = [];
+    // dispatch first, then pending — so the sync after the last upload sees both
+    const read = [];
+    for (const f of files) { try { msg.textContent = 'Reading ' + f.name + '…'; const rows = await readPortalFile(f); read.push({ f: f, rows: rows, pend: rows[0].indexOf('Freight Amount') >= 0 }); } catch (e) { lines.push('❌ ' + E(e.message)); } }
+    read.sort((x, y) => x.pend - y.pend);
+    for (const x of read) {
+      try {
+        msg.innerHTML = lines.join('<br>') + (lines.length ? '<br>' : '') + 'Saving ' + E(x.f.name) + ' (' + (x.rows.length - 1) + ' rows)…';
+        const r = await JNP.call('portalUpload', { rows: x.rows });
+        lines.push(r.kind === 'dispatch'
+          ? '✅ <b>Dispatch</b> · ' + r.inFile + ' DIs in file · <b>' + r.added + ' new</b> · ' + r.updated + ' updated · history ' + r.total + ' DIs (' + E(r.from) + ' → ' + E(r.to) + ')'
+          : '✅ <b>Pending LRs</b> · ' + r.inFile + ' DIs (today\'s list) · ' + r.added + ' new in history (' + r.total + ')');
+        if (r.sync) lines.push('🔄 Synced: ' + (r.sync.updated || 0) + ' Loader entries filled' + (r.sync.moved ? ' · ' + r.sync.moved + ' trucks moved on the board' : '') + (r.sync.waiting ? ' · ' + r.sync.waiting + ' corrections wait for you' : ''));
+        if (r.syncError) lines.push('⚠️ Saved, but the sync said: ' + E(r.syncError));
+      } catch (e) { lines.push('❌ ' + E(x.f.name) + ': ' + E(e.message)); }
+    }
+    msg.innerHTML = lines.join('<br>'); await load();
+  };
   await JNP.requireModule(['FIN-05']);
   let P = null;
   await JNP.masters().catch(() => { });
@@ -53,7 +89,7 @@
   const lbl = { Truck_No: 'Truck', Destination: 'Destination', LR_No: 'LR (actual)' };
   async function load() {
     $('sum').innerHTML = '<div class="card muted">Checking the portal data…</div>'; $('act').innerHTML = ''; $('lists').innerHTML = '';
-    try { P = await JNP.call('portalPreview', {}); draw(); }
+    try { P = await JNP.call('portalPreview', {}); draw(); const h = P.hist; $('hist').innerHTML = h ? '📚 Saved dispatch history: <b>' + h.n + ' DIs</b>' + (h.n ? ' · ' + E(h.from) + ' → ' + E(h.to) : '') + ' · pending list: ' + h.pending + ' DIs' : ''; }
     catch (e) { $('sum').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
   }
   function draw() {
