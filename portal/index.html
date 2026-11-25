@@ -23,23 +23,36 @@
     .prep .st { display: flex; height: 4px; margin: 10px 0; } .prep .st i { flex: 1; }
     .prep table { width: 100%; border-collapse: collapse; font-size: 12px; } .prep th { text-align: left; font-size: 10.5px; color: #5D6877; border-bottom: 1px solid #DCE3EE; padding: 4px 3px; } .prep td { padding: 4px 3px; border-bottom: 1px solid #EEF1F5; }
     .prep td.age { font-weight: 800; color: #B91C1C; text-align: right; } .prep .f { margin-top: 10px; font-size: 11px; color: #7A8596; text-align: right; }
+      .upgrid { display: grid; grid-template-columns: 1fr; gap: 0 12px; } @media (min-width: 760px) { .upgrid { grid-template-columns: 1fr 1fr; } }
+    .upbtn { display: block; text-align: center; margin: 10px 0 6px; cursor: pointer; }
+    .steps4 { display: grid; gap: 4px; font-size: 13px; margin-top: 6px; } .steps4 div { display: flex; gap: 8px; align-items: center; } .steps4 i { font-style: normal; width: 18px; text-align: center; }
+    .steps4 .run { color: var(--navy); font-weight: 700; } .steps4 .ok { color: #12804A; } .steps4 .bad { color: var(--red); font-weight: 700; } .steps4 .wait { color: var(--muted); }
+    .last { font-size: 12px; color: var(--muted); margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 6px; }
+    .res { margin-top: 8px; font-size: 13px; } .res .big { font-size: 20px; font-weight: 800; color: var(--navy); } .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; } .chips span { background: #EEF3FA; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 700; color: var(--navy); }
   </style>
 </head>
 <body>
   <div id="hdr"></div>
   <div class="wrap">
-    <div class="card">
-      <h3 class="cardh"><span>Upload portal files · पोर्टल फाइल अपलोड करें</span></h3>
-      <ol class="steps">
-        <li>On the UTCL portal download the <b>Dispatch report</b> (any dates — today, the week or 3 months) and the <b>Pending LRs</b> report.</li>
-        <li>Tap the button and pick the file(s) — you can pick both together. The app knows which is which.</li>
-        <li>That's all: history is kept, the Loader entries, truck board and dashboard update at once.</li>
-      </ol>
-      <label class="btn orange" style="display:block;text-align:center;margin-top:10px;cursor:pointer">⬆️ Upload Dispatch / Pending LRs file(s)<input type="file" id="upFile" accept=".xlsx,.xls,.csv" multiple style="display:none"></label>
-      <div id="upMsg" class="hint" style="margin-top:8px"></div>
-      <div id="hist" class="hint" style="margin-top:6px"></div>
-      <div class="hint" style="margin-top:8px">📅 Upload the dispatch report <b>every day</b>. The portal searches only 3 months back — every DI you upload stays here for good (JNP_Finance_DB › Portal_Loading). Uploading the same days again is safe: nothing doubles.<br>🔒 Each Loader entry is corrected <b>only once</b>. <b>Corrections</b> (LR, truck or destination different) still wait for you below → <b>Apply</b>.</div>
+    <div class="upgrid">
+      <div class="card upc" id="cardD">
+        <h3 class="cardh"><span>① Dispatch report · डिस्पैच रिपोर्ट</span></h3>
+        <div class="hint">UTCL portal › Transporter Portal dispatch report (PGI, truck, quantity). Any dates — upload <b>every day</b>; every DI is kept for good.</div>
+        <label class="btn orange upbtn">⬆️ Upload Dispatch report<input type="file" id="upD" accept=".xlsx,.xls,.csv" style="display:none"></label>
+        <div class="steps4" id="stD"></div>
+        <div id="resD"></div>
+        <div class="last" id="lastD"></div>
+      </div>
+      <div class="card upc" id="cardP">
+        <h3 class="cardh"><span>② Pending LRs report · बकाया LR</span></h3>
+        <div class="hint">UTCL portal › Daily DI follow-up (freight, bill no., EPOD). Upload the latest file — it replaces yesterday's pending list; every DI is also kept in history.</div>
+        <label class="btn upbtn" style="background:var(--navy);color:#fff">⬆️ Upload Pending LRs report<input type="file" id="upP" accept=".xlsx,.xls,.csv" style="display:none"></label>
+        <div class="steps4" id="stP"></div>
+        <div id="resP"></div>
+        <div class="last" id="lastP"></div>
+      </div>
     </div>
+    <div class="hint" id="hist" style="margin:0 2px 10px"></div>
     <div id="sum"><div class="card muted">Checking the portal data…</div></div>
     <div id="act"></div>
     <div id="lists"></div>
@@ -62,26 +75,43 @@
     const hd = a[h].map(String), dc = DATE_COLS.map(c => hd.indexOf(c)), tc = TEXT_COLS.map(c => hd.indexOf(c));
     return [hd].concat(a.slice(h + 1).filter(r => r.some(x => x !== '')).map(r => r.map((v, i) => typeof v === 'number' && dc.indexOf(i) >= 0 && v > 30000 ? serial(v) : (typeof v === 'number' && tc.indexOf(i) >= 0 ? String(v) : v))));
   }
-  $('upFile').onchange = async () => {
-    const files = [...$('upFile').files]; $('upFile').value = ''; if (!files.length) return;
-    const msg = $('upMsg'), lines = [];
-    // dispatch first, then pending — so the sync after the last upload sees both
-    const read = [];
-    for (const f of files) { try { msg.textContent = 'Reading ' + f.name + '…'; const rows = await readPortalFile(f); read.push({ f: f, rows: rows, pend: rows[0].indexOf('Freight Amount') >= 0 }); } catch (e) { lines.push('❌ ' + E(e.message)); } }
-    read.sort((x, y) => x.pend - y.pend);
-    for (const x of read) {
-      try {
-        msg.innerHTML = lines.join('<br>') + (lines.length ? '<br>' : '') + 'Saving ' + E(x.f.name) + ' (' + (x.rows.length - 1) + ' rows)…';
-        const r = await JNP.call('portalUpload', { rows: x.rows });
-        lines.push(r.kind === 'dispatch'
-          ? '✅ <b>Dispatch</b> · ' + r.inFile + ' DIs in file · <b>' + r.added + ' new</b> · ' + r.updated + ' updated · history ' + r.total + ' DIs (' + E(r.from) + ' → ' + E(r.to) + ')'
-          : '✅ <b>Pending LRs</b> · ' + r.inFile + ' DIs (today\'s list) · ' + r.added + ' new in history (' + r.total + ')');
-        if (r.sync) lines.push('🔄 Synced: ' + (r.sync.updated || 0) + ' Loader entries filled' + (r.sync.moved ? ' · ' + r.sync.moved + ' trucks moved on the board' : '') + (r.sync.waiting ? ' · ' + r.sync.waiting + ' corrections wait for you' : ''));
-        if (r.syncError) lines.push('⚠️ Saved, but the sync said: ' + E(r.syncError));
-      } catch (e) { lines.push('❌ ' + E(x.f.name) + ': ' + E(e.message)); }
-    }
-    msg.innerHTML = lines.join('<br>'); await load();
-  };
+  // two separate uploads, each with its own steps: read → save → update Loader entries & board → refresh numbers
+  const STEP_NAMES = ['Read the file', 'Save to history', 'Update Loader entries & truck board', 'Refresh numbers'];
+  function steps(el, state) { $(el).innerHTML = STEP_NAMES.map((n, i) => { const st = state[i] || 'wait', ic = { wait: '○', run: '⏳', ok: '✅', bad: '❌', skip: '–' }[st]; return '<div class="' + st + '"><i>' + ic + '</i>' + E(n) + (state.msg && state.msg[i] ? ' · <span>' + state.msg[i] + '</span>' : '') + '</div>'; }).join(''); }
+  async function upload(kind, inp) {
+    const f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
+    const st = kind === 'dispatch' ? 'stD' : 'stP', res = kind === 'dispatch' ? 'resD' : 'resP', S = ['run']; S.msg = [E(f.name)]; steps(st, S); $(res).innerHTML = '';
+    document.querySelectorAll('.upbtn input').forEach(x => x.disabled = true);
+    try {
+      const rows = await readPortalFile(f);
+      const isPend = rows[0].indexOf('Freight Amount') >= 0;
+      if (kind === 'dispatch' && isPend) throw new Error('This is the Pending LRs report — use button ②');
+      if (kind === 'pending' && !isPend) throw new Error('This is the Dispatch report — use button ①');
+      S[0] = 'ok'; S.msg[0] = (rows.length - 1) + ' rows'; S[1] = 'run'; steps(st, S);
+      const r = await JNP.call('portalUpload', { kind: kind, rows: rows, file: f.name });
+      S[1] = 'ok'; S.msg[1] = kind === 'dispatch' ? '<b>' + r.added + ' new</b> · ' + r.updated + ' updated' : r.inFile + ' pending'; S[2] = 'run'; steps(st, S);
+      $(res).innerHTML = kind === 'dispatch' ? resDispatch(r) : resPending(r);
+      const y = await JNP.call('portalSyncNow', {});
+      if (y.syncError) { S[2] = 'bad'; S.msg[2] = E(y.syncError) + ' — the 30-minute sync will retry'; }
+      else { S[2] = 'ok'; S.msg[2] = (y.sync.updated || 0) + ' entries filled' + (y.sync.moved ? ' · ' + y.sync.moved + ' trucks moved' : '') + (y.sync.waiting ? ' · <b>' + y.sync.waiting + ' corrections wait</b> (below)' : ''); }
+      S[3] = 'run'; steps(st, S); await load(); S[3] = 'ok'; S.msg[3] = 'dashboard shows it now'; steps(st, S);
+      JNP.toast(kind === 'dispatch' ? 'Dispatch saved · ' + r.added + ' new DIs' : 'Pending LRs saved · ' + r.inFile + ' DIs', 'ok', 5000);
+    } catch (e) { const i = S.findIndex(x => x === 'run'); S[i < 0 ? 0 : i] = 'bad'; S.msg[i < 0 ? 0 : i] = E(e.message); steps(st, S); }
+    document.querySelectorAll('.upbtn input').forEach(x => x.disabled = false);
+  }
+  function resDispatch(r) {
+    return '<div class="res"><span class="big">' + r.added + '</span> new DIs · ' + r.updated + ' updated · ' + r.inFile + ' in the file<br>History now <b>' + r.total + ' DIs</b> · ' + E(r.from) + ' → ' + E(r.to) +
+      (r.last7 && r.last7.length ? '<div class="chips">' + r.last7.map(d => '<span>' + E(d.day) + ': ' + d.n + ' · ' + Math.round(d.mt) + ' MT</span>').join('') + '</div>' : '') +
+      (r.newList && r.newList.length ? '<details><summary class="hint">New DIs (' + r.newList.length + (r.added > r.newList.length ? ' of ' + r.added : '') + ')</summary><div class="scroll"><table class="tbl"><tr><th>LR</th><th>Truck</th><th>Destination</th><th>MT</th><th>PGI</th></tr>' +
+        r.newList.map(x => '<tr><td class="n">' + E(x.lr) + '</td><td>' + E(String(x.truck).slice(-4)) + '</td><td>' + E(x.dest) + '</td><td class="r">' + E(x.qty) + '</td><td>' + E(x.pgi) + '</td></tr>').join('') + '</table></div></details>' : '') + '</div>';
+  }
+  function resPending(r) {
+    return '<div class="res"><span class="big">' + r.inFile + '</span> pending DIs (was ' + r.before + ')<div class="chips"><span>🆕 ' + r.newPending + ' newly pending</span><span>✔ ' + r.cleared + ' cleared since last file</span><span>🧾 ' + r.billed + ' with bill no.</span><span>📄 ' + r.epod + ' EPOD received</span>' +
+      (r.freight ? '<span>₹' + Number(r.freight).toLocaleString('en-IN') + ' freight</span>' : '') + '</div>History: ' + r.total + ' DIs ever seen</div>';
+  }
+  $('upD').onchange = () => upload('dispatch', $('upD'));
+  $('upP').onchange = () => upload('pending', $('upP'));
+  steps('stD', []); steps('stP', []);
   await JNP.requireModule(['FIN-05']);
   let P = null;
   await JNP.masters().catch(() => { });
@@ -89,7 +119,7 @@
   const lbl = { Truck_No: 'Truck', Destination: 'Destination', LR_No: 'LR (actual)' };
   async function load() {
     $('sum').innerHTML = '<div class="card muted">Checking the portal data…</div>'; $('act').innerHTML = ''; $('lists').innerHTML = '';
-    try { P = await JNP.call('portalPreview', {}); draw(); const h = P.hist; $('hist').innerHTML = h ? '📚 Saved dispatch history: <b>' + h.n + ' DIs</b>' + (h.n ? ' · ' + E(h.from) + ' → ' + E(h.to) : '') + ' · pending list: ' + h.pending + ' DIs' : ''; }
+    try { P = await JNP.call('portalPreview', {}); draw(); const U = P.uploads || {}, lastTxt = x => x ? 'Last upload: <b>' + E(x.at) + '</b> by ' + E(x.by) + (x.file ? ' · ' + E(x.file) : '') + ' · ' + x.inFile + ' rows' + (x.added !== undefined ? ' · ' + x.added + ' new' : '') : 'Not uploaded yet from this page'; $('lastD').innerHTML = lastTxt(U.dispatch); $('lastP').innerHTML = lastTxt(U.pending); const h = P.hist; $('hist').innerHTML = h ? '📚 Saved dispatch history: <b>' + h.n + ' DIs</b>' + (h.n ? ' · ' + E(h.from) + ' → ' + E(h.to) : '') + ' · pending list: ' + h.pending + ' DIs' : ''; }
     catch (e) { $('sum').innerHTML = '<div class="card"><span class="err">' + E(e.message) + '</span></div>'; }
   }
   function draw() {

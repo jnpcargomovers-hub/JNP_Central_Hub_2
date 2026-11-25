@@ -27,7 +27,7 @@
   const ACTION_DB = {
     login: 'core', me: 'core', masters: 'core', upload: 'core', punch: 'core', attendance: 'core', approvers: 'core', inbox: 'core', decide: 'core', pay: 'core', dash: 'core',
     nextLR: 'ops', lookupLR: 'ops', taskList: 'adm', taskAct: 'adm', taskLog: 'adm', taskCount: 'adm', challanPay: 'adm', admSummary: 'adm', reimbMeta: 'adm', reimbList: 'adm', cleanScan: 'core', cleanMerge: 'core', cleanCount: 'core', attRegister: 'core',
-    board: 'ops', tollDIs: 'ops', tollMark: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', portalUpload: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
+    board: 'ops', tollDIs: 'ops', tollMark: 'ops', tripAdvanceSheet: 'ops', portalPreview: 'ops', portalApply: 'ops', portalUpload: 'ops', portalSyncNow: 'ops', tripSet: 'ops', tripInfo: 'ops', tripMove: 'ops', tripUndo: 'ops', tripEscalate: 'ops', loaderGet: 'ops', advQuote: 'ops', fuelRates: 'ops', fuelRateAdd: 'ops', loaderEdit: 'ops', lastIssue: 'ops', handoverItems: 'ops',
     bdUpdate: 'rm', openBreakdowns: 'rm', breakdownLog: 'rm', tyres: 'rm', stock: 'rm', openIndents: 'rm',
     inspChecklist: 'rm', inspTruck: 'rm', inspList: 'rm', inspDetail: 'rm', inspOpen: 'rm', inspFix: 'rm',
     advanceLimit: 'fin', settlementPreview: 'fin', ledger: 'fin', balances: 'fin', unbilledLRs: 'fin', receipt: 'fin', bills: 'fin', dieselAuditPrepare: 'fin',
