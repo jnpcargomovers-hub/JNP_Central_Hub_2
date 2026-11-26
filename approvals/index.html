@@ -26,7 +26,7 @@
   const canPay = ['FIN-01', 'FIN-03', 'OPS-05', 'RM-03', 'RM-04'].some(m => JNP.can(m, 'P'));
   let view = 'toMe', rows = [], cur = null;
   const T = [{ id: 'toMe', label: '⏳ To approve' + (c.toApprove ? ' (' + c.toApprove + ')' : '') }];
-  if (canPay) T.push({ id: 'toPay', label: '💳 To pay' + (c.toPay ? ' (' + c.toPay + ')' : '') });
+  if (canPay && !c.payOnApproval) T.push({ id: 'toPay', label: '💳 To pay' + (c.toPay ? ' (' + c.toPay + ')' : '') });
   T.push({ id: 'mine', label: '📤 My requests' });
   if (ctx.isL1) T.push({ id: 'all', label: '🗂️ All' });
   T.push({ id: 'done', label: '✔️ Decided by me' });
@@ -61,9 +61,9 @@
       const b = $({ approve: 'ap', reject: 'rj', hold: 'hd' }[d]);
       await JNP.submit(b, $('aerr'), async () => {
         const out = await JNP.call('decide', { requestId: r.Request_ID, decision: d, remark: $('rmk').value });
-        const msg = JNP.waText((out.status === 'Approved' ? '✅ APPROVED' : out.status === 'Rejected' ? '❌ REJECTED' : '⏸ ON HOLD') + ' · ' + r.Module_Name, [['Amount', JNP.inr(r.Amount)], ['Request', r.Summary], ['Remark', $('rmk').value], ['Ref', r.Record_ID]],
-          out.status === 'Approved' && ['FIN-01', 'FIN-03', 'OPS-05', 'RM-03', 'RM-04'].indexOf(r.Module_Code) >= 0 ? 'Finance: please pay — ' + JNP.CONFIG.HUB + 'approvals/?view=toPay' : '');
-        showAfter('Request ' + out.status.toLowerCase(), msg, out.requester);
+        const msg = JNP.waText((out.paid ? '✅ APPROVED & PAID' : out.status === 'Approved' ? '✅ APPROVED' : out.status === 'Rejected' ? '❌ REJECTED' : '⏸ ON HOLD') + ' · ' + r.Module_Name, [['Amount', JNP.inr(r.Amount)], ['Request', r.Summary], ['Remark', $('rmk').value], ['Ref', r.Record_ID]],
+          out.paid ? 'Approved = paid.' : out.status === 'Approved' && ['FIN-01', 'FIN-03', 'OPS-05', 'RM-03', 'RM-04'].indexOf(r.Module_Code) >= 0 ? 'Finance: please pay — ' + JNP.CONFIG.HUB + 'approvals/?view=toPay' : '');
+        showAfter(out.paid ? 'Approved and marked paid' : 'Request ' + out.status.toLowerCase(), msg, out.requester);
       });
     };
     if ($('ap')) { $('ap').onclick = dec('approve'); $('rj').onclick = dec('reject'); $('hd').onclick = dec('hold'); }

@@ -113,7 +113,7 @@
     const st = [];
     if (JNP.rights('APR-01').length) {
       st.push(['approvals/?view=toMe', c.toApprove || 0, 'To approve', c.toApprove > 0]);
-      if (JNP.can('FIN-01', 'P') || JNP.can('OPS-05', 'P') || JNP.can('RM-03', 'P')) st.push(['approvals/?view=toPay', c.toPay || 0, 'To pay', c.toPay > 0]);
+      if (!c.payOnApproval && (JNP.can('FIN-01', 'P') || JNP.can('OPS-05', 'P') || JNP.can('RM-03', 'P'))) st.push(['approvals/?view=toPay', c.toPay || 0, 'To pay', c.toPay > 0]);
       st.push(['approvals/?view=mine', c.myPending || 0, 'My requests', false]);
       if (u.level === 'Level 1') st.push(['approvals/?view=all', c.allPending || 0, 'All pending', false]);
     }

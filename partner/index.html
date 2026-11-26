@@ -55,7 +55,7 @@
         <button class="mini" id="logout" type="button">Logout</button></div>
       <div id="pickWrap" class="hidden" style="margin-top:10px"><select id="pick" class="input"></select></div>
     </div>
-    <div class="seg"><button type="button" data-t="ops" class="on">🚚 Operations</button><button type="button" data-t="fin">₹ Financials</button></div>
+    <div class="seg"><button type="button" data-t="ops" class="on">🚚 Operations</button><button type="button" data-t="fin">₹ Financials</button><button type="button" data-t="rm">🔧 R&amp;M</button></div>
     <div class="card" style="padding-bottom:10px">
       <div class="quick">
         <button type="button" class="mini" data-q="7">7 days</button>
@@ -183,21 +183,38 @@
         '<div class="card"><h3 class="h">Trips</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">Diesel</th><th class="n">Transit</th><th>Status</th></tr>' + tr + '</table></div>' : '<span class="muted">No trips in these dates.</span>') + '</div>';
       return;
     }
-    // Financials — freight per trip comes ready from the server
+    // 26 Nov: R&M spent on these trucks — debited to the partner
+    const RM = D.rm || [], rmBy = {}; RM.forEach(x => rmBy[x.truck] = (rmBy[x.truck] || 0) + x.amount);
+    const advBy = {}; T.forEach(r => advBy[r.truck] = (advBy[r.truck] || 0) + (Number(r.adv) || 0));
+    if (tab === 'rm') {
+      const tot = RM.reduce((t, x) => t + x.amount, 0);
+      $('view').innerHTML = '<div class="card"><h3 class="h">Repair &amp; maintenance · रिपेयर खर्च</h3><div class="kp"><div><small>R&amp;M debited</small><b>' + inr(tot) + '</b><em>' + RM.length + ' item' + (RM.length === 1 ? '' : 's') + ' · these dates</em></div></div>' +
+        '<div class="muted" style="margin-top:8px;font-size:12.5px">Paid by JNP for your trucks and debited to your account. यह खर्च JNP ने आपकी गाड़ियों पर किया है और आपके खाते से काटा जाएगा।</div></div>' +
+        '<div class="card"><h3 class="h">Per truck</h3><div class="tscroll"><table class="p"><tr><th>Truck</th><th class="n">Items</th><th class="n">Amount</th></tr>' +
+          Object.keys(rmBy).map(n => '<tr><td><b>' + E(n) + '</b></td><td class="n">' + RM.filter(x => x.truck === n).length + '</td><td class="n">' + inr(rmBy[n]) + '</td></tr>').join('') +
+          '<tr class="tot"><td>Total</td><td class="n">' + RM.length + '</td><td class="n">' + inr(tot) + '</td></tr></table></div></div>' +
+        '<div class="card"><h3 class="h">Item-wise</h3>' + (RM.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>Work</th><th>Vendor</th><th class="n">Amount</th></tr>' +
+          RM.slice().reverse().map(x => '<tr><td>' + dmy(x.at) + '<br><small class="muted">' + E(x.ref) + '</small></td><td><b>' + E(x.truck.slice(-4)) + '</b></td><td>' + E(x.type) + '<br><small class="muted">' + E(x.what) + '</small></td><td>' + E(x.vendor) + '</td><td class="n">' + inr(x.amount) + '</td></tr>').join('') + '</table></div>' : '<span class="muted">No R&amp;M expenses in these dates.</span>') + '</div>';
+      return;
+    }
+    // Financials — freight per trip comes ready from the server; advance and R&M are deducted
     const rev = sum(P, p => p.rev), dc = sum(P, p => p.dCost + p.xdCost), mt = sum(P, p => p.mt), pend = T.filter(r => !r.revOk).length;
-    const rows = T.slice().reverse().map(r => { const d = (Number(r.diesel) || 0) * (Number(r.dRate) || Number(D.dieselRate) || 0);
-      return '<tr><td>' + dmy(r.at) + '<br><small class="muted">' + E(r.lr) + '</small></td><td><b>' + E(r.truck.slice(-4)) + '</b></td><td>' + E(r.dest) + '</td><td class="n">' + fmt(r.mt, 2) + '</td><td class="n">' + (r.mt ? '₹' + fmt(r.rev / r.mt, 0) : '—') + '</td><td class="n">' + inr(r.rev) + (r.revOk ? '' : '<br><span class="tag">provisional</span>') + '</td><td class="n">' + inr(d) + '</td><td class="n"><b>' + inr(r.rev - d) + '</b></td></tr>'; }).join('');
+    const adv = T.reduce((t, r) => t + (Number(r.adv) || 0), 0), est = T.filter(r => r.advEst).length, rmT = RM.reduce((t, x) => t + x.amount, 0), net = rev - dc - adv - rmT;
+    const rows = T.slice().reverse().map(r => { const d = (Number(r.diesel) || 0) * (Number(r.dRate) || Number(D.dieselRate) || 0), a = Number(r.adv) || 0;
+      return '<tr><td>' + dmy(r.at) + '<br><small class="muted">' + E(r.lr) + '</small></td><td><b>' + E(r.truck.slice(-4)) + '</b></td><td>' + E(r.dest) + '</td><td class="n">' + fmt(r.mt, 2) + '</td><td class="n">' + inr(r.rev) + (r.revOk ? '' : '<br><span class="tag">provisional</span>') + '</td><td class="n">' + inr(d) + '</td><td class="n">' + inr(a) + (r.advEst ? '<br><span class="tag">estimated</span>' : '') + '</td><td class="n"><b>' + inr(r.rev - d - a) + '</b></td></tr>'; }).join('');
     $('view').innerHTML =
       '<div class="card"><h3 class="h">Earnings · कमाई</h3><div class="kp">' +
-        '<div><small>Freight earned</small><b>' + inr(rev) + '</b><em>' + fmt(mt, 1) + ' MT</em></div>' +
-        '<div><small>Rate per MT</small><b>' + (mt ? '₹' + fmt(rev / mt) : '—') + '</b></div>' +
+        '<div><small>Freight earned</small><b>' + inr(rev) + '</b><em>' + fmt(mt, 1) + ' MT · ' + (mt ? '₹' + fmt(rev / mt) + '/MT' : '') + '</em></div>' +
         '<div><small>Diesel issued (₹)</small><b>' + inr(dc) + '</b><em>at JNP purchase rate</em></div>' +
-        '<div><small>Freight − diesel</small><b>' + inr(rev - dc) + '</b><em>before other deductions</em></div></div>' +
-        (pend ? '<div class="muted" style="margin-top:8px;font-size:12.5px">' + pend + ' trip' + (pend === 1 ? ' is' : 's are') + ' provisional (freight not yet confirmed by the customer) — the amount can change.</div>' : '') + '</div>' +
-      '<div class="card"><h3 class="h">Per truck</h3><div class="tscroll"><table class="p"><tr><th>Truck</th><th class="n">Trips</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Net</th></tr>' +
-        P.map(p => '<tr><td><b>' + E(p.no) + '</b></td><td class="n">' + p.trips + '</td><td class="n">' + inr(p.rev) + '</td><td class="n">' + inr(p.dCost + p.xdCost) + '</td><td class="n"><b>' + inr(p.rev - p.dCost - p.xdCost) + '</b></td></tr>').join('') +
-        '<tr class="tot"><td>Total</td><td class="n">' + T.length + '</td><td class="n">' + inr(rev) + '</td><td class="n">' + inr(dc) + '</td><td class="n">' + inr(rev - dc) + '</td></tr></table></div></div>' +
-      '<div class="card"><h3 class="h">Trip-wise</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">₹/MT</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Net</th></tr>' + rows + '</table></div>' : '<span class="muted">No trips in these dates.</span>') +
+        '<div><small>Trip advance paid</small><b>' + inr(adv) + '</b><em>' + T.length + ' trips' + (est ? ' · ' + est + ' estimated' : '') + '</em></div>' +
+        '<div><small>R&amp;M debited</small><b>' + inr(rmT) + '</b><em>' + RM.length + ' items · see R&amp;M tab</em></div>' +
+        '<div><small>Balance</small><b>' + inr(net) + '</b><em>freight − diesel − advance − R&amp;M</em></div></div>' +
+        (pend ? '<div class="muted" style="margin-top:8px;font-size:12.5px">' + pend + ' trip' + (pend === 1 ? ' is' : 's are') + ' provisional (freight not yet confirmed by the customer) — the amount can change.</div>' : '') +
+        (est ? '<div class="muted" style="margin-top:4px;font-size:12.5px">“Estimated” advance: not recorded for that trip, shown at ' + inr(D.defAdv || 1960) + ' until the office confirms.</div>' : '') + '</div>' +
+      '<div class="card"><h3 class="h">Per truck</h3><div class="tscroll"><table class="p"><tr><th>Truck</th><th class="n">Trips</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Advance</th><th class="n">R&amp;M</th><th class="n">Balance</th></tr>' +
+        P.map(p => { const a = advBy[p.no] || 0, m = rmBy[p.no] || 0; return '<tr><td><b>' + E(p.no) + '</b></td><td class="n">' + p.trips + '</td><td class="n">' + inr(p.rev) + '</td><td class="n">' + inr(p.dCost + p.xdCost) + '</td><td class="n">' + inr(a) + '</td><td class="n">' + inr(m) + '</td><td class="n"><b>' + inr(p.rev - p.dCost - p.xdCost - a - m) + '</b></td></tr>'; }).join('') +
+        '<tr class="tot"><td>Total</td><td class="n">' + T.length + '</td><td class="n">' + inr(rev) + '</td><td class="n">' + inr(dc) + '</td><td class="n">' + inr(adv) + '</td><td class="n">' + inr(rmT) + '</td><td class="n">' + inr(net) + '</td></tr></table></div></div>' +
+      '<div class="card"><h3 class="h">Trip-wise</h3>' + (T.length ? '<div class="tscroll"><table class="p"><tr><th>Date</th><th>Truck</th><th>To</th><th class="n">MT</th><th class="n">Freight</th><th class="n">Diesel ₹</th><th class="n">Advance</th><th class="n">Net</th></tr>' + rows + '</table></div>' : '<span class="muted">No trips in these dates.</span>') +
       '<div class="muted" style="margin-top:8px;font-size:12px">Final settlement is as per the statement from JNP office.</div></div>';
   }
 
