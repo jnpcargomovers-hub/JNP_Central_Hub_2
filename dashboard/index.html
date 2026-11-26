@@ -288,7 +288,7 @@
   ['change', 'input', 'blur'].forEach(ev => { $('from').addEventListener(ev, onDate); $('to').addEventListener(ev, onDate); });
   $('fLoadSel').onchange = () => { fLoad = $('fLoadSel').value; render(); };
 
-  const TABS = [{ id: 'finance', i: '💰', label: 'Financial' }, { id: 'overview', i: '📊', label: 'Operations' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }, { id: 'loading', i: '⏱️', label: 'Loading' }];
+  const TABS = [{ id: 'finance', i: '💰', label: 'Financial' }, { id: 'overview', i: '📊', label: 'Operations' }, { id: 'explore', i: '🔎', label: 'Explore' }, { id: 'trips', i: '🚚', label: 'Trips' }, { id: 'fleet', i: '🔧', label: 'Fleet' }, { id: 'loading', i: '⏱️', label: 'Loading' }, { id: 'diesel', i: '⛽', label: 'Diesel' }];
   let tab = JNP.param('tab') || 'overview', RAW = null, M = null, drillKey = '', fsSel = '';
   if (!TABS.some(t => t.id === tab)) tab = 'overview';
   const allowed = () => (RAW && RAW.sections) || TABS.map(t => t.id);
@@ -608,9 +608,9 @@
     $('rangeTxt').textContent = JNP.dmy(RAW.from) + ' to ' + JNP.dmy(RAW.to) + (MONEY() ? '' : ' · operations view (no ₹ figures)');
     const T = M.trips.filter(keepT);
     SHARE = {}; SHN = 0;
-    const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab, loading: loadingTab }[tab] || overview;
+    const fn = { finance: financeTab, overview, explore, trips: tripsView, fleet: fleetTab, loading: loadingTab, diesel: dieselTab }[tab] || overview;
     const np = (M.notOnPortal || []).filter(keepT), pi = M.portalInfo || {}, tm = d => d ? JNP.dmy(iso(d)).slice(0, 5) + ' ' + String(d.getHours()).padStart(2, '0') + ':00' : '';
-    const band = tab === 'loading' ? '' : '<div class="card" style="padding:10px 14px;margin-bottom:10px;font-size:13px;border-left:4px solid var(--blue)">📋 Trips, MT and revenue = <b>UTCL portal, by PGI date</b> · <b>Orders received</b> (Loader entries, by order day) shown in their own charts' +
+    const band = tab === 'loading' || tab === 'diesel' ? '' : '<div class="card" style="padding:10px 14px;margin-bottom:10px;font-size:13px;border-left:4px solid var(--blue)">📋 Trips, MT and revenue = <b>UTCL portal, by PGI date</b> · <b>Orders received</b> (Loader entries, by order day) shown in their own charts' +
       (pi.lastPgi ? ' · portal has loadings till <b>' + tm(pi.lastPgi) + '</b>' : ' · portal not synced yet') +
       (np.length ? '<br><span style="color:var(--orange)">⏳ <b>' + np.length + ' truck' + (np.length > 1 ? 's' : '') + '</b> loaded in these dates, not on the portal yet (' + fmt(sum(np, x => x.cap || x.mt), 0) + ' MT at truck size) — not counted above: ' +
         np.slice(0, 12).map(x => E(x.lr) + ' ' + E(String(x.truck).slice(-4))).join(', ') + (np.length > 12 ? ' …' : '') + '</span>' : '') + '</div>';
@@ -1101,6 +1101,89 @@
     const worst = R.slice().sort((a, b) => b.waste - a.waste).slice(0, 15).map(r => ({ day: JNP.dmy(r.day).slice(0, 5), truck: r.truck.slice(-4), driver: r.driver, yi: t(r.yi), dI: t(r.dI), rq: t(r.rq), gi: t(r.gi), li: t(r.li), lo: t(r.lo), go: t(r.go), waste: r.waste, total: r.total }));
     const wt = sec('Trips with most time lost', 'top 15 · UTCL portal times', table('tLdW', [{ k: 'day', t: 'Day' }, { k: 'truck', t: 'Truck' }, { k: 'driver', t: 'Driver' }, { k: 'yi', t: 'Yard in' }, { k: 'dI', t: 'DI' }, { k: 'rq', t: 'Called' }, { k: 'gi', t: 'Gate in' }, { k: 'li', t: 'Load in' }, { k: 'lo', t: 'Load out' }, { k: 'go', t: 'Gate out' }, hcol('total', 'Yard→out'), { k: 'waste', t: 'Lost', num: 1, f: v => fmt(v, 1) + ' h' }], worst, { sort: 'waste' }));
     return head + kp + chart + '<div class="cgrid">' + veh + drv + '</div>' + lp + wt;
+  }
+
+  // ---------- 26 Nov: DIESEL AUDIT — fill to fill, month to date.
+  // Every diesel given (Loader entry with litres, or Extra Diesel with litres) is a fill with its odometer KM.
+  // KM per litre = (KM at the last fill − KM at the first fill) ÷ litres of every fill EXCEPT the last one (that diesel is used next).
+  // Same rule for every truck size — a 12 T running 2–3 trips on one tank simply has fewer fills.
+  let dCls = '', dAuto = '';
+  function dieselTargets() {
+    const t = { '12T': 5.5, '25T': NaN, '31T': 3.3, '35T': 3.2, '42T': 2.7 };
+    String((RAW.settings || {}).Diesel_Targets || '').split(',').forEach(p => { const m = p.match(/(\d+)\s*T?\s*=\s*([\d.]+)/i); if (m) t[m[1] + 'T'] = Number(m[2]); });
+    return t;
+  }
+  function dieselAudit() {
+    const TG = dieselTargets(), ev = {};
+    const add = (no, e) => { if (!no) return; (ev[no] = ev[no] || []).push(e); };
+    M.all.filter(x => x.day >= RAW.from && x.day <= RAW.to && x.diesel > 0).forEach(x => add(x.truck, { at: x.at, km: x.km0 || NaN, l: x.diesel, rate: x.dRate > 50 ? x.dRate : (M.rateAt('Diesel', x.at) || NaN), src: 'LR ' + (x.lr || ''), driver: x.driver }));
+    rows(RAW.extraDiesel).forEach(x => { const d = D(x.Diesel_Date || x.Created_At), day = d ? iso(d) : ''; if (day < RAW.from || day > RAW.to || !(n0(x.Litres) > 0)) return;
+      add(JNP.normTruck(x.Truck_No), { at: d, km: n0(x.Odometer_KM) || NaN, l: n0(x.Litres), rate: n0(x.Rate) > 50 ? n0(x.Rate) : (M.rateAt('Diesel', d) || NaN), src: 'Extra diesel', driver: x.Driver_Name || '' }); });
+    return Object.keys(ev).map(no => {
+      const t = M.truckM[no] || {}, cls = classOf(t.cap), E0 = ev[no].sort((a, b) => a.at - b.at), withKm = E0.filter(e => !isNaN(e.km) && e.km > 0);
+      // odometer checks: lower than the fill before = backwards; more than 2,500 km between two fills = a typing slip (jump)
+      let back = 0, jump = 0, prev = null; E0.forEach(e => { e.back = false; e.jump = false; if (!isNaN(e.km) && e.km > 0) { if (prev !== null && e.km < prev) { e.back = true; back++; } else if (prev !== null && e.km - prev > 2500) { e.jump = true; jump++; } prev = e.km; } });
+      const first = withKm[0], last = withKm[withKm.length - 1];
+      const used = first && last && first !== last ? E0.filter(e => e.at >= first.at && e.at < last.at) : [];
+      const litres = sum(used, e => e.l), km = first && last ? last.km - first.km : NaN, kmpl = litres > 0 && first !== last ? km / litres : NaN, target = TG[cls];
+      const drivers = {}; E0.forEach(e => { if (e.driver) drivers[e.driver] = (drivers[e.driver] || 0) + 1; });
+      const rate = avg(used.map(e => e.rate).filter(v => !isNaN(v))) || NaN, excess = !isNaN(kmpl) && target ? litres - km / target : NaN;
+      const r = { truck: no, cls: cls, load: t.cargo === 'BULK' ? 'BULK' : 'BAG', fills: E0.length, noKm: E0.length - withKm.length, km: km, litres: litres, kmpl: kmpl, target: target, back: back + jump, jump: jump, backOnly: back,
+        low: !isNaN(kmpl) && target && kmpl < target, excess: excess, excessAmt: !isNaN(excess) && !isNaN(rate) ? excess * rate : NaN, first: first, last: last, ev: E0,
+        driver: Object.keys(drivers).sort((a, b) => drivers[b] - drivers[a]).join(', '), lastLitres: last ? last.l : 0 };
+      r.flag = r.back ? 'back' : r.low ? 'low' : isNaN(kmpl) ? 'na' : 'ok';
+      return r;
+    }).filter(r => (!dCls || r.cls === dCls) && (fLoad === 'All' || r.load === fLoad));
+  }
+  function dieselTab() {
+    // month to date: the tab always shows one calendar month (this month up to today)
+    const today = iso(new Date()), mEndOf = f => iso(new Date(+f.slice(0, 4), +f.slice(5, 7), 0));
+    const base = RAW.from.slice(0, 7) === RAW.to.slice(0, 7) ? RAW.from : RAW.to;          // a range across two months → the later month
+    const wf = base.slice(0, 8) + '01', we = mEndOf(base), wt = we < today ? we : today;
+    if (RAW.from !== wf || RAW.to !== wt) {
+      if (dAuto !== wf + wt) { dAuto = wf + wt; setTimeout(() => { $('from').value = wf; $('to').value = wt; load(); }, 0); }
+      return '<div class="card muted">Opening ' + new Date(wf + 'T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) + ' (month to date)…</div>';
+    }
+    const months = []; for (let i = 0; i < 12; i++) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push(iso(d).slice(0, 7)); }
+    setTimeout(() => {
+      const ms = $('dMonth'); if (ms) ms.onchange = () => { const m = ms.value, end = mEndOf(m + '-01'); $('from').value = m + '-01'; $('to').value = end < today ? end : today; dAuto = $('from').value + $('to').value; load(); };
+      document.querySelectorAll('#dChips button').forEach(b => b.onclick = () => { dCls = b.dataset.c; render(); });
+      document.querySelectorAll('#tDsl [data-dt]').forEach(tr => tr.onclick = () => { const x = $('dd_' + tr.dataset.dt); if (x) x.classList.toggle('hidden'); });
+      const cb = $('dCsv'); if (cb) cb.onclick = () => dieselCsv(A);
+    }, 0);
+    const A = dieselAudit(), TG = dieselTargets(), full = RAW.access === 'full';
+    const head = '<div class="card" style="margin-bottom:10px"><div class="filt" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' +
+      '<div><label class="muted2">Month</label><br><select id="dMonth" class="input">' + months.map(m => '<option value="' + m + '"' + (m === RAW.from.slice(0, 7) ? ' selected' : '') + '>' + new Date(m + '-01T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) + '</option>').join('') + '</select></div>' +
+      '<div id="dChips" class="chips">' + [''].concat(CLASSES.map(c => c + 'T')).map(c => '<button type="button" class="chip' + (dCls === c ? ' on' : '') + '" data-c="' + c + '">' + (c || 'All') + (c && TG[c] ? ' · ' + TG[c] : '') + '</button>').join('') + '</div></div>' +
+      '<div class="muted2" style="margin-top:6px">' + JNP.dmy(RAW.from) + ' → ' + JNP.dmy(RAW.to) + ' · KM/L = (KM at last fill − KM at first fill) ÷ litres of every fill except the last · targets: 12T 5.5 · 31T 3.3 · 35T 3.2 · 42T 2.7 (Settings › Diesel_Targets)</div></div>';
+    if (!A.length) return head + '<div class="card muted">No diesel given in these dates' + (dCls ? ' for ' + dCls : '') + '.</div>';
+    const ok = A.filter(r => !isNaN(r.kmpl) && !r.back), back = A.filter(r => r.back), low = A.filter(r => r.low && !r.back), na = A.filter(r => isNaN(r.kmpl) && !r.back);
+    const fk = sum(ok, r => r.km), fl = sum(ok, r => r.litres), ex = sum(ok.filter(r => r.excess > 0), r => r.excess), exA = sum(ok.filter(r => r.excessAmt > 0), r => r.excessAmt);
+    SHARE.kpDs = { title: 'Diesel audit', fn: 'kpis' };
+    const kp = '<div class="kwrap"><div class="khead"><b>Diesel audit · ' + A.length + ' trucks</b><button type="button" class="shr" data-s="kpDs">📲 Share</button></div><div class="kpis">' +
+      kpi('KM per litre', isNaN(fk / fl) ? '—' : fmt(fk / fl, 2), fmt(fk) + ' km ÷ ' + fmt(fl) + ' L · trucks with good readings', 'var(--blue)') +
+      kpi('Below target', String(low.length), 'trucks under their KM/L target', low.length ? 'var(--red)' : 'var(--ok)') +
+      kpi('Odometer reading wrong', String(back.length), back.length ? 'KM went backwards, or jumped 2,500+ km between fills — red rows below; left out of the totals' : 'none', back.length ? 'var(--red)' : 'var(--ok)') +
+      kpi('Extra litres', fmt(ex, 0) + ' L', 'used above target' + (full && exA ? ' · ≈ ' + inr(exA) : ''), 'var(--orange)') +
+      kpi('Not enough fills', String(na.length), 'only one fill with KM so far — needs the next fill', 'var(--muted)') + '</div></div>';
+    const cls = CLASSES.map(c => c + 'T').map(c => { const a = ok.filter(r => r.cls === c), k = sum(a, r => r.km), l = sum(a, r => r.litres); return { label: c, value: l ? k / l : NaN, target: TG[c], n: a.length }; }).filter(r => !isNaN(r.value));
+    const byCls = cls.length ? sec('KM per litre by size', 'actual vs target', hbar(cls.map(r => ({ label: r.label, sub: r.n + ' trucks' + (r.target ? ' · target ' + r.target : ''), value: r.value, color: r.target && r.value < r.target ? 'var(--red)' : 'var(--ok)', text: fmt(r.value, 2) })))) : '';
+    const order = { back: 0, low: 1, na: 3, ok: 2 }, srt = A.slice().sort((a, b) => order[a.flag] - order[b.flag] || (a.kmpl / (a.target || 1)) - (b.kmpl / (b.target || 1)));
+    const t2 = d => d ? JNP.dmy(iso(d)).slice(0, 5) : '';
+    const rowsH = srt.map((r, i) => {
+      const red = r.flag === 'back', amber = r.flag === 'low', st = red ? 'background:#FDECEC' : amber ? 'background:#FFF5E6' : '';
+      const flag = red ? '<b style="color:var(--red)">⚠ ' + (r.backOnly ? 'reading backwards (' + r.backOnly + ')' : '') + (r.backOnly && r.jump ? ' · ' : '') + (r.jump ? 'KM jump (' + r.jump + ')' : '') + '</b>' : amber ? '<b style="color:var(--red)">below target</b>' : r.flag === 'na' ? '<span class="muted2">needs next fill</span>' : '<span style="color:var(--ok)">✓</span>';
+      const det = '<tr id="dd_' + i + '" class="hidden"><td colspan="9"><table class="tbl" style="font-size:12px"><tr><th>Date</th><th>Fill</th><th>KM</th><th>KM run</th><th>Litres</th><th>Driver</th></tr>' +
+        r.ev.map((e, j) => { const pk = r.ev.slice(0, j).reverse().find(x => !isNaN(x.km)); return '<tr' + (e.back || e.jump ? ' style="color:var(--red);font-weight:700"' : '') + '><td>' + t2(e.at) + '</td><td>' + E(e.src) + '</td><td class="r">' + (isNaN(e.km) ? '<span class="muted2">no KM</span>' : fmt(e.km)) + '</td><td class="r">' + (pk && !isNaN(e.km) ? fmt(e.km - pk.km) : '') + '</td><td class="r">' + fmt(e.l) + (e === r.last ? ' <span class="muted2">(next period)</span>' : '') + '</td><td>' + E(e.driver || '') + '</td></tr>'; }).join('') + '</table></td></tr>';
+      return '<tr data-dt="' + i + '" style="cursor:pointer;' + st + '"><td><b>' + E(r.truck.slice(-4)) + '</b> <span class="muted2">' + r.cls + '</span></td><td class="r">' + r.fills + (r.noKm ? ' <span class="muted2">(' + r.noKm + ' no KM)</span>' : '') + '</td><td class="r">' + (r.first ? fmt(r.first.km) : '—') + '</td><td class="r">' + (r.last && r.last !== r.first ? fmt(r.last.km) : '—') + '</td><td class="r">' + (isNaN(r.km) || r.last === r.first || red ? '—' : fmt(r.km)) + '</td><td class="r">' + (r.litres ? fmt(r.litres) : '—') + '</td><td class="r"><b' + (red || amber ? ' style="color:var(--red)"' : '') + '>' + (isNaN(r.kmpl) || red ? '—' : fmt(r.kmpl, 2)) + '</b>' + (r.target ? ' <span class="muted2">/ ' + r.target + '</span>' : '') + '</td><td class="r">' + (r.excess > 0 && !red ? fmt(r.excess, 0) + ' L' + (full && r.excessAmt > 0 ? '<br><span class="muted2">' + inr(r.excessAmt) + '</span>' : '') : '') + '</td><td>' + flag + '<br><span class="muted2">' + E(r.driver) + '</span></td></tr>' + det;
+    }).join('');
+    const tbl = sec('Trucks · tap a row for every fill', 'red = odometer went backwards or jumped · amber = below target', '<div class="scroll"><table class="tbl" id="tDsl"><tr><th>Truck</th><th>Fills</th><th>First KM</th><th>Last KM</th><th>KM run</th><th>Litres*</th><th>KM/L</th><th>Extra</th><th>Flag · driver</th></tr>' + rowsH + '</table></div><div class="muted2" style="margin-top:6px">* litres of every fill except the last one (that diesel is used after the last reading). <button type="button" class="mini" id="dCsv">⬇️ Excel (CSV)</button></div>');
+    return head + kp + byCls + tbl;
+  }
+  function dieselCsv(A) {
+    const q = v => '"' + String(v === undefined || v === null || (typeof v === 'number' && isNaN(v)) ? '' : v).replace(/"/g, '""') + '"', out = [['Truck', 'Size', 'Date', 'Fill', 'Odometer KM', 'Litres', 'Reading backwards', 'Driver', 'Truck KM run', 'Truck litres (excl. last)', 'Truck KM/L', 'Target', 'Flag'].join(',')];
+    A.forEach(r => r.ev.forEach(e => out.push([r.truck, r.cls, e.at ? iso(e.at) : '', e.src, isNaN(e.km) ? '' : e.km, e.l, e.back ? 'BACKWARDS' : e.jump ? 'JUMP 2500+' : '', e.driver, r.km, r.litres, isNaN(r.kmpl) ? '' : r.kmpl.toFixed(2), r.target || '', r.flag === 'back' ? 'Odometer wrong' : r.flag === 'low' ? 'Below target' : r.flag === 'na' ? 'Needs next fill' : 'OK'].map(q).join(','))));
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv' })); a.download = 'JNP_Diesel_Audit_' + RAW.from + '_to_' + RAW.to + '.csv'; a.click();
   }
 
   // ---------- Revenue — management only (Level 1). Never in the ops report.
