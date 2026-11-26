@@ -1124,7 +1124,11 @@
       // odometer checks: lower than the fill before = backwards; more than 2,500 km between two fills = a typing slip (jump)
       let back = 0, jump = 0, prev = null; E0.forEach(e => { e.back = false; e.jump = false; if (!isNaN(e.km) && e.km > 0) { if (prev !== null && e.km < prev) { e.back = true; back++; } else if (prev !== null && e.km - prev > 2500) { e.jump = true; jump++; } prev = e.km; } });
       const first = withKm[0], last = withKm[withKm.length - 1];
-      const used = first && last && first !== last ? E0.filter(e => e.at >= first.at && e.at < last.at) : [];
+      // 12 T runs tank-full to tank-full: a fill puts back what was burnt since the fill before → count every fill AFTER the first, up to and
+      // including the latest (+ extra diesel in between). Other sizes get diesel for the coming trip → count every fill BEFORE the latest.
+      const tank = cls === '12T';
+      const used = first && last && first !== last ? E0.filter(e => tank ? (e.at > first.at && e.at <= last.at) : (e.at >= first.at && e.at < last.at)) : [];
+      E0.forEach(e => e.skip = used.indexOf(e) < 0);
       const litres = sum(used, e => e.l), km = first && last ? last.km - first.km : NaN, kmpl = litres > 0 && first !== last ? km / litres : NaN, target = TG[cls];
       const drivers = {}; E0.forEach(e => { if (e.driver) drivers[e.driver] = (drivers[e.driver] || 0) + 1; });
       const rate = avg(used.map(e => e.rate).filter(v => !isNaN(v))) || NaN, excess = !isNaN(kmpl) && target ? litres - km / target : NaN;
@@ -1135,6 +1139,7 @@
       return r;
     }).filter(r => (!dCls || r.cls === dCls) && (fLoad === 'All' || r.load === fLoad));
   }
+  window.__dsl = () => dieselAudit();   // test hook
   function dieselTab() {
     // month to date: the tab always shows one calendar month (this month up to today)
     const today = iso(new Date()), mEndOf = f => iso(new Date(+f.slice(0, 4), +f.slice(5, 7), 0));
@@ -1155,7 +1160,7 @@
     const head = '<div class="card" style="margin-bottom:10px"><div class="filt" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' +
       '<div><label class="muted2">Month</label><br><select id="dMonth" class="input">' + months.map(m => '<option value="' + m + '"' + (m === RAW.from.slice(0, 7) ? ' selected' : '') + '>' + new Date(m + '-01T00:00:00').toLocaleString('en-IN', { month: 'long', year: 'numeric' }) + '</option>').join('') + '</select></div>' +
       '<div id="dChips" class="chips">' + [''].concat(CLASSES.map(c => c + 'T')).map(c => '<button type="button" class="chip' + (dCls === c ? ' on' : '') + '" data-c="' + c + '">' + (c || 'All') + (c && TG[c] ? ' · ' + TG[c] : '') + '</button>').join('') + '</div></div>' +
-      '<div class="muted2" style="margin-top:6px">' + JNP.dmy(RAW.from) + ' → ' + JNP.dmy(RAW.to) + ' · KM/L = (KM at last fill − KM at first fill) ÷ litres of every fill except the last · targets: 12T 5.5 · 31T 3.3 · 35T 3.2 · 42T 2.7 (Settings › Diesel_Targets)</div></div>';
+      '<div class="muted2" style="margin-top:6px">' + JNP.dmy(RAW.from) + ' → ' + JNP.dmy(RAW.to) + ' · KM/L = (KM at latest fill − KM at first fill) ÷ litres · <b>12T</b> (tank-full to tank-full): litres of every fill after the first, incl. the latest + extra diesel · <b>31T / 35T / 42T</b>: litres of every fill before the latest · targets: 12T 5.5 · 31T 3.3 · 35T 3.2 · 42T 2.7 (Settings › Diesel_Targets)</div></div>';
     if (!A.length) return head + '<div class="card muted">No diesel given in these dates' + (dCls ? ' for ' + dCls : '') + '.</div>';
     const ok = A.filter(r => !isNaN(r.kmpl) && !r.back), back = A.filter(r => r.back), low = A.filter(r => r.low && !r.back), na = A.filter(r => isNaN(r.kmpl) && !r.back);
     const fk = sum(ok, r => r.km), fl = sum(ok, r => r.litres), ex = sum(ok.filter(r => r.excess > 0), r => r.excess), exA = sum(ok.filter(r => r.excessAmt > 0), r => r.excessAmt);
@@ -1174,15 +1179,15 @@
       const red = r.flag === 'back', amber = r.flag === 'low', st = red ? 'background:#FDECEC' : amber ? 'background:#FFF5E6' : '';
       const flag = red ? '<b style="color:var(--red)">⚠ ' + (r.backOnly ? 'reading backwards (' + r.backOnly + ')' : '') + (r.backOnly && r.jump ? ' · ' : '') + (r.jump ? 'KM jump (' + r.jump + ')' : '') + '</b>' : amber ? '<b style="color:var(--red)">below target</b>' : r.flag === 'na' ? '<span class="muted2">needs next fill</span>' : '<span style="color:var(--ok)">✓</span>';
       const det = '<tr id="dd_' + i + '" class="hidden"><td colspan="9"><table class="tbl" style="font-size:12px"><tr><th>Date</th><th>Fill</th><th>KM</th><th>KM run</th><th>Litres</th><th>Driver</th></tr>' +
-        r.ev.map((e, j) => { const pk = r.ev.slice(0, j).reverse().find(x => !isNaN(x.km)); return '<tr' + (e.back || e.jump ? ' style="color:var(--red);font-weight:700"' : '') + '><td>' + t2(e.at) + '</td><td>' + E(e.src) + '</td><td class="r">' + (isNaN(e.km) ? '<span class="muted2">no KM</span>' : fmt(e.km)) + '</td><td class="r">' + (pk && !isNaN(e.km) ? fmt(e.km - pk.km) : '') + '</td><td class="r">' + fmt(e.l) + (e === r.last ? ' <span class="muted2">(next period)</span>' : '') + '</td><td>' + E(e.driver || '') + '</td></tr>'; }).join('') + '</table></td></tr>';
+        r.ev.map((e, j) => { const pk = r.ev.slice(0, j).reverse().find(x => !isNaN(x.km)); return '<tr' + (e.back || e.jump ? ' style="color:var(--red);font-weight:700"' : '') + '><td>' + t2(e.at) + '</td><td>' + E(e.src) + '</td><td class="r">' + (isNaN(e.km) ? '<span class="muted2">no KM</span>' : fmt(e.km)) + '</td><td class="r">' + (pk && !isNaN(e.km) ? fmt(e.km - pk.km) : '') + '</td><td class="r">' + fmt(e.l) + (e.skip ? ' <span class="muted2">(' + (r.cls === '12T' ? (e === r.first ? 'starting tank — not counted' : 'not counted') : (e === r.last ? 'for the next trip — not counted' : 'not counted')) + ')</span>' : '') + '</td><td>' + E(e.driver || '') + '</td></tr>'; }).join('') + '</table></td></tr>';
       return '<tr data-dt="' + i + '" style="cursor:pointer;' + st + '"><td><b>' + E(r.truck.slice(-4)) + '</b> <span class="muted2">' + r.cls + '</span></td><td class="r">' + r.fills + (r.noKm ? ' <span class="muted2">(' + r.noKm + ' no KM)</span>' : '') + '</td><td class="r">' + (r.first ? fmt(r.first.km) : '—') + '</td><td class="r">' + (r.last && r.last !== r.first ? fmt(r.last.km) : '—') + '</td><td class="r">' + (isNaN(r.km) || r.last === r.first || red ? '—' : fmt(r.km)) + '</td><td class="r">' + (r.litres ? fmt(r.litres) : '—') + '</td><td class="r"><b' + (red || amber ? ' style="color:var(--red)"' : '') + '>' + (isNaN(r.kmpl) || red ? '—' : fmt(r.kmpl, 2)) + '</b>' + (r.target ? ' <span class="muted2">/ ' + r.target + '</span>' : '') + '</td><td class="r">' + (r.excess > 0 && !red ? fmt(r.excess, 0) + ' L' + (full && r.excessAmt > 0 ? '<br><span class="muted2">' + inr(r.excessAmt) + '</span>' : '') : '') + '</td><td>' + flag + '<br><span class="muted2">' + E(r.driver) + '</span></td></tr>' + det;
     }).join('');
-    const tbl = sec('Trucks · tap a row for every fill', 'red = odometer went backwards or jumped · amber = below target', '<div class="scroll"><table class="tbl" id="tDsl"><tr><th>Truck</th><th>Fills</th><th>First KM</th><th>Last KM</th><th>KM run</th><th>Litres*</th><th>KM/L</th><th>Extra</th><th>Flag · driver</th></tr>' + rowsH + '</table></div><div class="muted2" style="margin-top:6px">* litres of every fill except the last one (that diesel is used after the last reading). <button type="button" class="mini" id="dCsv">⬇️ Excel (CSV)</button></div>');
+    const tbl = sec('Trucks · tap a row for every fill', 'red = odometer went backwards or jumped · amber = below target', '<div class="scroll"><table class="tbl" id="tDsl"><tr><th>Truck</th><th>Fills</th><th>First KM</th><th>Last KM</th><th>KM run</th><th>Litres*</th><th>KM/L</th><th>Extra</th><th>Flag · driver</th></tr>' + rowsH + '</table></div><div class="muted2" style="margin-top:6px">* 12T: fills after the first (the latest fill refills what was used) · other sizes: fills before the latest (that diesel is for the next trip). <button type="button" class="mini" id="dCsv">⬇️ Excel (CSV)</button></div>');
     return head + kp + byCls + tbl;
   }
   function dieselCsv(A) {
-    const q = v => '"' + String(v === undefined || v === null || (typeof v === 'number' && isNaN(v)) ? '' : v).replace(/"/g, '""') + '"', out = [['Truck', 'Size', 'Date', 'Fill', 'Odometer KM', 'Litres', 'Reading backwards', 'Driver', 'Truck KM run', 'Truck litres (excl. last)', 'Truck KM/L', 'Target', 'Flag'].join(',')];
-    A.forEach(r => r.ev.forEach(e => out.push([r.truck, r.cls, e.at ? iso(e.at) : '', e.src, isNaN(e.km) ? '' : e.km, e.l, e.back ? 'BACKWARDS' : e.jump ? 'JUMP 2500+' : '', e.driver, r.km, r.litres, isNaN(r.kmpl) ? '' : r.kmpl.toFixed(2), r.target || '', r.flag === 'back' ? 'Odometer wrong' : r.flag === 'low' ? 'Below target' : r.flag === 'na' ? 'Needs next fill' : 'OK'].map(q).join(','))));
+    const q = v => '"' + String(v === undefined || v === null || (typeof v === 'number' && isNaN(v)) ? '' : v).replace(/"/g, '""') + '"', out = [['Truck', 'Size', 'Date', 'Fill', 'Odometer KM', 'Litres', 'Litres counted', 'Reading backwards', 'Driver', 'Truck KM run', 'Truck litres (excl. last)', 'Truck KM/L', 'Target', 'Flag'].join(',')];
+    A.forEach(r => r.ev.forEach(e => out.push([r.truck, r.cls, e.at ? iso(e.at) : '', e.src, isNaN(e.km) ? '' : e.km, e.l, e.skip ? 'No' : 'Yes', e.back ? 'BACKWARDS' : e.jump ? 'JUMP 2500+' : '', e.driver, r.km, r.litres, isNaN(r.kmpl) ? '' : r.kmpl.toFixed(2), r.target || '', r.flag === 'back' ? 'Odometer wrong' : r.flag === 'low' ? 'Below target' : r.flag === 'na' ? 'Needs next fill' : 'OK'].map(q).join(','))));
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv' })); a.download = 'JNP_Diesel_Audit_' + RAW.from + '_to_' + RAW.to + '.csv'; a.click();
   }
 
