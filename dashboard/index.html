@@ -307,7 +307,7 @@
     try {
       const [dash, snap] = await Promise.all([JNP.call('dash', { from: want.from, to: want.to, fresh: fresh === true }), JNP.boardSnapshot(fresh === true).catch(() => null)]);
       if (my !== loadSeq) return;                                                   // an older answer arriving late is thrown away
-      RAW = dash; M = model(RAW); applyBoard(M, snap);
+      RAW = dash; M = model(RAW); applyBoard(M, snap); window.__M = () => M;
       if (allowed().indexOf(tab) < 0) tab = ['overview', 'fleet', 'trips', 'explore', 'finance'].find(x => allowed().indexOf(x) >= 0) || 'explore';
       drawNav(); render();
     }
@@ -324,6 +324,8 @@
     const capNum = v => { const m = String(v === null || v === undefined ? '' : v).match(/\d+(\.\d+)?/); return m ? Number(m[0]) : ''; };
     R.trucks.forEach(t => { t.no = JNP.normTruck(t.no); t.cap = capNum(t.cap); });
     const truckM = {}; R.trucks.forEach(t => truckM[t.no] = t);
+    const archivedSet = new Set((R.archived || []).map(n => JNP.normTruck(n)));   // 26 Nov: long-term off-road trucks marked Archived in Truck_Master — out of every report
+    const lrDig = v => String(v === null || v === undefined ? '' : v).replace(/\D/g, '');
     const last4 = {}; R.trucks.forEach(t => { const k = t.no.slice(-4); last4[k] = last4[k] === undefined ? t.no : null; });   // null = ambiguous
     const fixNo = no => { no = JNP.normTruck(no); if (!no || truckM[no]) return no; const k = no.slice(-4); return /^\d{4}$/.test(k) && last4[k] ? last4[k] : no; };
     ['loader', 'breakdowns', 'maintenance', 'truckExp', 'tyreEv', 'handover'].forEach(key => { const t = R[key]; if (!t || !t.cols) return; const i = t.cols.indexOf('Truck_No'); if (i >= 0) t.rows.forEach(r => r[i] = fixNo(r[i])); });
@@ -351,7 +353,7 @@
         targetTat: (destM[JNP.keyOf(r.Destination)] || {}).tat || '', by: r.Created_By, hasDoc: !!(b || i), bAt: b && b.Created_At ? D(b.Created_At) : null,
         pgi: r.PGI_At ? D(r.PGI_At) : null, act: n0(r.Actual_Qty_MT), synced: r.Portal_Synced_At ? D(r.Portal_Synced_At) : null,
         dRate: n0(r.Diesel_Rate), defL: n0(r.DEF_Ltr), defRate: n0(r.DEF_Rate), di: String(r.DI_No || '') };
-    }).sort((a, b) => a.at - b.at);
+    }).filter(x => !archivedSet.has(x.truck)).sort((a, b) => a.at - b.at);
     // Gross profit per trip = revenue − diesel ₹ − DEF ₹ − trip advance (extra diesel is added at truck / fleet level)
     all.forEach(x => {
       const dr = x.dRate || rateAt('Diesel', x.at), fr = x.defL ? (x.defRate || rateAt('DEF', x.at)) : 0;
@@ -372,11 +374,29 @@
       x.truckIdle = p && p.unload ? hrs(p.unload, x.at) : NaN;                                  // waiting after last unload
     }));
     Object.values(byDriver).forEach(a => a.forEach((x, k) => { const p = a[k - 1]; x.drvIdle = p && p.unload ? hrs(p.unload, x.at) : NaN; if (x.drvIdle > 30 * 24 || x.drvIdle < 0) x.drvIdle = NaN; }));
-    // 19 Nov: a trip counts on its UTCL invoice (PGI) date — the same day the portal report shows. Only trucks not on the portal yet count on the loading day.
-    all.forEach(x => { x.dday = x.pgi && !isNaN(x.pgi) ? iso(x.pgi) : x.day; x.onPortal = !!(x.pgi && !isNaN(x.pgi)); });
-    // 19 Nov (2): the day report is the UTCL portal — only trips with a PGI in these dates. Loaded trucks the portal has not confirmed yet are
-    // listed apart (notOnPortal) and are NOT added to trips / MT / revenue.
-    const trips = all.filter(x => x.onPortal && x.dday >= R.from && x.dday <= R.to);
+    // 26 Nov: TRIPS come from the UTCL dispatch itself — ONE per DI, by PGI date — so every count equals the portal report exactly.
+    // The loader entry only ADDS driver / diesel / advance / km to its DI; a portal DI with no loader entry still counts (MT + freight from the portal).
+    const loaderByDI = {}, loaderByLR = {};
+    all.forEach(x => { if (x.di) (loaderByDI[x.di] = loaderByDI[x.di] || []).push(x); const k = lrDig(x.lr) + '|' + x.truck; if (lrDig(x.lr)) (loaderByLR[k] = loaderByLR[k] || []).push(x); });
+    const dispatch = rows(R.dispatch).map(d => ({ di: String(d.DI === undefined ? '' : d.DI).replace(/\.0+$/, ''), lr: d.LR, truck: JNP.normTruck(d.Truck), pgi: D(d.PGI), qty: n0(d.Qty), dest: d.Dest, party: d.Party, segment: d.Segment, grade: d.Grade, epod: d.EPOD === 'Y', freight: n0(d.Freight) }))
+      .filter(d => d.truck && !archivedSet.has(d.truck) && d.pgi && !isNaN(d.pgi));
+    const portalDISet = new Set(dispatch.map(d => d.di).filter(Boolean)), portalLRSet = new Set(dispatch.map(d => lrDig(d.lr) + '|' + d.truck));
+    const claimed = new Set();
+    const matchLoader = d => { const c = (loaderByDI[d.di] || []).concat(loaderByLR[lrDig(d.lr) + '|' + d.truck] || []); return c.find(x => !claimed.has(x)) || c[0] || null; };
+    const trips = dispatch.filter(d => { const dd = iso(d.pgi); return dd >= R.from && dd <= R.to; }).map(d => {
+      const L = matchLoader(d), fresh = !!L && !claimed.has(L); if (L) claimed.add(L);
+      const t = truckM[d.truck] || {}, cargo = String(t.cargo || (L ? L.load : '') || 'BAG');
+      const rev = d.freight || (L ? (L.frPortal ? L.rev : (L.rate || 0) * d.qty) : 0);
+      const dCost = fresh ? L.dCost : 0, defCost = fresh ? L.defCost : 0, adv = fresh ? L.adv : 0, diesel = fresh ? L.diesel : 0;
+      return { lr: d.lr, di: d.di, truck: d.truck, driver: L ? L.driver : '', dest: d.dest || (L ? L.dest : ''), party: d.party, consignee: L ? L.consignee : d.party,
+        cls: classOf(t.cap), cap: n0(t.cap), load: /BULK/i.test(cargo) ? 'BULK' : 'BAG', own: !t.no || /MARKET|HIRE|ATTACH/i.test(t.own || '') ? 'MARKET' : 'OWN',
+        mt: d.qty, bookMt: n0(t.cap) || d.qty, act: d.qty, portal: true, mtEst: false, onPortal: true, dday: iso(d.pgi), pgi: d.pgi, day: L ? L.day : iso(d.pgi), at: L ? L.at : d.pgi, epod: d.epod,
+        rev: rev, orderRev: rev, frPortal: !!d.freight, revOk: !!d.freight, badFr: false, diesel: diesel, dCost: dCost, defCost: defCost, adv: adv, gp: rev - dCost - defCost - adv,
+        km0: L ? L.km0 : 0, km: L ? L.km : NaN, rot: L ? L.rot : NaN, tat: L ? L.tat : NaN, busy: L ? L.busy : 0, truckIdle: L ? L.truckIdle : NaN, unload: L ? L.unload : null,
+        shortKg: L ? L.shortKg : 0, targetTat: L ? L.targetTat : '', dRate: L ? L.dRate : 0, noDRate: false, dEst: false, loaderMiss: !L };
+    });
+    // loader entries the portal has NOT confirmed yet (loaded, waiting for the DI) — shown apart, never counted in trips / MT / revenue
+    all.forEach(x => { x.dday = x.pgi && !isNaN(x.pgi) ? iso(x.pgi) : x.day; x.onPortal = portalDISet.has(x.di) || portalLRSet.has(lrDig(x.lr) + '|' + x.truck); });
     const notOnPortal = all.filter(x => !x.onPortal && x.day >= R.from && x.day <= R.to);
     const orders = all.filter(x => x.day >= R.from && x.day <= R.to);   // 23 Nov: orders received = Loader entries on their order day (MT at truck size)
     const lastTrip = {}; all.forEach(x => { if (x.at <= to) { lastTrip['T' + x.truck] = x; lastTrip['D' + x.driver] = x; } });
@@ -832,7 +852,7 @@
     const rows = utilRows(T); if (!rows.length) return '';
     const tg = tripTargets(), all = utilSum(rows), col = u => u >= 1 ? 'var(--ok)' : u >= .8 ? 'var(--st-wait)' : 'var(--red)';
     const grps = [...new Set(rows.map(r => r.grp))].sort((p, q) => parseInt(q) - parseInt(p) || (p < q ? -1 : 1));
-    const bySize = grps.map(c => { const rr = rows.filter(r => r.grp === c), g = utilSum(rr); return { label: c, sub: rr[0].per + ' trips/month · ' + rr.length + ' trucks', value: g.u * 100, color: col(g.u), text: isNaN(g.u) ? '—' : pct(g.u) + ' · ' + g.trips + '/' + fmt(g.target, 0) }; }).filter(x => !isNaN(x.value));
+    const bySize = grps.map(c => { const rr = rows.filter(r => r.grp === c), g = utilSum(rr); return { label: c, sub: rr[0].per + ' trips/month · ' + rr.length + ' own trucks on road', value: g.u * 100, color: col(g.u), text: isNaN(g.u) ? '—' : pct(g.u) + ' · ' + g.trips + '/' + fmt(g.target, 0) }; }).filter(x => !isNaN(x.value));
     const low = rows.slice().map(r => ({ label: r.no, sub: r.grp + (r.avail < M.days ? ' · ' + fmt(M.days - r.avail, 1) + ' d breakdown' : ''), value: r.target ? 100 * r.trips / r.target : 0, color: col(r.target ? r.trips / r.target : 0), text: r.trips + ' / ' + fmt(r.target, 1) + ' (' + pct(r.target ? r.trips / r.target : 0) + ')' }));
     const lo7 = M.fleet.filter(t => keepTruck(t.no) && longOff(t.no));
     return sec('Utilisation · trips vs target', 'overall ' + pct(all.u) + ' · ' + all.trips + ' of ' + fmt(all.target, 0) + ' expected trips' + (lo7.length ? ' · ' + lo7.length + ' truck' + (lo7.length > 1 ? 's' : '') + ' off road 7+ days not counted (' + lo7.map(t => t.no.slice(-4)).join(', ') + ')' : ''),
@@ -1272,7 +1292,10 @@
     const box = document.createElement('div'); box.className = 'opsrep';
     try {
       const day = RAW.to, D1 = T.filter(x => x.day === day), a = agg(T), d1 = agg(D1), u = utilSum(utilRows(T)), lo = liveOff(), fl = liveFleet().filter(t => keepTruck(t.no));
-      const ur = utilRows(T), sizes = CLASSES.map(c => c + 'T').map(c => { const tt = T.filter(x => x.cls === c), g = agg(tt), us = utilSum(ur.filter(r => r.cls === c)); return { c: c, trucks: ur.filter(r => r.cls === c).length, trips: g.trips, mt: g.mt, rot: g.rot, u: us.u }; }).filter(r => r.trips || r.trucks);
+      // 26 Nov: own and market shown apart — utilisation is for OWN trucks on road; trucks off road 7+ days are left out of it and shown as "off"
+      const ur = utilRows(T), sizes = CLASSES.map(c => c + 'T').map(c => { const tt = T.filter(x => x.cls === c), g = agg(tt), us = utilSum(ur.filter(r => r.cls === c));
+        const ownAll = M.fleet.filter(t => keepTruck(t.no) && classOf(t.cap) === c), off7 = ownAll.filter(t => longOff(t.no)).length, mkt = new Set(tt.filter(x => x.own === 'MARKET').map(x => x.truck)).size;
+        return { c: c, own: ownAll.length, off7: off7, mkt: mkt, trips: g.trips, tOwn: tt.filter(x => x.own === 'OWN').length, tMkt: tt.filter(x => x.own === 'MARKET').length, mt: g.mt, rot: g.rot, u: us.u }; }).filter(r => r.trips || r.own);
       const pc = (k, v) => sum(T.filter(x => x[k] === v), x => x.mt);
       const bar = (parts) => '<div class="or-split">' + parts.filter(p => p.v).map(p => '<div style="flex:' + p.v + ';background:' + p.c + '">' + (sum(parts, q => q.v) && p.v / sum(parts, q => q.v) > .14 ? Math.round(100 * p.v / sum(parts, q => q.v)) + '%' : '') + '</div>').join('') + '</div><div class="or-lg">' + parts.map(p => '<span><i style="background:' + p.c + '"></i>' + p.l + ' ' + fmt(p.v, 0) + '</span>').join('') + '</div>';
       const why = {}; lo.rows.forEach(r => why[r.g] = (why[r.g] || 0) + 1);
@@ -1295,8 +1318,9 @@
         '<div class="or-sec">MT lifted · ' + JNP.dmy(RAW.from).slice(0, 5) + ' – ' + JNP.dmy(RAW.to).slice(0, 5) + '</div>' +
         bar([{ l: 'Bulk', v: pc('load', 'BULK'), c: '#1565D8' }, { l: 'Bag', v: pc('load', 'BAG'), c: '#F7821A' }]) +
         bar([{ l: 'Own', v: pc('own', 'OWN'), c: '#12936A' }, { l: 'Market', v: pc('own', 'MARKET'), c: '#8B96A5' }]) +
-        '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Trucks</th><th>Trips</th><th>MT</th><th>Rotation</th><th>Utilisation</th></tr>' +
-          sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.trucks + '</td><td>' + r.trips + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
+        '<div class="or-sec">By truck size</div><table class="or-t"><tr><th>Size</th><th>Own trucks</th><th>Market</th><th>Trips own + mkt</th><th>MT</th><th>Rotation</th><th>Own util.</th></tr>' +
+          sizes.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + r.own + (r.off7 ? ' <small>(' + r.off7 + ' off 7d+)</small>' : '') + '</td><td>' + r.mkt + '</td><td>' + r.tOwn + ' + ' + r.tMkt + '</td><td>' + fmt(r.mt, 0) + '</td><td>' + dd(r.rot) + '</td><td class="' + (r.u >= 1 ? 'ok' : r.u >= .8 ? 'mid' : 'bad') + '">' + pct(r.u) + '</td></tr>').join('') + '</table>' +
+          '<div class="or-note">Own util. = own trucks on road vs target trips (12T 28 · 31T 18 · 35T/42T Bulk 18, Bag 16 a month); trucks off road 7+ days are not counted. Market trips are in Trips and MT, not in utilisation.</div>' +
         (() => { const all = liveFleet().concat(liveMkt()).filter(t => keepTruck(t.no)), q = k => { const a2 = all.filter(t => (M.status[t.no] || {}).st === k); return a2.length + ' trucks · ' + fmt(sum(a2, liveMt), 0) + ' MT'; };
           return M.liveEst ? '<div class="or-sec">Right now</div><table class="or-t sm"><tr><td><b>Order received</b> · waiting for loader</td><td>' + q('wl') + '</td></tr><tr><td><b>Loaded</b> · to destination</td><td>' + q('load') + '</td></tr><tr><td>At destination · waiting / unloading</td><td>' + q('unl') + '</td></tr><tr><td>Returning to depot</td><td>' + q('ret') + '</td></tr><tr><td>At depot · waiting for order</td><td>' + q('wait') + '</td></tr></table><div class="or-note">Same as the Truck Status board.</div>' : ''; })() +
         '<div class="or-sec">Fleet today · ' + (fl.length - lo.n) + ' of ' + fl.length + ' own trucks on road' + (liveMkt().length ? ' · market ' + liveMkt().filter(t => keepTruck(t.no)).length + ' on trip' : '') + '</div>' +
